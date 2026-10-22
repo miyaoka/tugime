@@ -1,0 +1,6 @@
+tugime_TugimeCore.bundle/Contents/Resources/Resources/english-words.txt
+
+英語の語表（tugime の Sources/TugimeCore/Resources/english-words.txt）
+
+macOS の /usr/share/dict にある web2 と propernames から作った。どちらも FreeBSD の /usr/share/dict に由来する。
+web2 は Webster's Second International（1934 年）で、/usr/share/dict/README には「The 1934 copyright has lapsed, according to the supplier.」とある。
