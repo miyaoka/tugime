@@ -344,20 +344,18 @@ final class TugimeInputController: IMKInputController {
     /// Space の前は打っている途中の変換を 1 つの未確定の文字列として表示する。Space の後は文節ごとの選択を表示し、選んでいる文節を強調する
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
-        var focusStart = 0
         if let clauses {
             for (index, clause) in clauses.enumerated() {
-                if index == focus { focusStart = marked.length }
                 let style = index == focus ? kTSMHiliteSelectedConvertedText : kTSMHiliteConvertedText
                 marked.append(styled(clause.output, style: style, at: marked.length))
             }
         } else {
-            marked.append(styled(liveText, style: kTSMHiliteSelectedRawText, at: 0))
-            focusStart = marked.length
+            marked.append(styled(liveText, style: kTSMHiliteRawText, at: 0))
         }
+        // カーソルは常に末尾に置く。ターミナル（xterm.js）はカーソルの位置を未確定の文字列の終わりとして読むので、途中に置くと確定する文字列が欠ける
         client.setMarkedText(
             marked,
-            selectionRange: NSRange(location: focusStart, length: 0),
+            selectionRange: NSRange(location: marked.length, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
     }
