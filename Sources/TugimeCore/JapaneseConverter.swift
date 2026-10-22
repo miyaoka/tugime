@@ -19,6 +19,18 @@ public struct JapaneseReading: Sendable, Equatable {
     }
 }
 
+/// 表示の変換の結果。評価値を持たないので、区切りの採点には使えない
+public struct JapaneseDisplay: Sendable, Equatable {
+    public var text: String
+    /// text を文節に分けたもの。読みを繋ぐと変換したかなに、表記を繋ぐと text になる
+    public var clauses: [JapaneseClause]
+
+    public init(text: String, clauses: [JapaneseClause]) {
+        self.text = text
+        self.clauses = clauses
+    }
+}
+
 /// 変換結果の 1 文節
 public struct JapaneseClause: Sendable, Equatable {
     public var reading: String
@@ -48,11 +60,16 @@ public protocol JapaneseConverting: AnyObject {
     func convert(kana: String, context: JapaneseContext) -> JapaneseReading?
     /// 候補の窓に並べる変換結果。評価値の高い順で、重複は除く。件数は変換エンジンが決める。context に afterCaret は渡さず、convert が返した context を渡す
     func alternatives(kana: String, context: JapaneseContext) -> [String]
+    /// 区切りが決まった区間を表示するための変換。採点のように何百回も呼ばないので、重くて質の高い変換を使ってよい。
+    /// left は入力の中でこの区間より前に表示している文字列。context は afterCaret を渡さず、convert が返した context を渡す。
+    /// convert が変換を返すかなと文脈には、必ず変換を返す
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay?
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
     func endComposition()
 }
 
 /// AzooKeyKanaKanjiConverter による変換。学習は使わないので、同じかなには常に同じ結果を返す。
+/// 採点は辞書と n-gram だけで行い、表示は Zenzai（ニューラルの言語モデル）で左の文脈を見て選び直す
 public final class AzooKeyConverter: JapaneseConverting {
     /// 英語区間の代わりに前へ置く名詞。辞書で 1 語に定まり、後ろの語と融合しにくいもの
     private static let nounStandIn = (kana: "てすと", word: "テスト")
@@ -62,6 +79,10 @@ public final class AzooKeyConverter: JapaneseConverting {
     private static let listingBest = 20
 
     private let converter: KanaKanjiConverter
+    /// Zenzai のモデル。nil なら表示も採点と同じ変換にする
+    private let zenzaiWeight: URL?
+    /// 表示の変換を、区間・文脈・左の文字列ごとに覚える。未確定の文字列の寿命だけ持つ
+    private var displayCache: [DisplayKey: JapaneseDisplay?] = [:]
     /// 打鍵のたびに同じ区間を変換し直さないためのもの。未確定の文字列の寿命だけ持つ
     private var cache: [CacheKey: JapaneseReading?] = [:]
     /// 前に置くものだけを変換した評価値。未確定の文字列の寿命だけ持つ
@@ -89,11 +110,18 @@ public final class AzooKeyConverter: JapaneseConverting {
         var context: JapaneseContext
     }
 
-    public init() {
-        converter = KanaKanjiConverter.withDefaultDictionary()
+    private struct DisplayKey: Hashable {
+        var kana: String
+        var context: JapaneseContext
+        var left: String
     }
 
-    private static func options(nBest: Int) -> ConvertRequestOptions {
+    public init(zenzaiWeight: URL?) {
+        converter = KanaKanjiConverter.withDefaultDictionary()
+        self.zenzaiWeight = zenzaiWeight
+    }
+
+    private static func options(nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode) -> ConvertRequestOptions {
         // 学習しないので書き込み先は使われないが、引数として要る
         let unused = FileManager.default.temporaryDirectory
         return ConvertRequestOptions(
@@ -106,6 +134,7 @@ public final class AzooKeyConverter: JapaneseConverting {
             sharedContainerURL: unused,
             textReplacer: .empty,
             specialCandidateProviders: [],
+            zenzaiMode: zenzai,
             // 打ち間違いの補正は別の読みの語を出し、日英の比較を乱す
             typoCorrectionMode: .disabled,
             metadata: nil
@@ -149,25 +178,92 @@ public final class AzooKeyConverter: JapaneseConverting {
         return texts.filter { seen.insert($0).inserted }
     }
 
+    public func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
+        guard let zenzaiWeight else { return scoredDisplay(kana: kana, context: context) }
+        let key = DisplayKey(kana: kana, context: context, left: left)
+        if let cached = displayCache[key] { return cached }
+        // 左に文字列があれば、それを Zenzai に文脈として渡すので仮の名詞は置かない。数字は助数詞として読ませるため入力の前に置き、文脈からは外す
+        let prefix: Prefix?
+        var leftContext = left
+        switch context {
+        case .start: prefix = nil
+        case .afterWord: prefix = left.isEmpty ? Self.standIn : nil
+        case .afterCaret: preconditionFailure("afterCaret は convert で文頭か前の語に続く形に決めてから渡す")
+        case .afterNumber(let digits):
+            // 数字は、未確定の文字列の中にあれば left の末尾にある。確定して入力欄に出ていれば、left は空になる
+            precondition(left.isEmpty || left.hasSuffix(digits), "数字に続く区間の左の文字列が、その数字で終わっていない: \(left) \(digits)")
+            prefix = Prefix(input: digits, shown: digits)
+            leftContext = String(left.dropLast(digits.count))
+        }
+        let zenzai = Self.zenzai(weight: zenzaiWeight, left: leftContext)
+        let result: JapaneseDisplay?
+        if let prefix {
+            result = candidates(prefix.input + kana, nBest: Self.scoringBest, zenzai: zenzai)
+                .first { Self.drop(prefix, from: $0) != nil }
+                .flatMap { candidate in
+                    Self.drop(prefix, from: candidate).map { text in
+                        JapaneseDisplay(text: text, clauses: Self.clauses(of: Self.words(after: prefix, in: candidate), kana: kana, text: text))
+                    }
+                }
+        } else {
+            result = candidates(kana, nBest: Self.scoringBest, zenzai: zenzai).first.map {
+                JapaneseDisplay(text: $0.text, clauses: Self.clauses(of: $0.data[...], kana: kana, text: $0.text))
+            }
+        }
+        // Zenzai の候補が表示に使えないときは、採点の変換を表示にする。使えないのは、前に置いたものを含む候補が無いときと、
+        // 前に置くものが無くても入力全体を覆う候補が無いとき
+        let shown = result ?? scoredDisplay(kana: kana, context: context)
+        displayCache[key] = shown
+        return shown
+    }
+
+    /// 採点の変換を表示の形にしたもの
+    private func scoredDisplay(kana: String, context: JapaneseContext) -> JapaneseDisplay? {
+        convert(kana: kana, context: context).map { JapaneseDisplay(text: $0.text, clauses: $0.clauses) }
+    }
+
+    /// 先読みで Zenzai に渡すかな。モデルを読ませるためだけのもので、結果は使わない
+    private static let preloadKana = "にほんご"
+
+    /// Zenzai のモデルを読み込む。変換エンジンはモデルを最初の Zenzai の要求で読むので、固定のかなで 1 回要求する。
+    /// モデルを読めなければ止まる
+    public func preloadZenzai() {
+        guard let zenzaiWeight else { preconditionFailure("Zenzai のモデルを渡していない変換器で先読みした") }
+        _ = candidates(Self.preloadKana, nBest: 1, zenzai: Self.zenzai(weight: zenzaiWeight, left: ""))
+    }
+
+    private static func zenzai(weight: URL, left: String) -> ConvertRequestOptions.ZenzaiMode {
+        .on(weight: weight, personalizationMode: nil, versionDependentMode: .v3(.init(leftSideContext: left.isEmpty ? nil : left)))
+    }
+
     public func endComposition() {
         cache = [:]
         prefixValues = [:]
+        displayCache = [:]
     }
 
-    private func candidates(_ kana: String, nBest: Int) -> [Candidate] {
+    private func candidates(_ kana: String, nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode = .off) -> [Candidate] {
         var composing = ComposingText()
         composing.insertAtCursorPosition(kana, inputStyle: .direct)
         let kanaCount = kana.count
         // 変換エンジンは直前の入力との差分で計算するので、前の要求の状態を捨て、要求ごとに独立した結果にする
         converter.stopComposition()
         // 入力全体を覆い、言語モデルで評価された候補だけを採る
-        return converter.requestCandidates(composing, options: Self.options(nBest: nBest)).mainResults.filter {
+        let results = converter.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)).mainResults.filter {
             $0.rubyCount == kanaCount && !Self.isUnscoredWhole($0)
         }
+        // 変換エンジンはモデルを読めないと黙って Zenzai なしで変換する。読めたときだけ zenzStatus が "load <URL>" になる
+        if let zenzaiWeight, zenzai != .off, converter.zenzStatus != "load \(zenzaiWeight.absoluteString)" {
+            fatalError("Zenzai のモデルを読めない: \(converter.zenzStatus)")
+        }
+        return results
     }
 
-    /// 入力全体をカタカナ・ひらがな・大文字にしただけの候補。
-    /// 言語モデルを通らない固定値が付き、カタカナは「プ」「ー」などを含むほど評価値が上がるので、日英の比較に使えない
+    /// 入力全体をカタカナ・ひらがな・大文字にしただけの候補。言語モデルを通らない固定値が付く。
+    /// 採点では、カタカナは「プ」「ー」などを含むほど評価値が上がるので、日英の比較に使えない。
+    /// 表示では、Zenzai が並べ替えるのは文全体の変換の上位だけで、これらはその後ろに固定値のまま足される。
+    /// 前に置いた仮の名詞と数字はカタカナにしても先頭に残るので、文全体の変換が前に置いたものを保たないときや文全体の変換が無いときに、
+    /// 除かなければ言語モデルも Zenzai も通らない候補を表示に選ぶ
     private static func isUnscoredWhole(_ candidate: Candidate) -> Bool {
         guard candidate.data.count == 1, let only = candidate.data.first else { return false }
         return only.mid == MIDData.一般.mid && only.lcid == CIDData.固有名詞.cid

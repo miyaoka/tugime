@@ -8,7 +8,7 @@ kyouhagoogledekensaku → 今日はgoogleで検索
 
 - 日英の判定は学習しない。同じ入力には常に同じ結果を返す
 - 判定は利用者のローマ字の綴りに合わせる。その綴りで読めない並び（`gl` `pr` `c` `l` など）を含む区間は英語になる
-- かな漢字変換は [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter) を使う
+- かな漢字変換は [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter) を使う。表示する変換は、Zenzai（小さな言語モデル）で前の文脈を見て選ぶ
 
 ## 動作環境
 
@@ -30,7 +30,7 @@ Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開し
 
 ### ソースから
 
-Xcode（Swift 6.2 以降）が要る。
+Xcode（Swift 6.2 以降）が要る。組み立てのときに Zenzai のモデル（約 70MB）を Hugging Face から `.zenz/` に取得する。
 
 ```bash
 scripts/build-app.sh            # dist/tugime.app を組み立てて ad-hoc 署名する
@@ -69,9 +69,10 @@ main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PAT
 
 ```bash
 swift build --product tugime-cli
-.build/debug/tugime-cli kyouhagoogledekensaku          # 変換結果
-.build/debug/tugime-cli --explain kyouhagoogle          # 区間と評価値
-.build/debug/tugime-cli --corpus corpus/examples.tsv    # 例文集の一致件数（CI と同じ組み立て）
+zenz=$(scripts/fetch-zenz.sh)                                         # Zenzai のモデルを取得してパスを出す
+.build/debug/tugime-cli --zenz "$zenz" kyouhagoogledekensaku          # 変換結果
+.build/debug/tugime-cli --explain kyouhagoogle                        # 区間と評価値（採点の変換）
+.build/debug/tugime-cli --zenz "$zenz" --corpus corpus/examples.tsv   # 例文集の一致件数（CI と同じ組み立て）
 swift test
 ```
 
@@ -80,5 +81,6 @@ swift test
 ## 使っているもの
 
 - [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter)（MIT）と既定の辞書
+- [zenz-v3.2-small](https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf)（Apache-2.0）と [llama.cpp](https://github.com/azooKey/llama.cpp)（MIT）
 - 英語の語の頻度: [wordfreq](https://github.com/rspeer/wordfreq) の日本語データ（CC BY-SA 4.0）
 - 英語の綴りらしさを数える語表: macOS 同梱の Webster's Second International（1934 年、著作権切れ）と固有名詞表
