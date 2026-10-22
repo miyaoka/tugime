@@ -42,7 +42,13 @@ fi
 [[ -d "$src/Contents" ]] || { echo "$src は .app ではない" >&2; exit 1; }
 # 置く名前は組み立てたときに焼いた名前から決める。引数のパスの名前は、渡し方で変わる
 name=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$src/Contents/Info.plist")
-[[ -n "$name" ]] || { echo "$src の Info.plist に CFBundleName が無い" >&2; exit 1; }
+# 名前をパスの 1 要素に限り、置く先を ~/Library/Input Methods の直下から出さない
+case "$name" in
+    "" | */* | .*)
+        echo "$src の CFBundleName は配置先の名前に使えない: '$name'" >&2
+        exit 1
+        ;;
+esac
 dest="$HOME/Library/Input Methods/$name.app"
 exe="$dest/Contents/MacOS/tugime"
 
