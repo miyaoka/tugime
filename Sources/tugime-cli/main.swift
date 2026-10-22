@@ -2,7 +2,7 @@ import Foundation
 import TugimeCore
 
 let usage = """
-    使い方:
+    使い方（先頭に --after <english|japanese> を付けると、カーソルの前にその文字がある状態として変換する）:
       tugime-cli <打鍵列>...                  打鍵列を変換した結果を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
       tugime-cli --clauses <打鍵列>...        文節ごとの候補を出す
@@ -65,11 +65,11 @@ func loadCorpus(path: String) throws -> [Example] {
 }
 
 /// 一致件数を出す。全件一致は前提にしないので、件数によって終了コードを変えない
-func runCorpus(_ examples: [Example], segmenter: Segmenter) {
+func runCorpus(_ examples: [Example], segmenter: Segmenter, leading: Segmenter.Leading) {
     var judged = 0
     var exact = 0
     for example in examples {
-        let segments = segmenter.segment(example.input)
+        let segments = segmenter.segment(example.input, leading: leading)
         let actual = segments.map(\.output).joined()
         let judgeOK = englishSources(segments) == asciiRuns(example.expected)
         let exactOK = actual == example.expected
@@ -140,7 +140,18 @@ func tune(_ examples: [Example], segmenter: Segmenter) {
     print("試した組 \(englishAxis.count * japanesePenaltyAxis.count * englishPenaltyAxis.count) 件、完了条件の例文 \(required.count) 件を通す組 \(ranked.count) 件のうち、近傍平均の上位 15 件")
 }
 
-let args = Array(CommandLine.arguments.dropFirst())
+/// 先頭の --after <english|japanese> は、入力欄のカーソルの前にその文字がある状態として変換する
+let leadings: [String: Segmenter.Leading] = ["english": .afterEnglish, "japanese": .afterJapanese]
+var args = Array(CommandLine.arguments.dropFirst())
+var leading = Segmenter.Leading.start
+if args.first == "--after" {
+    guard args.count >= 2, let value = leadings[args[1]] else {
+        print(usage)
+        exit(2)
+    }
+    leading = value
+    args.removeFirst(2)
+}
 do {
     switch args.first {
     case nil, "-h", "--help":
@@ -156,7 +167,7 @@ do {
             tune(examples, segmenter: segmenter)
             exit(0)
         }
-        runCorpus(examples, segmenter: segmenter)
+        runCorpus(examples, segmenter: segmenter, leading: leading)
     case "--span":
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
@@ -175,14 +186,14 @@ do {
         // F6〜F10 の全体の変換を並べる
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
-            print("\(input)\t" + WholeConversion.allCases.map { segmenter.convertWhole(input, to: $0) }.joined(separator: " / "))
+            print("\(input)\t" + WholeConversion.allCases.map { segmenter.convertWhole(input, to: $0, leading: leading) }.joined(separator: " / "))
         }
     case "--clauses":
         // IME の候補の窓に並ぶものを区間ごとに出す
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
             print("== \(input)")
-            for clause in segmenter.clauses(input) {
+            for clause in segmenter.clauses(input, leading: leading) {
                 print("\(tag[clause.kind]!) \(clause.reading)\t\(clause.candidates.joined(separator: " / "))")
             }
         }
@@ -192,7 +203,7 @@ do {
             exit(2)
         }
         let segmenter = try makeSegmenter()
-        var clauses = segmenter.clauses(args[1])
+        var clauses = segmenter.clauses(args[1], leading: leading)
         var focus = 0
         func show(_ label: String) {
             let marked = clauses.enumerated().map { $0.offset == focus ? "[\($0.element.output)]" : $0.element.output }
@@ -214,13 +225,13 @@ do {
     case "--explain":
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
-            let segments = segmenter.segment(input)
+            let segments = segmenter.segment(input, leading: leading)
             print("\(segments.map(\.output).joined())\t\(describe(segments))")
         }
     default:
         let segmenter = try makeSegmenter()
         for input in args {
-            print(segmenter.segment(input).map(\.output).joined())
+            print(segmenter.segment(input, leading: leading).map(\.output).joined())
         }
     }
 } catch {

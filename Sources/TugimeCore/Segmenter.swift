@@ -68,7 +68,7 @@ public final class Segmenter {
         case afterEnglish
 
         /// 最初の日本語区間の評価のしかた
-        var japaneseContext: JapaneseContext { self == .start ? .start : .afterWord }
+        var japaneseContext: JapaneseContext { self == .start ? .start : .afterCaret }
     }
 
     /// 英語区間に続く日本語区間の評価のしかた。英語区間が数字で終わるなら、その数字に続く形（1500 円、3 回）にする

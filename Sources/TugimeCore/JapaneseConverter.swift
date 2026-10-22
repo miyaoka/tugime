@@ -31,8 +31,11 @@ public struct JapaneseClause: Sendable, Equatable {
 public enum JapaneseContext: Sendable, Hashable {
     /// 文頭から始まる文として評価する
     case start
-    /// 前の語に続く形として評価する。英語区間の直後（混在文の英語は名詞として働く）と、入力欄の文の途中から打ち始めたとき
+    /// 前の語に続く形として評価する。英語区間の直後（混在文の英語は名詞として働く）
     case afterWord
+    /// 入力欄のカーソルの前にある文字に続けて打ち始めたときの形。前の文字が文のどこに当たるかは分からないので、
+    /// 前の語に続く形と新しく始まる形のうち自然な方で評価する
+    case afterCaret
     /// 数字に続く形として評価する。数字は変換エンジンがそのまま扱えるので、助数詞（円・回・個）として読ませる
     case afterNumber(String)
 }
@@ -72,7 +75,7 @@ public final class AzooKeyConverter: JapaneseConverting {
     private static func prefix(for context: JapaneseContext) -> Prefix? {
         switch context {
         case .start: nil
-        case .afterWord: standIn
+        case .afterWord, .afterCaret: standIn
         case .afterNumber(let digits): Prefix(input: digits, shown: digits)
         }
     }
@@ -114,6 +117,10 @@ public final class AzooKeyConverter: JapaneseConverting {
             result = convertAtStart(kana)
         case .afterWord:
             result = convert(kana, after: Self.standIn)
+        case .afterCaret:
+            // 前に置いた名詞は後ろの語と複合語（テスト用）を作るので、続く形だけで比べると新しく始まる読みを不当に下げる
+            let candidates = [convertAtStart(kana), convert(kana, after: Self.standIn)].compactMap { $0 }
+            result = candidates.max { $0.value < $1.value }
         case .afterNumber(let digits):
             result = convert(kana, after: Prefix(input: digits, shown: digits))
         }
