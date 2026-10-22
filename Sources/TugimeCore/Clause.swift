@@ -9,6 +9,13 @@ public struct Clause: Sendable, Equatable {
     public var candidates: [String]
     public var selected: Int
 
+    public init(kind: Segment.Kind, source: String, candidates: [String], selected: Int) {
+        self.kind = kind
+        self.source = source
+        self.candidates = candidates
+        self.selected = selected
+    }
+
     public var output: String { candidates[selected] }
 }
 

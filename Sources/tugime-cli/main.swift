@@ -166,6 +166,12 @@ do {
             }
             print("E \(arg)\t\(english.logProbability(arg))")
         }
+    case "--whole":
+        // F6〜F10 の全体の変換を並べる
+        let segmenter = try makeSegmenter()
+        for input in args.dropFirst() {
+            print("\(input)\t" + WholeConversion.allCases.map { segmenter.convertWhole(input, to: $0) }.joined(separator: " / "))
+        }
     case "--clauses":
         // IME の候補の窓に並ぶものを区間ごとに出す
         let segmenter = try makeSegmenter()

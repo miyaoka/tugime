@@ -27,6 +27,14 @@ private enum KeyCode {
     static let right: UInt16 = 124
     static let down: UInt16 = 125
     static let up: UInt16 = 126
+    /// 未確定の文字列全体を 1 つの文字種にするキー
+    static let wholeConversions: [UInt16: WholeConversion] = [
+        97: .hiragana,
+        98: .katakana,
+        100: .halfwidthKatakana,
+        101: .fullwidthRoman,
+        109: .roman,
+    ]
 }
 
 /// 変換器はプロセスに 1 つだけ持つ。辞書と語表の読み込みが重いので、入力源ごとに作らない
@@ -153,6 +161,10 @@ final class TugimeInputController: IMKInputController {
             commit(client)
             return false
         }
+        if !keys.isEmpty, let kind = KeyCode.wholeConversions[event.keyCode] {
+            convertWhole(to: kind, client: client)
+            return true
+        }
         if clauses != nil {
             return handleConverted(event, client: client)
         }
@@ -229,6 +241,15 @@ final class TugimeInputController: IMKInputController {
         clauses[focus].selected = (clauses[focus].selected + delta + count) % count
         self.clauses = clauses
         movePanel(to: clauses[focus].selected)
+        showMarkedText(client)
+    }
+
+    /// 未確定の文字列全体を 1 つの文節にして、指定の文字種で表示する。Enter で確定する
+    private func convertWhole(to kind: WholeConversion, client: IMKTextInput) {
+        let text = sharedSegmenter.convertWhole(keys, to: kind)
+        clauses = [Clause(kind: .english, source: keys, candidates: [text], selected: 0)]
+        focus = 0
+        candidatePanel.hide()
         showMarkedText(client)
     }
 
