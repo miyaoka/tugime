@@ -335,15 +335,11 @@ final class TugimeInputController: IMKInputController {
         if let clauses {
             for (index, clause) in clauses.enumerated() {
                 if index == focus { focusStart = marked.length }
-                marked.append(NSAttributedString(string: clause.output, attributes: [
-                    .underlineStyle: (index == focus ? NSUnderlineStyle.thick : NSUnderlineStyle.single).rawValue,
-                    .markedClauseSegment: index,
-                ]))
+                let style = index == focus ? kTSMHiliteSelectedConvertedText : kTSMHiliteConvertedText
+                marked.append(styled(clause.output, style: style, at: marked.length))
             }
         } else {
-            marked.append(NSAttributedString(string: reading, attributes: [
-                .underlineStyle: NSUnderlineStyle.single.rawValue,
-            ]))
+            marked.append(styled(reading, style: kTSMHiliteSelectedRawText, at: 0))
             focusStart = marked.length
         }
         client.setMarkedText(
@@ -351,6 +347,16 @@ final class TugimeInputController: IMKInputController {
             selectionRange: NSRange(location: focusStart, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
+    }
+
+    /// 下線の種類と太さはクライアントが決めるので、文節の状態だけを IMK に渡して属性を受け取る
+    private func styled(_ text: String, style: Int, at location: Int) -> NSAttributedString {
+        let range = NSRange(location: location, length: (text as NSString).length)
+        let raw = mark(forStyle: style, at: range) ?? [:]
+        let attributes = Dictionary(uniqueKeysWithValues: raw.compactMap { key, value in
+            (key as? String).map { (NSAttributedString.Key($0), value) }
+        })
+        return NSAttributedString(string: text, attributes: attributes)
     }
 
     /// 変換前に表示する読み。日本語区間はかな、英語区間は打ったまま
