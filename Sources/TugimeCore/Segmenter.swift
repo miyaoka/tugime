@@ -4,7 +4,7 @@ public struct Segment: Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         case japanese
         case english
-        /// 日本語の句読点にした , と .
+        /// 日本語の記号にした句読点（, . ? !）
         case punctuation
     }
 
@@ -157,6 +157,8 @@ public final class Segmenter {
                 let s = weights.japanese * reading.value - weights.japaneseSpanPenalty
                 relax(end, start, Segment(kind: .japanese, source: String(chars[start..<end]), reading: kana, output: reading.text, score: s))
             }
+            // 句読点は前の語の後ろに付くので、英語区間を句読点から始めない。入力の先頭は、入力欄の前の英語に付いている
+            if start > 0, Self.punctuation[chars[start]] != nil { continue }
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
                 // 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語表に無い綴り（utte deno）は、
