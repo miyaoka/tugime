@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | ba
 
 Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開したフォルダーで `bash install.sh` を実行する。
 
-配置したら、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。更新は同じ手順で上書きする。
+初めて配置したら、ログアウトしてログインし直す。システム設定はログインし直すまで新しい入力ソースを一覧に出さない。その後、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。更新は同じ手順で上書きする。
 
 配布物は ad-hoc 署名で、Apple の公証を受けていない。
 

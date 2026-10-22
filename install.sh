@@ -56,4 +56,5 @@ xattr -dr com.apple.quarantine "$dest"
 # pkill は該当するプロセスが無いと 1 を返す。それ以外の失敗は止める
 pkill -f "^$exe\$" || [[ $? -eq 1 ]]
 echo "== 配置 $dest"
-echo "初めて入れたときは、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 → $(basename "$dest" .app) (日本語) で追加する"
+# システム設定は、ログインし直すまで新しい入力ソースを一覧に出さない（https://developer.apple.com/forums/thread/775526）
+echo "初めて入れたときは、ログアウトしてログインし直してから、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 → $(basename "$dest" .app) (日本語) で追加する"
