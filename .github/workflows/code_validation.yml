@@ -1,0 +1,81 @@
+# コードバリデーションワークフロー
+name: code_validation
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+# PR trigger で依存を取得して実行するため、job 内に write 権限のトークンを置かない
+permissions:
+  contents: read
+
+# macOS のジョブが使う Xcode。ランナーのイメージ（macos-26）とともに版を固定する
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ==============================================================
+  # ビルドとテスト（macOS 専用の IME なので macOS で走らせる）
+  # ==============================================================
+  validation:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Test
+        run: swift test
+
+      # 配布物の組み立て（リソースの同梱・Info.plist・署名）が壊れていないかを、release より前に検知する
+      - name: Build .app
+        run: scripts/build-app.sh
+
+      # 日英判定の一致件数を記録に残す。全件一致は前提にしないので gate にしない
+      - name: Corpus
+        run: |
+          swift build -c release --product tugime-cli
+          .build/release/tugime-cli --corpus corpus/examples.tsv | tail -2 || true
+
+  # ==============================================================
+  # workflow のセキュリティ検査
+  # ==============================================================
+  workflow_audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # 非公開のリポジトリは checkout に読み取りの権限が要る
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Audit workflows
+        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        with:
+          advanced-security: false
+
+  # ==============================================================
+  # CI 全体のステータス集約。Branch Protection ではこのジョブだけを必須にする
+  # ==============================================================
+  all-green:
+    runs-on: ubuntu-24.04
+    if: always()
+    needs:
+      - workflow_audit
+      - validation
+    steps:
+      - name: Check all CI jobs status
+        uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+        with:
+          jobs: ${{ toJSON(needs) }}

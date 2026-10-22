@@ -16,14 +16,30 @@ Apple Silicon の macOS。動作は macOS 27 でだけ確かめている。
 
 ## 導入
 
-ソースから組み立てる。Xcode（Swift 6.1 以降）が要る。
+GitHub Releases の最新版を `~/Library/Input Methods` に配置して登録する。
 
 ```bash
-scripts/build-app.sh   # dist/tugime.app を組み立てて ad-hoc 署名する
-scripts/install.sh     # ~/Library/Input Methods に配置して登録する
+curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | bash
 ```
 
-配置したら、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。
+Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開したフォルダーで `bash install.sh` を実行する。
+
+配置したら、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。更新は同じ手順で上書きする。
+
+配布物は ad-hoc 署名で、Apple の公証を受けていない。
+
+### ソースから
+
+Xcode（Swift 6.1 以降）が要る。
+
+```bash
+scripts/build-app.sh            # dist/tugime.app を組み立てて ad-hoc 署名する
+./install.sh dist/tugime.app    # 配置して登録する
+```
+
+## リリース
+
+main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PATCH`）を採番し、macOS で組み立てた `tugime-macos-arm64.tar.gz` を出自の証明付きでリリースする。
 
 ## 使い方
 
