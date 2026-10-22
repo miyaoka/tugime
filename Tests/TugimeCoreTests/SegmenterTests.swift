@@ -52,6 +52,7 @@ private final class LongReadingPenalty: JapaneseConverting {
         #expect(segments.count > 1)
         #expect(segments.map(\.reading).joined() == "じゃあそうしろ")
         #expect(segments.allSatisfy { $0.output == "[\($0.reading)]" })
+        #expect(segmenter.clauses("jaasousiro").map(\.output).joined() == segments.map(\.output).joined())
     }
 }
 
