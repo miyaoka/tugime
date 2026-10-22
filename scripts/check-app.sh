@@ -12,7 +12,9 @@ mv "$root/.build" "$aside/"
 trap 'mv "$aside/.build" "$root/" && rmdir "$aside"' EXIT
 "$app/Contents/MacOS/tugime" --check
 
-# 対象は Apple Silicon だけなので、実行ファイルは arm64 だけを含む
-archs=$(lipo -archs "$app/Contents/MacOS/tugime")
-[[ "$archs" == "arm64" ]] || { echo "実行ファイルの対象が arm64 だけではない: $archs" >&2; exit 1; }
-echo "対象 $archs"
+# 対象は Apple Silicon だけなので、実行ファイルと同梱のフレームワークは arm64 だけを含む
+for binary in "$app/Contents/MacOS/tugime" "$app/Contents/Frameworks/llama.framework/llama"; do
+    archs=$(lipo -archs "$binary")
+    [[ "$archs" == "arm64" ]] || { echo "対象が arm64 だけではない: $binary $archs" >&2; exit 1; }
+    echo "対象 $archs $(basename "$binary")"
+done

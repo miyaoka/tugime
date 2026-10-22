@@ -24,6 +24,11 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/zenz" "$app/Contents/Fra
 cp "$bin/tugime" "$app/Contents/MacOS/tugime"
 # Zenzai の推論に使う llama.cpp。実行ファイルは @rpath/llama.framework を探すので、Frameworks を探し場所に足す
 cp -R "$bin/llama.framework" "$app/Contents/Frameworks/"
+# 配られている llama.framework は Intel 向けも含む。対象は Apple Silicon だけなので arm64 だけを残す
+llama=$(readlink -f "$app/Contents/Frameworks/llama.framework/llama")
+if [[ "$(lipo -archs "$llama")" != "arm64" ]]; then
+    lipo -thin arm64 "$llama" -output "$llama"
+fi
 install_name_tool -add_rpath @executable_path/../Frameworks "$app/Contents/MacOS/tugime"
 cp "$zenz" "$app/Contents/Resources/zenz/"
 for bundle in "$bin"/*.bundle; do
@@ -37,6 +42,8 @@ swift "$root/scripts/make-icons.swift" "$app/Contents/Resources"
 swift "$root/scripts/collect-notices.swift" "$root" "$app/Contents/Resources" "$app/Contents/Resources/ThirdPartyNotices.txt"
 
 echo "== ad-hoc 署名"
+# 入れ子のフレームワークは外側の署名では署名されない。arm64 だけにして中身が変わったので署名し直す
+codesign --force --timestamp=none --sign - "$app/Contents/Frameworks/llama.framework"
 codesign --force --timestamp=none --sign - "$app"
 codesign --verify --strict "$app"
 echo "== 完了 $app"
