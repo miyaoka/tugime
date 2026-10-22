@@ -4,6 +4,18 @@
 #   @sokuon  同じ文字を 2 つ重ねると前の 1 文字を「っ」と読む文字の集合
 #   @n       この文字の前に置いた単独の n を「ん」と読む文字の集合
 # 「っ」と単独の「ん」は、後ろに表の綴りが続くときだけ読む。区間の末尾では読まない。
+#
+# 既定の表は、一般のローマ字の幅を利用者 1 人の綴りに絞ったものである。表に無い綴りは、
+# 一般にはローマ字でも日本語として読まず、その綴りを含む区間は英語になる。既定の綴りの方針:
+#   長音      省かずに母音で書く（とう = tou、りゅう = ryuu）。ー は -
+#   ん        母音・y・n の前と語末は nn。それ以外の子音の前は単独の n でもよい
+#   し ち つ ふ じ  si ti tu hu ji。shi chi tsu fu zi は使わない
+#   拗音      sya tya ja。sha cha jya zya は使わない
+#   っ        n 以外の子音を重ねるか xtu
+#   小さい文字  x で始める（xa xya xtu）。l は使わない
+#   ぢ づ      di du
+#   外来語    fa fi fe fo、thi dhi、va vi vu ve vo、wi we、tye je sye
+#   c l q     使わない
 
 @sokuon	bdfghjkmprstvwyz
 @n	bdfghjkmprstvwz
