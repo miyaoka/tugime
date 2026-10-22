@@ -39,6 +39,10 @@ jobs:
       - name: Build .app
         run: scripts/build-app.sh
 
+      # 利用者の Mac と同じく、組み立てたディレクトリが無い状態で辞書を読めるか
+      - name: Check .app
+        run: scripts/check-app.sh
+
       # 日英判定の一致件数を記録に残す。件数では落とさず、CLI が実行に失敗したときだけ落とす
       - name: Corpus
         run: |

@@ -38,11 +38,20 @@ func printStatus() -> Int32 {
     return 0
 }
 
+/// 組み立てたバンドルから綴りの表・語表・辞書を読み、1 文を変換して出す。読めなければ初期化の時点で止まる
+func check() -> Int32 {
+    let input = "kyouhagoogledekensaku"
+    print("\(input)\t\(sharedSegmenter.segment(input).map(\.output).joined())")
+    return 0
+}
+
 switch CommandLine.arguments.dropFirst().first {
 case "--register":
     exit(register())
 case "--status":
     exit(printStatus())
+case "--check":
+    exit(check())
 default:
     break
 }
