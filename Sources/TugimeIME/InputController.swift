@@ -298,7 +298,6 @@ final class TugimeInputController: IMKInputController {
                 ]))
             }
         } else {
-            let reading = sharedSegmenter.segment(keys, leading: leading).map(\.reading).joined()
             marked.append(NSAttributedString(string: reading, attributes: [
                 .underlineStyle: NSUnderlineStyle.single.rawValue,
             ]))
@@ -311,11 +310,16 @@ final class TugimeInputController: IMKInputController {
         )
     }
 
-    /// 未確定の文字列を確定する。変換していなければ、区切りを選んだ結果を確定する
+    /// 変換前に表示する読み。日本語区間はかな、英語区間は打ったまま
+    private var reading: String {
+        sharedSegmenter.segment(keys, leading: leading).map(\.reading).joined()
+    }
+
+    /// 未確定の文字列を、表示しているとおりに確定する。変換していなければ読みのまま確定する
     private func commit(_ client: IMKTextInput) {
         candidatePanel.hide()
         guard !keys.isEmpty else { return }
-        let text = (clauses ?? sharedSegmenter.clauses(keys, leading: leading)).map(\.output).joined()
+        let text = clauses?.map(\.output).joined() ?? reading
         client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
         keys = ""
         clauses = nil
