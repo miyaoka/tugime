@@ -22,7 +22,7 @@ Apple Silicon の macOS。動作は macOS 27 でだけ確かめている。
 mise use -g 'github:miyaoka/tugime[postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
 ```
 
-mise を使わない場合は、最新版を取得して配置する。
+mise を使わない場合は、最新版を取得して配置する。更新は同じコマンドで上書きする。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | bash
@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | ba
 
 Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開したフォルダーで `bash install.sh` を実行する。
 
-初めて配置したら、ログアウトしてログインし直す。システム設定はログインし直すまで新しい入力ソースを一覧に出さない。その後、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。更新は同じ手順で上書きする。
+初めて配置したときだけ、ログアウトしてログインし直す。システム設定はログインし直すまで新しい入力ソースを一覧に出さない。その後、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。
 
 配布物は ad-hoc 署名で、Apple の公証を受けていない。
 

@@ -1,12 +1,12 @@
 #!/bin/bash
-# tugime.app を ~/Library/Input Methods に配置して入力ソースとして登録する。有効化はしない。
+# tugime の .app を ~/Library/Input Methods に配置して入力ソースとして登録する。有効化はしない。
 # 利用者がシステム設定 → キーボード → 入力ソース → 「+」→ 日本語 で追加する。
 #
 # 使い方:
-#   bash install.sh [tugime.app]
+#   bash install.sh [<.app>]
 #   curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | bash
 #
-# 導入する tugime.app は、引数、このファイルの隣の tugime.app、GitHub の最新のリリース、の順で決める。
+# 導入する .app は、引数、このファイルの隣の tugime.app、GitHub の最新のリリース、の順で決める。
 set -euo pipefail
 
 repo="miyaoka/tugime"
@@ -40,8 +40,10 @@ else
     src="$(download_latest)"
 fi
 [[ -d "$src/Contents" ]] || { echo "$src は .app ではない" >&2; exit 1; }
-# 配布版の tugime.app と、ソースから組み立てた tugime Local.app は、別の名前で隣に置く
-dest="$HOME/Library/Input Methods/$(basename "$src")"
+# 置く名前は組み立てたときに焼いた名前から決める。引数のパスの名前は、渡し方で変わる
+name=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$src/Contents/Info.plist")
+[[ -n "$name" ]] || { echo "$src の Info.plist に CFBundleName が無い" >&2; exit 1; }
+dest="$HOME/Library/Input Methods/$name.app"
 exe="$dest/Contents/MacOS/tugime"
 
 # バンドルを消さずに中身を上書きする。バンドルが無い瞬間に macOS が入力源の一覧を作り直すと登録が消えるため
@@ -52,9 +54,12 @@ xattr -dr com.apple.quarantine "$dest"
 "$lsregister" -f "$dest"
 "$exe" --register
 # 動いている古い版を止める。次に入力源が選ばれたときに新しい版が起動する
-# 実行ファイル名はどの .app も tugime なので、パスで照合して隣の .app のプロセスを止めない
-# pkill は該当するプロセスが無いと 1 を返す。それ以外の失敗は止める
-pkill -f "^$exe\$" || [[ $? -eq 1 ]]
+# 実行ファイル名はどの .app も tugime なので、実行ファイルのパスと文字列として一致するものだけを止める
+pids=$(ps -axo pid=,comm= | exe="$exe" awk '{ pid = $1; sub(/^ *[0-9]+ /, ""); if ($0 == ENVIRON["exe"]) print pid }')
+if [[ -n "$pids" ]]; then
+    # shellcheck disable=SC2086 # 改行区切りの PID を引数に分ける
+    kill $pids
+fi
 echo "== 配置 $dest"
 # システム設定は、ログインし直すまで新しい入力ソースを一覧に出さない（https://developer.apple.com/forums/thread/775526）
-echo "初めて入れたときは、ログアウトしてログインし直してから、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 → $(basename "$dest" .app) (日本語) で追加する"
+echo "初めて入れたときは、ログアウトしてログインし直してから、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 → $name (日本語) で追加する"

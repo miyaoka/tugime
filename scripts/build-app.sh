@@ -1,7 +1,6 @@
 #!/bin/bash
 # .app を dist/ に組み立てて ad-hoc で署名する。鍵束は使わない。
-# TUGIME_BUILD_CHANNEL=stable（release CI のみ）→ tugime.app。
-# 無指定 → local channel（tugime Local.app、bundle id 末尾 .local）。配布版と別の入力ソースになり、隣で共存できる
+# 無指定は開発版にする。手元で組み立てたものが配布版と同じ bundle id を名乗り、入れた配布版を上書きしないようにするため
 set -euo pipefail
 
 bundle_id=io.github.miyaoka.inputmethod.tugime
