@@ -14,8 +14,8 @@ private final class KanaEcho: JapaneseConverting {
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { [kana] }
 
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseReading? {
-        convert(kana: kana, context: context)
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
+        convert(kana: kana, context: context).map { JapaneseDisplay(text: $0.text, clauses: $0.clauses) }
     }
 
     func endComposition() {}
@@ -37,6 +37,10 @@ private final class LongReadingPenalty: JapaneseConverting {
     }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { [kana] }
+
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
+        convert(kana: kana, context: context).map { JapaneseDisplay(text: $0.text, clauses: $0.clauses) }
+    }
 
     func endComposition() {}
 }
@@ -93,6 +97,53 @@ private final class LongReadingPenalty: JapaneseConverting {
         #expect(segmenter.convertClause(clauses, at: 1, to: .katakana) == "ャク")
         #expect(segmenter.convertClause(clauses, at: 0, to: .roman) == nil)
         #expect(segmenter.convertClause(clauses, at: 1, to: .fullwidthRoman) == nil)
+    }
+}
+
+/// KanaEcho と同じ区切りにし、表示の変換は表記を « » で囲んで、渡された左の文字列を覚える
+private final class LeftRecorder: JapaneseConverting {
+    private let echo = KanaEcho()
+    private(set) var lefts: [String] = []
+
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { echo.convert(kana: kana, context: context) }
+
+    func alternatives(kana: String, context: JapaneseContext) -> [String] { [] }
+
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
+        lefts.append(left)
+        return JapaneseDisplay(text: "«\(kana)»", clauses: [JapaneseClause(reading: kana, text: "«\(kana)»")])
+    }
+
+    func endComposition() {}
+}
+
+@Suite struct LeftContextTests {
+    fileprivate let recorder = LeftRecorder()
+    let segmenter: Segmenter
+    /// 短い日本語区間・英語区間・長い日本語区間の順に並ぶ入力
+    let input = "decwdkyouhaii"
+
+    init() throws {
+        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: recorder)
+    }
+
+    @Test func liveTextPassesTheConvertedShortSpanToTheRight() {
+        #expect(segmenter.segment(input).map(\.kind) == [.japanese, .english, .japanese])
+        #expect(segmenter.liveText(input) == "でcwd«きょうはいい»")
+        #expect(recorder.lefts == ["", "«で»cwd"])
+    }
+
+    @Test func clausesPassTheSameLeftAsLiveText() {
+        _ = segmenter.clauses(input)
+        #expect(recorder.lefts == ["", "«で»cwd"])
+    }
+
+    @Test func resizingRedisplaysTheLaterSpansWithTheNewLeft() {
+        let clauses = segmenter.clauses("kyouhaiicwdde")
+        #expect(clauses.map(\.kind) == [.japanese, .english, .japanese])
+        let resized = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(resized.map(\.output) == ["«きょうはい»", "«い»", "cw", "«っで»"])
+        #expect(recorder.lefts.last == "«きょうはい»«い»cw")
     }
 }
 

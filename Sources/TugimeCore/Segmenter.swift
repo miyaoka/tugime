@@ -83,31 +83,52 @@ public final class Segmenter {
     /// 打っている途中に変換して見せる日本語区間の、かなの最短の長さ。短い断片は的外れな漢字になりやすい（きょ → 居）ので、それより短い区間はかなのまま見せる
     static let liveConversionMinLength = 4
 
-    /// 打っている途中に見せる文字列。Enter で確定するのもこれ。日本語区間は長ければ変換し、短ければかなのまま、英語区間は打ったまま
+    /// 打っている途中に見せる文字列。Enter で確定するのもこれ。日本語区間は長ければ変換し、短ければかなのまま、英語区間は打ったまま。
+    /// かなのまま見せるのは見た目だけで、後ろの区間の左の文脈には変換した表記を渡す
     public func liveText(_ input: String, leading: Leading = .start) -> String {
-        shownText(input, leading: leading, minLength: Self.liveConversionMinLength)
+        let segments = segment(input, leading: leading)
+        return zip(segments, displays(of: segments.map(ShownSpan.init))).map { segment, display in
+            guard let display else { return segment.output }
+            return segment.reading.count < Self.liveConversionMinLength ? segment.reading : display.text
+        }.joined()
     }
 
-    /// 日本語区間をすべて表示の変換にした文字列。打っている途中の表示から、かなのまま見せる規則を外したもの
+    /// 日本語区間をすべて表示の変換にした文字列
     public func displayText(_ input: String, leading: Leading = .start) -> String {
-        shownText(input, leading: leading, minLength: 0)
+        let segments = segment(input, leading: leading)
+        return zip(segments, displays(of: segments.map(ShownSpan.init))).map { segment, display in
+            display?.text ?? segment.output
+        }.joined()
     }
 
-    /// 区切りを選び、前の区間から順に表示する文字列を作る。日本語区間は、それまでに表示した文字列を左の文脈にして表示の変換をする
-    private func shownText(_ input: String, leading: Leading, minLength: Int) -> String {
-        var shown = ""
-        for segment in segment(input, leading: leading) {
-            guard segment.kind == .japanese else {
-                shown += segment.output
-                continue
-            }
-            guard segment.reading.count >= minLength else {
-                shown += segment.reading
-                continue
-            }
-            shown += japaneseConverter.display(kana: segment.reading, context: segment.context, left: shown)?.text ?? segment.output
+    /// 表示する 1 区間。日本語区間は表示の変換で表記を決め、それ以外は決まった文字列を表示する
+    enum ShownSpan {
+        case japanese(kana: String, context: JapaneseContext)
+        case fixed(String)
+
+        init(_ segment: Segment) {
+            self = segment.kind == .japanese ? .japanese(kana: segment.reading, context: segment.context) : .fixed(segment.output)
         }
-        return shown
+    }
+
+    /// 区間を前から順に表示の変換にする。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
+    /// 返す配列は spans と同じ順で、日本語区間の要素だけが表示の変換を持つ。
+    /// 日本語区間は採点の変換があるときだけ選ばれ、表示の変換は採点の変換があれば必ず返すので、日本語区間の表示の変換は必ずある
+    func displays(of spans: [ShownSpan], left: String = "") -> [JapaneseDisplay?] {
+        var shown = left
+        return spans.map { span in
+            switch span {
+            case .fixed(let text):
+                shown += text
+                return nil
+            case .japanese(let kana, let context):
+                guard let display = japaneseConverter.display(kana: kana, context: context, left: shown) else {
+                    preconditionFailure("日本語区間の表示の変換が無い: \(kana)")
+                }
+                shown += display.text
+                return display
+            }
+        }
     }
 
     /// この長さ以下の読める綴りは、英語の語であっても日本語として読む

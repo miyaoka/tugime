@@ -10,14 +10,14 @@ url="https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf/resolve/$revision/gg
 model="$root/.zenz/ggml-model-Q5_K_M.gguf"
 
 matches() {
-    [[ -f "$model" ]] && [[ "$(shasum -a 256 "$model" | cut -d' ' -f1)" == "$sha256" ]]
+    [[ -f "$1" ]] && [[ "$(shasum -a 256 "$1" | cut -d' ' -f1)" == "$sha256" ]]
 }
 
-if ! matches; then
+if ! matches "$model"; then
     mkdir -p "$(dirname "$model")"
     echo "== 取得 $url" >&2
     curl -fL --retry 3 --max-time 600 -o "$model.part" "$url"
+    matches "$model.part" || { echo "$url の SHA-256 が $sha256 と一致しない" >&2; exit 1; }
     mv "$model.part" "$model"
-    matches || { echo "$model の SHA-256 が $sha256 と一致しない" >&2; exit 1; }
 fi
 echo "$model"

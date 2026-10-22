@@ -67,7 +67,7 @@ let candidatePanel: IMKCandidates = {
     panel.setAttributes([IMKCandidatesSendServerKeyEventFirst: true])
     return panel
 }()
-// 辞書と Zenzai のモデルの読み込みを最初の打鍵より前に済ませる。モデルは最初の表示の変換で読まれ、2 秒ほどかかる
-_ = sharedSegmenter.displayText("nihongo")
-sharedSegmenter.endComposition()
+// 綴りの表・語表・辞書と Zenzai のモデルの読み込みを、最初の打鍵より前に済ませる
+_ = sharedSegmenter
+sharedConverter.preloadZenzai()
 NSApplication.shared.run()

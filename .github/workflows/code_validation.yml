@@ -93,7 +93,8 @@ jobs:
       - name: Build .app
         run: scripts/build-app.sh
 
-      # 利用者の Mac と同じく、組み立てたディレクトリが無い状態で辞書を読めるか。実行ファイルが arm64 だけか
+      # 利用者の Mac と同じく、組み立てたディレクトリが無い状態で辞書・Zenzai のモデル・llama.framework を読めるか。
+      # 実行ファイルと llama.framework が arm64 だけか
       - name: Check .app
         run: scripts/check-app.sh
 
