@@ -1,115 +1,14 @@
 # 回帰用の例文集。「打鍵列<TAB>期待する結果<TAB>出典」を 1 行に書く。
 # 打鍵列はこのユーザーの綴り（si ti tu hu ji、sya tya ja、x で小さい文字）で書く。
-# 出典の Meltype #N は yksr-melt/Meltype の誤判定 issue。入力の意図だけを借り、期待値はこの綴りで作り直した。
+# 例は利用者の報告から足す。他の IME の報告や、書き手が考えた例は入れない。
 kyouhagoogledekensaku	今日はgoogleで検索	完了条件
-pure	pure	Meltype #918
-image	image	Meltype #852
 rate	rate	契約
-exe	exe	Meltype #887
-fusion	fusion	Meltype #346
 main	main	契約
-mainnipushsuru	mainにpushする	Meltype #914
-Mainnoko-dodekakuninn	Mainのコードで確認	Meltype #348
-deepseek	deepseek	Meltype #347
-doomscroll	doomscroll	Meltype #876
-printenv	printenv	Meltype #915
-procrasticle	procrasticle	Meltype #537
-karenda-	カレンダー	Meltype #920
-githubya	githubや	Meltype #440
-cwdde	cwdで	Meltype #375
-cwdniha	cwdには	Meltype #812
-Androidha	Androidは	Meltype #1044
-nagasimasupa-rando	ナガシマスパーランド	Meltype #1045
-sonodokyumentowoA4saizudeinsatusitekudasai	そのドキュメントをA4サイズで印刷してください	Meltype #1005
-meta	meta	Meltype #1003
-claudecode	claudecode	Meltype #1001
-applenoiphonehakanaritakai	appleのiphoneはかなり高い	Meltype #982
-sengetuhatubainoapplenoiphonehatakai	先月発売のappleのiphoneは高い	Meltype #981
-siri-zu	シリーズ	Meltype #853
-tonewotyouseisuru	toneを調整する	Meltype #723
-todorisuto	todoリスト	Meltype #1028
-re-torimitto	レートリミット	Meltype #705
-url	url	Meltype #253
-yachi8000	yachi8000	Meltype #1013
-mendokuseena	めんどくせえな	Meltype #544
-isyokujoutai	移植状態	Meltype #823
-cattodoghakenkasuru	catとdogは喧嘩する	Meltype #714
-nasasou	なさそう	Meltype #825
-Windowswotatiageru	Windowsを立ち上げる	Meltype #641
-dositano	どしたの	Meltype #1014
-kyouhisasiburi	今日久しぶり	Meltype #872
-ninatta	になった	Meltype #917
-betunisoreGitHubdeii	別にそれGitHubでいい	Meltype #546
-nigakkityuukann	二学期中間	Meltype #1037
-sitanode	したので	Meltype #1019
-autoclicker	autoclicker	Meltype #822
-tver	tver	Meltype #735
-whois	whois	Meltype #616
-imaopenno	今openの	Meltype #485
-meado	メアド	Meltype #880
-data	data	Meltype #602
-opencode	opencode	Meltype #597
-i18n	i18n	Meltype #434
-McAfeeto	McAfeeと	Meltype #266
-abctodef	abcとdef	Meltype #154
-syotakonn	ショタコン	Meltype #196
-anata	あなた	Meltype #65
-AInituite	AIについて	Meltype #129
-featuresno	featuresの	Meltype #408
-overcute	overcute	Meltype #406
-enshittification	enshittification	Meltype #718
-feature	feature	Meltype #12
-hosuthingu	ホスティング	Meltype #153
-englishtojapanesewomazeteuteru	englishとjapaneseを混ぜて打てる	Meltype #712
-oemnopasokonn	oemのパソコン	Meltype #455
-youryou	容量	Meltype #926
-sya-nasi	しゃーなし	Meltype #368
-itiriaru	一理ある	Meltype #82
-mobisode	mobisode	Meltype #732
-kyouhameetinggaarimasu	今日はmeetingがあります	Meltype #1
-netizenry	netizenry	Meltype #733
-adware	adware	Meltype #691
-mudawodecluttersuru	無駄をdeclutterする	Meltype #422
-ageasitoruna	揚げ足取るな	Meltype #147
-handanwodelegatesuru	判断をdelegateする	Meltype #357
-robonomics	robonomics	Meltype #731
-adtech	adtech	Meltype #730
-openstreetmap	openstreetmap	Meltype #725
-binge-watch	binge-watch	Meltype #724
-greedflation	greedflation	Meltype #692
-datamation	datamation	Meltype #690
-enumerate	enumerate	Meltype #506
-tmux	tmux	Meltype #457
-memoirs	memoirs	Meltype #378
-gameover	gameover	Meltype #377
-ad-blocker	ad-blocker	Meltype #727
-malvertising	malvertising	Meltype #726
-infobesity	infobesity	Meltype #538
-guesstimation	guesstimation	Meltype #683
-fatigue	fatigue	Meltype #536
-katiwodefinesuru	価値をdefineする	Meltype #421
-bio-break	bio-break	Meltype #533
-overchoice	overchoice	Meltype #535
-zenn.dev	zenn.dev	Meltype #717
-Finfluencer	Finfluencer	Meltype #689
-mondaiwodefusesuru	問題をdefuseする	Meltype #419
-yahoyaho	やほやほ	Meltype #424
-passwordnisite	passwordにして	Meltype #376
-suityoku	垂直	Meltype #885
-DeVitode	DeVitoで	Meltype #268
-tabde	tabで	Meltype #220
-dlsite	dlして	Meltype #886
-pedia	pedia	Meltype #207
-reflectsareta	reflectされた	Meltype #77
-invitesimasita	inviteしました	Meltype #69
-issuetateta	issue立てた	Meltype #121
-tuidenifetch	ついでにfetch	Meltype #407
-lo-fi	lo-fi	Meltype #263
-vibecoding	vibecoding	Meltype #413
-changesuru	changeする	Meltype #411
 konnya	今夜	契約
 ga	が	利用者の報告
 deno	での	利用者の報告
 utte	うって	利用者の報告
 ie	家	利用者の報告
 watasiha,googlewotukau.	私は、googleを使う。	利用者の報告
+jaasousiro	じゃあそうしろ	完了条件
+sukosimatte	少し待って	利用者の報告
