@@ -5,8 +5,8 @@ set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 app="$root/dist/tugime.app"
-aside="$root/.build-aside"
+aside=$(mktemp -d)
 
-mv "$root/.build" "$aside"
-trap 'mv "$aside" "$root/.build"' EXIT
+mv "$root/.build" "$aside/"
+trap 'mv "$aside/.build" "$root/" && rmdir "$aside"' EXIT
 "$app/Contents/MacOS/tugime" --check
