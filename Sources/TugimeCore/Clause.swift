@@ -82,6 +82,29 @@ extension Segmenter {
         return Array(clauses[..<index]) + [resized] + rest + Array(clauses[(spanIndices.last! + 1)...])
     }
 
+    /// index の文節までを確定するときの、確定する文字列、残りの文節、残りの打鍵列。
+    /// 日本語区間の途中で切るときは、残りをその位置から始まる区間として持ち直す。切る位置に当たる打鍵が決まらなければ nil
+    public func commit(_ clauses: [Clause], through index: Int) -> (text: String, rest: [Clause], keys: String)? {
+        let text = clauses[...index].map(\.output).joined()
+        var rest = Array(clauses[(index + 1)...])
+        if let next = rest.first, next.span == clauses[index].span {
+            let span = next.span
+            let done = clauses[...index].filter { $0.span == span }.map(\.reading.count).reduce(0, +)
+            guard let (_, tail) = table.split(span.source, kana: span.reading, atKana: done) else { return nil }
+            let remaining = ClauseSpan(index: span.index, source: tail, reading: String(span.reading.dropFirst(done)), context: .afterWord)
+            for i in rest.indices where rest[i].span == span {
+                rest[i].span = remaining
+            }
+        }
+        var keys = ""
+        var lastSpan: ClauseSpan?
+        for clause in rest where clause.span != lastSpan {
+            keys += clause.span.source
+            lastSpan = clause.span
+        }
+        return (text, rest, keys)
+    }
+
     /// 区間の読みのうち offset かな目から後ろを、変換エンジンの文節に分ける
     private func japaneseClauses(from offset: Int, in span: ClauseSpan) -> [Clause] {
         let kana = String(span.reading.dropFirst(offset))

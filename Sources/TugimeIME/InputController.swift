@@ -268,7 +268,11 @@ final class TugimeInputController: IMKInputController {
         let panelVisible = candidatePanel.isVisible()
         switch event.keyCode {
         case KeyCode.returnKey, KeyCode.enter:
-            commit(client)
+            if event.modifierFlags.contains(.shift) {
+                commitThroughFocus(client)
+            } else {
+                commit(client)
+            }
         case KeyCode.space, KeyCode.down:
             if panelVisible {
                 moveCandidate(by: 1, client: client)
@@ -373,6 +377,24 @@ final class TugimeInputController: IMKInputController {
     /// Space を押す前に表示する文字列
     private var liveText: String {
         sharedSegmenter.liveText(keys, leading: leading)
+    }
+
+    /// 選んでいる文節までを確定し、残りの文節は変換したまま、次の文節を選んだ状態で残す。
+    /// 選んでいるのが最後の文節なら全体を確定する。切る位置に当たる打鍵が決まらなければ何もしない
+    private func commitThroughFocus(_ client: IMKTextInput) {
+        guard let clauses, focus < clauses.count - 1 else {
+            commit(client)
+            return
+        }
+        guard let result = sharedSegmenter.commit(clauses, through: focus) else { return }
+        candidatePanel.hide()
+        client.insertText(result.text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        keys = result.keys
+        self.clauses = result.rest
+        focus = 0
+        // 残りを打っている途中の表示に戻したときは、確定した文字列の後ろとして区切る
+        leading = Self.leadingContext(of: client)
+        showMarkedText(client)
     }
 
     /// 未確定の文字列を、表示しているとおりに確定する

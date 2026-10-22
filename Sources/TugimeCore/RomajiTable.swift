@@ -82,6 +82,27 @@ public struct RomajiTable: Sendable {
         return readings(from: 0, in: chars).first { $0.end == chars.count }?.kana
     }
 
+    /// 読みが kana の綴りを、読みの先頭 kanaCount 文字に当たる綴りと残りの綴りに分ける。
+    /// 1 つの綴りが複数のかなになる（kya → きゃ）ところの途中では切れないので nil
+    public func split(_ text: String, kana whole: String, atKana kanaCount: Int) -> (head: String, tail: String)? {
+        let chars = Array(text)
+        let head = String(whole.prefix(kanaCount))
+        let tail = String(whole.dropFirst(kanaCount))
+        // 位置ごとに、そこまでで読めたかなのうち head の先頭に一致するもの
+        var reached: [Int: Set<String>] = [0: [""]]
+        for pos in 0..<chars.count {
+            for kana in reached[pos] ?? [] {
+                if kana == head, reading(of: String(chars[pos...])) == tail {
+                    return (String(chars[..<pos]), String(chars[pos...]))
+                }
+                for edge in edges(at: pos, in: chars) where head.hasPrefix(kana + edge.kana) {
+                    reached[edge.end, default: []].insert(kana + edge.kana)
+                }
+            }
+        }
+        return nil
+    }
+
     /// 綴りの表の 1 項目だけで 1 つのかな（が・と・で・の など）になる綴りか。長音記号は含めない
     public func isSingleKana(_ text: some StringProtocol) -> Bool {
         guard let kana = entries[String(text)] else { return false }

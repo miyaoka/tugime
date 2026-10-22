@@ -79,4 +79,32 @@ private final class KanaEcho: JapaneseConverting {
         #expect(clauses.map(\.kind) == [.english, .japanese])
         #expect(segmenter.resize(clauses, at: 0, by: 1) == clauses)
     }
+
+    @Test func committingThroughAClauseKeepsTheRestConverted() throws {
+        let clauses = segmenter.clauses("kyouhaii")
+        let first = try #require(segmenter.commit(clauses, through: 0))
+        #expect(first.text == "きょ")
+        #expect(readings(first.rest) == ["うは", "いい"])
+        #expect(first.keys == "uhaii")
+        let second = try #require(segmenter.commit(clauses, through: 1))
+        #expect(second.keys == "ii")
+        // 残りの区間の中で伸縮しても、残りの読みの外へ出ない
+        #expect(readings(segmenter.resize(second.rest, at: 0, by: 1)) == ["いい"])
+    }
+
+    @Test func committingAtASpanBoundaryLeavesTheNextSpans() throws {
+        let clauses = segmenter.clauses("cwdde")
+        #expect(clauses.map(\.kind) == [.english, .japanese])
+        let result = try #require(segmenter.commit(clauses, through: 0))
+        #expect(result.text == clauses[0].output)
+        #expect(result.rest == [clauses[1]])
+        #expect(clauses[0].span.source + result.keys == "cwdde")
+    }
+
+    @Test func committingInsideOneSpellingIsRefused() {
+        // きゃ は 1 つの綴り kya なので、き と ゃ のあいだに当たる打鍵は無い
+        let clauses = segmenter.resize(segmenter.clauses("kyaku"), at: 0, by: -1)
+        #expect(readings(clauses) == ["き", "ゃく"])
+        #expect(segmenter.commit(clauses, through: 0) == nil)
+    }
 }
