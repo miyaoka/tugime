@@ -55,7 +55,9 @@ xattr -dr com.apple.quarantine "$dest"
 "$exe" --register
 # 動いている古い版を止める。次に入力源が選ばれたときに新しい版が起動する
 # 実行ファイル名はどの .app も tugime なので、実行ファイルのパスと文字列として一致するものだけを止める
-read -r -a pids <<< "$(ps -axo pid=,comm= | exe="$exe" awk '{ pid = $1; sub(/^ *[0-9]+ /, ""); if ($0 == ENVIRON["exe"]) printf "%s ", pid }')"
+# 代入を挟み、ps の失敗を set -e で止める
+found=$(ps -axo pid=,comm= | exe="$exe" awk '{ pid = $1; sub(/^ *[0-9]+ /, ""); if ($0 == ENVIRON["exe"]) printf "%s ", pid }')
+read -r -a pids <<< "$found"
 (( ${#pids[@]} == 0 )) || kill "${pids[@]}"
 echo "== 配置 $dest"
 # システム設定は、ログインし直すまで新しい入力ソースを一覧に出さない（https://developer.apple.com/forums/thread/775526）
