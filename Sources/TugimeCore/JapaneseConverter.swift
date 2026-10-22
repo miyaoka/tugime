@@ -14,6 +14,8 @@ public enum JapaneseContext: Sendable, Hashable {
     case start
     /// 前の語に続く形として評価する。英語区間の直後（混在文の英語は名詞として働く）と、入力欄の文の途中から打ち始めたとき
     case afterWord
+    /// 数字に続く形として評価する。数字は変換エンジンがそのまま扱えるので、助数詞（円・回・個）として読ませる
+    case afterNumber(String)
 }
 
 public protocol JapaneseConverting: AnyObject {
@@ -37,10 +39,22 @@ public final class AzooKeyConverter: JapaneseConverting {
     private let converter: KanaKanjiConverter
     /// 打鍵のたびに同じ区間を変換し直さないためのもの。未確定の文字列の寿命だけ持つ
     private var cache: [CacheKey: JapaneseReading?] = [:]
-    /// 代わりの名詞だけを変換した評価値。入力によらないので 1 度だけ求める
-    private lazy var nounStandInValue: Double? = candidates(Self.nounStandIn.kana, nBest: Self.scoringBest)
-        .first { $0.text == Self.nounStandIn.word }
-        .map { Double($0.value) }
+    /// 前に置くものだけを変換した評価値。未確定の文字列の寿命だけ持つ
+    private var prefixValues: [String: Double?] = [:]
+
+    /// かなの前に置いて文脈にするもの。input は変換エンジンに渡す形、shown は変換結果の先頭に現れる形
+    private struct Prefix {
+        var input: String
+        var shown: String
+    }
+
+    private static func prefix(for context: JapaneseContext) -> Prefix? {
+        switch context {
+        case .start: nil
+        case .afterWord: Prefix(input: nounStandIn.kana, shown: nounStandIn.word)
+        case .afterNumber(let digits): Prefix(input: digits, shown: digits)
+        }
+    }
 
     private struct CacheKey: Hashable {
         var kana: String
@@ -73,22 +87,22 @@ public final class AzooKeyConverter: JapaneseConverting {
     public func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
         let key = CacheKey(kana: kana, context: context)
         if let cached = cache[key] { return cached }
-        let result: JapaneseReading? = switch context {
-        case .start:
-            candidates(kana, nBest: Self.scoringBest).first.map { JapaneseReading(text: $0.text, value: Double($0.value)) }
-        case .afterWord:
-            convertAfterNoun(kana)
+        let result: JapaneseReading?
+        if let prefix = Self.prefix(for: context) {
+            result = convert(kana, after: prefix)
+        } else {
+            result = candidates(kana, nBest: Self.scoringBest).first.map { JapaneseReading(text: $0.text, value: Double($0.value)) }
         }
         cache[key] = result
         return result
     }
 
     public func alternatives(kana: String, context: JapaneseContext) -> [String] {
-        let texts: [String] = switch context {
-        case .start:
-            candidates(kana, nBest: Self.listingBest).map(\.text)
-        case .afterWord:
-            candidates(Self.nounStandIn.kana + kana, nBest: Self.listingBest).compactMap(Self.dropNounStandIn)
+        let texts: [String]
+        if let prefix = Self.prefix(for: context) {
+            texts = candidates(prefix.input + kana, nBest: Self.listingBest).compactMap { Self.drop(prefix, from: $0) }
+        } else {
+            texts = candidates(kana, nBest: Self.listingBest).map(\.text)
         }
         var seen: Set<String> = []
         return texts.filter { seen.insert($0).inserted }
@@ -96,6 +110,7 @@ public final class AzooKeyConverter: JapaneseConverting {
 
     public func endComposition() {
         cache = [:]
+        prefixValues = [:]
     }
 
     private func candidates(_ kana: String, nBest: Int) -> [Candidate] {
@@ -117,19 +132,27 @@ public final class AzooKeyConverter: JapaneseConverting {
         return only.mid == MIDData.一般.mid && only.lcid == CIDData.固有名詞.cid
     }
 
-    /// 辞書が名詞と後ろの語を 1 語にまとめることがあるので、語の切れ目ではなく文字列で名詞を外す
-    private static func dropNounStandIn(_ candidate: Candidate) -> String? {
-        guard candidate.text.hasPrefix(nounStandIn.word) else { return nil }
-        let rest = String(candidate.text.dropFirst(nounStandIn.word.count))
+    /// 辞書が前に置いたものと後ろの語を 1 語にまとめることがあるので、語の切れ目ではなく文字列で外す
+    private static func drop(_ prefix: Prefix, from candidate: Candidate) -> String? {
+        guard candidate.text.hasPrefix(prefix.shown) else { return nil }
+        let rest = String(candidate.text.dropFirst(prefix.shown.count))
         return rest.isEmpty ? nil : rest
     }
 
-    /// 代わりの名詞を前に置いて変換し、名詞だけの評価値を差し引く
-    private func convertAfterNoun(_ kana: String) -> JapaneseReading? {
-        guard let nounOnly = nounStandInValue,
-              let withNoun = candidates(Self.nounStandIn.kana + kana, nBest: Self.scoringBest).first(where: { Self.dropNounStandIn($0) != nil }),
-              let text = Self.dropNounStandIn(withNoun)
+    /// 前に置くものだけの評価値。差し引きたいのは前に置いたものがある確からしさなので、表記（3 と 三）は問わず最良の候補で測る
+    private func value(of prefix: Prefix) -> Double? {
+        if let cached = prefixValues[prefix.input] { return cached }
+        let value = candidates(prefix.input, nBest: Self.scoringBest).first.map { Double($0.value) }
+        prefixValues[prefix.input] = value
+        return value
+    }
+
+    /// 前に置いたものに続けて変換し、前に置いたものだけの評価値を差し引く
+    private func convert(_ kana: String, after prefix: Prefix) -> JapaneseReading? {
+        guard let prefixOnly = value(of: prefix),
+              let combined = candidates(prefix.input + kana, nBest: Self.scoringBest).first(where: { Self.drop(prefix, from: $0) != nil }),
+              let text = Self.drop(prefix, from: combined)
         else { return nil }
-        return JapaneseReading(text: text, value: Double(withNoun.value) - nounOnly)
+        return JapaneseReading(text: text, value: Double(combined.value) - prefixOnly)
     }
 }

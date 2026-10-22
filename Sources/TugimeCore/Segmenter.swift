@@ -71,6 +71,12 @@ public final class Segmenter {
         var japaneseContext: JapaneseContext { self == .start ? .start : .afterWord }
     }
 
+    /// 英語区間に続く日本語区間の評価のしかた。英語区間が数字で終わるなら、その数字に続く形（1500 円、3 回）にする
+    static func context(after text: some Collection<Character>) -> JapaneseContext {
+        let digits = String(text.reversed().prefix { $0.isASCII && $0.isNumber }.reversed())
+        return digits.isEmpty ? .afterWord : .afterNumber(digits)
+    }
+
     /// この長さ以下の読める綴りは、英語の語表に載っていても日本語として読む
     static let maxJapaneseFirstLength = 2
 
@@ -135,7 +141,7 @@ public final class Segmenter {
                 // 長音だけの区間は日本語として成り立たない（binge-watch の - など）
                 if kana.allSatisfy({ $0 == "ー" }) { continue }
                 // 日本語区間は日本語区間に続かないので、先頭でなければ直前は英語区間
-                let context: JapaneseContext = start == 0 ? leading : .afterWord
+                let context = start == 0 ? leading : Self.context(after: chars[..<start])
                 guard let reading = japaneseConverter.convert(kana: kana, context: context) else { continue }
                 japaneseEnds.insert(end)
                 let s = weights.japanese * reading.value - weights.japaneseSpanPenalty

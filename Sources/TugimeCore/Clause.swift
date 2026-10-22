@@ -25,7 +25,9 @@ extension Segmenter {
         let segments = segment(input, leading: leading)
         return segments.enumerated().map { index, segment in
             // 句読点の直後は文頭、入力の先頭は入力欄の前の文脈、それ以外は前の語に続く形として変換する
-            let context: JapaneseContext = index == 0 ? leading.japaneseContext : segments[index - 1].kind == .punctuation ? .start : .afterWord
+            let context: JapaneseContext = index == 0 ? leading.japaneseContext
+                : segments[index - 1].kind == .punctuation ? .start
+                : Self.context(after: segments[index - 1].source)
             return Clause(kind: segment.kind, source: segment.source, candidates: candidates(for: segment, context: context), selected: 0)
         }
     }
