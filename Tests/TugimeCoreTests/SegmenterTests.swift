@@ -1,162 +1,65 @@
+import Foundation
 import Testing
 @testable import TugimeCore
+import TugimeCorpus
 
-/// かなをそのまま返す変換。評価値は長さに比例させ、区切りの規則だけを見る。文節は 2 かなずつに分ける
-private final class KanaEcho: JapaneseConverting {
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
-        let chars = Array(kana)
-        let clauses = stride(from: 0, to: chars.count, by: 2).map {
-            let part = String(chars[$0..<min($0 + 2, chars.count)])
-            return JapaneseClause(reading: part, text: part)
-        }
-        return JapaneseReading(text: kana, value: -2 * Double(kana.count), clauses: clauses, context: context == .afterCaret ? .afterWord : context)
-    }
+/// 本物の変換器と、それで組んだ Segmenter。作るたびに辞書と語表を読むので、全テストで共有する
+private enum Shared {
+    static let converter = AzooKeyConverter(zenzaiWeight: nil)
+    static let table = Result { try RomajiTable.bundled() }
+    static let english = Result { try EnglishModel.bundled() }
+    static let segmenter = Result { try make(converter) }
 
-    func alternatives(kana: String, context: JapaneseContext) -> [String] { [kana] }
-
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
-        convert(kana: kana, context: context).map { JapaneseDisplay(text: $0.text, clauses: $0.clauses) }
-    }
-
-    func endComposition() {}
-}
-
-/// 長い読みほど評価値が長さ以上に下がる変換。読めるローマ字を日本語区間に分ける区切りを選ばせる。
-/// 変換結果は読みを [] で囲み、どの読みを 1 回で変換したかを出力から読めるようにする。maxLength より長い読みは変換できない
-private final class LongReadingPenalty: JapaneseConverting {
-    let maxLength: Int
-
-    init(maxLength: Int = .max) {
-        self.maxLength = maxLength
-    }
-
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
-        guard kana.count <= maxLength else { return nil }
-        let text = "[\(kana)]"
-        return JapaneseReading(text: text, value: -Double(kana.count * kana.count), clauses: [JapaneseClause(reading: kana, text: text)], context: context == .afterCaret ? .afterWord : context)
-    }
-
-    func alternatives(kana: String, context: JapaneseContext) -> [String] { [kana] }
-
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
-        convert(kana: kana, context: context).map { JapaneseDisplay(text: $0.text, clauses: $0.clauses) }
-    }
-
-    func endComposition() {}
-}
-
-@Suite struct JapaneseSpanJoinTests {
-    @Test func readableRomajiStaysOneJapaneseSpan() throws {
-        let segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: LongReadingPenalty())
-        let segments = segmenter.segment("jaasousiro")
-        #expect(segments.map(\.kind) == [.japanese])
-        #expect(segments.map(\.output) == ["[じゃあそうしろ]"])
-    }
-
-    @Test func spansStaySplitWhenTheJoinedReadingCannotBeConverted() throws {
-        let segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: LongReadingPenalty(maxLength: 4))
-        let segments = segmenter.segment("jaasousiro")
-        #expect(segments.map(\.kind).allSatisfy { $0 == .japanese })
-        #expect(segments.count > 1)
-        #expect(segments.map(\.reading).joined() == "じゃあそうしろ")
-        #expect(segments.allSatisfy { $0.output == "[\($0.reading)]" })
-        #expect(segmenter.clauses("jaasousiro").map(\.output).joined() == segments.map(\.output).joined())
+    static func make(_ japanese: JapaneseConverting) throws -> Segmenter {
+        try Segmenter(table: table.get(), english: english.get(), japanese: japanese)
     }
 }
 
-@Suite struct ClauseConversionTests {
-    let segmenter: Segmenter
-
-    init() throws {
-        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: KanaEcho())
-    }
-
-    /// KanaEcho は文節を 2 かなずつに分けるので、kyouhaii は きょ / うは / いい になる
-    @Test func convertsOnlyTheFocusedJapaneseClause() {
-        let clauses = segmenter.clauses("kyouhaii")
-        #expect(clauses.map(\.reading) == ["きょ", "うは", "いい"])
-        #expect(segmenter.convertClause(clauses, at: 1, to: .katakana) == "ウハ")
-        #expect(segmenter.convertClause(clauses, at: 1, to: .halfwidthKatakana) == "ｳﾊ")
-        #expect(segmenter.convertClause(clauses, at: 1, to: .roman) == "uha")
-        #expect(segmenter.convertClause(clauses, at: 0, to: .roman) == "kyo")
-        #expect(segmenter.convertClause(clauses, at: 2, to: .fullwidthRoman) == "ｉｉ")
-    }
-
-    @Test func convertsAnEnglishClauseByItsTypedSpelling() throws {
-        let clauses = segmenter.clauses("kyouhagoogle")
-        let english = try #require(clauses.firstIndex { $0.kind == .english })
-        #expect(segmenter.convertClause(clauses, at: english, to: .roman) == "google")
-        #expect(segmenter.convertClause(clauses, at: english, to: .fullwidthRoman) == "ｇｏｏｇｌｅ")
-    }
-
-    /// きゃ の途中で文節を切ると、文節に当たる打鍵が無い。かなの文字種にはでき、英字にはできない
-    @Test func refusesLettersForAClauseCutInsideOneSpelling() {
-        let clauses = segmenter.resize(segmenter.clauses("kyaku"), at: 0, by: -1)
-        #expect(clauses.map(\.reading) == ["き", "ゃく"])
-        #expect(segmenter.convertClause(clauses, at: 0, to: .katakana) == "キ")
-        #expect(segmenter.convertClause(clauses, at: 1, to: .katakana) == "ャク")
-        #expect(segmenter.convertClause(clauses, at: 0, to: .roman) == nil)
-        #expect(segmenter.convertClause(clauses, at: 1, to: .fullwidthRoman) == nil)
-    }
-}
-
-/// KanaEcho と同じ区切りにし、表示の変換は表記を « » で囲んで、渡された左の文字列を覚える
+/// 本物の変換器に処理を任せ、表示の変換に渡された左の文字列を記録する
 private final class LeftRecorder: JapaneseConverting {
-    private let echo = KanaEcho()
+    private let base: JapaneseConverting = Shared.converter
     private(set) var lefts: [String] = []
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { echo.convert(kana: kana, context: context) }
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { base.convert(kana: kana, context: context) }
 
-    func alternatives(kana: String, context: JapaneseContext) -> [String] { [] }
+    func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
 
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
         lefts.append(left)
-        return JapaneseDisplay(text: "«\(kana)»", clauses: [JapaneseClause(reading: kana, text: "«\(kana)»")])
+        return base.display(kana: kana, context: context, left: left)
     }
 
-    func endComposition() {}
-}
-
-@Suite struct LeftContextTests {
-    fileprivate let recorder = LeftRecorder()
-    let segmenter: Segmenter
-    /// 短い日本語区間・英語区間・長い日本語区間の順に並ぶ入力
-    let input = "decwdkyouhaii"
-
-    init() throws {
-        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: recorder)
-    }
-
-    @Test func liveTextPassesTheConvertedShortSpanToTheRight() {
-        #expect(segmenter.segment(input).map(\.kind) == [.japanese, .english, .japanese])
-        #expect(segmenter.liveText(input) == "でcwd«きょうはいい»")
-        #expect(recorder.lefts == ["", "«で»cwd"])
-    }
-
-    @Test func clausesPassTheSameLeftAsLiveText() {
-        _ = segmenter.clauses(input)
-        #expect(recorder.lefts == ["", "«で»cwd"])
-    }
-
-    @Test func resizingRedisplaysTheLaterSpansWithTheNewLeft() {
-        let clauses = segmenter.clauses("kyouhaiicwdde")
-        #expect(clauses.map(\.kind) == [.japanese, .english, .japanese])
-        let resized = segmenter.resize(clauses, at: 0, by: -1)
-        #expect(resized.map(\.output) == ["«きょうはい»", "«い»", "cw", "«っで»"])
-        #expect(recorder.lefts.last == "«きょうはい»«い»cw")
-    }
+    func endComposition() { base.endComposition() }
 }
 
 @Suite struct SegmenterTests {
     let segmenter: Segmenter
 
     init() throws {
-        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: KanaEcho())
+        segmenter = try Shared.segmenter.get()
     }
 
     private func output(_ input: String, leading: Segmenter.Leading = .start) -> String {
         segmenter.segment(input, leading: leading).map(\.output).joined()
     }
+
+    private func readings(_ clauses: [Clause]) -> [String] {
+        clauses.map(\.reading)
+    }
+
+    // MARK: 例文集
+
+    /// 例文集の全件が、表示する文字列と一致する
+    @Test func matchesEveryCorpusExample() throws {
+        let path = URL(filePath: #filePath).appending(path: "../../../corpus/examples.tsv").standardized.path
+        let examples = try CorpusExample.load(path: path)
+        #expect(!examples.isEmpty)
+        for example in examples {
+            #expect(segmenter.displayText(example.input) == example.expected, "\(example.input)")
+        }
+    }
+
+    // MARK: 日英の区切り
 
     @Test(arguments: ["ga", "to", "de", "no", "ha", "wo", "ie", "a", "e"])
     func readsShortReadableSpellingsAsJapanese(input: String) {
@@ -168,29 +71,26 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.source).joined() == input)
     }
 
+    @Test(arguments: ["hee", "sugoi", "kawaii"])
+    func readsRomanizedJapaneseAsJapanese(input: String) {
+        #expect(segmenter.segment(input).map(\.kind) == [.japanese])
+    }
+
+    /// 長音を省いた綴りは利用者の綴りでその語の読みにならないので、英語の語として残る
+    @Test func keepsSpellingsWithoutTheLongVowelAsEnglish() {
+        #expect(segmenter.segment("tokyo").map(\.kind) == [.english])
+    }
+
+    // MARK: 句読点と記号
+
     @Test func punctuationFollowsTheSpanBefore() {
         #expect(output("kore.") == "これ。")
         #expect(output("kore,sore?") == "これ、それ？")
         #expect(output("Hello.") == "Hello.")
-        #expect(output("ie~") == "いえ〜")
-        #expect(output("ie!~") == "いえ！〜")
+        #expect(output("hee~") == "へえ〜")
+        #expect(output("sugoi!~") == "すごい！〜")
         #expect(output("cd~") == "cd~")
-    }
-
-    @Test func symbolKeysAreSymbolsWhateverSurroundsThem() {
-        #expect(output("[google]") == "「google」")
-        #expect(output("google/apple") == "google・apple")
-        #expect(output("zhzjzkzl") == "←↓↑→")
-        #expect(output("z.z/z-") == "…・〜")
-        // z, は記号にしないので、英単語の後のカンマは打ったまま残る
-        #expect(output("quiz,") == "quiz,")
-        #expect(output("z[kagiz]") == "『かぎ』")
-    }
-
-    @Test func symbolKeysCutTheInput() {
-        #expect(segmenter.segment("zhou").map(\.source) == ["zh", "ou"])
-        #expect(output("zhou") == "←おう")
-        #expect(output("iezlie") == "いえ→いえ")
+        #expect(output("quiz,quote,") == "quiz,quote,")
     }
 
     @Test func leadingPunctuationFollowsTheTextBeforeTheCaret() {
@@ -201,28 +101,47 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(output("~", leading: .afterEnglish) == "~")
     }
 
-    private func readings(_ clauses: [Clause]) -> [String] {
-        clauses.map(\.reading)
+    @Test func symbolKeysAreSymbolsWhateverSurroundsThem() {
+        #expect(output("[google]wokensaku") == "「google」を検索")
+        #expect(output("google/apple") == "google・apple")
+        #expect(output("zhzjzkzl") == "←↓↑→")
+        #expect(output("z.z/z-") == "…・〜")
+        #expect(output("10z-20") == "10〜20")
+        let bracketed = segmenter.segment("z[kagiz]")
+        #expect(bracketed.map(\.kind) == [.punctuation, .japanese, .punctuation])
+        #expect(bracketed.map(\.reading) == ["『", "かぎ", "』"])
     }
 
+    @Test func symbolKeysCutTheInput() {
+        #expect(segmenter.segment("zhou").map(\.source) == ["zh", "ou"])
+        #expect(output("sorezlkore") == "それ→これ")
+        // 記号の後ろは文の途中として読めるので、助詞が続く
+        #expect(output("sorezlmade") == "それ→まで")
+        #expect(output("[google]made") == "「google」まで")
+    }
+
+    // MARK: 文節
+
     @Test func splitsJapaneseSpansIntoClauses() {
-        #expect(readings(segmenter.clauses("kyouhaii")) == ["きょ", "うは", "いい"])
+        #expect(readings(segmenter.clauses("kyouhaiitenkidesu")) == ["きょうはいい", "てんきです"])
     }
 
     @Test func resizingRedividesTheRestOfTheSpan() {
-        let clauses = segmenter.clauses("kyouhaii")
-        #expect(readings(segmenter.resize(clauses, at: 0, by: 1)) == ["きょう", "はい", "い"])
-        #expect(readings(segmenter.resize(clauses, at: 0, by: -1)) == ["き", "ょう", "はい", "い"])
-        #expect(readings(segmenter.resize(clauses, at: 1, by: 1)) == ["きょ", "うはい", "い"])
+        let clauses = segmenter.clauses("kyouhaiitenkidesu")
+        #expect(readings(segmenter.resize(clauses, at: 0, by: -1)) == ["きょうはい", "い", "てんきです"])
+        #expect(readings(segmenter.resize(clauses, at: 0, by: 1)) == ["きょうはいいて", "んきです"])
+        #expect(readings(segmenter.resize(clauses, at: 1, by: -1)) == ["きょうはいい", "てんきで", "す"])
     }
 
     @Test func resizingStaysInsideTheSpan() {
-        let clauses = segmenter.clauses("kyouhaii")
-        let whole = segmenter.resize(clauses, at: 0, by: 4)
-        #expect(readings(whole) == ["きょうはいい"])
-        #expect(segmenter.resize(whole, at: 0, by: 1) == whole)
-        let single = segmenter.resize(clauses, at: 0, by: -1)
-        #expect(segmenter.resize(single, at: 0, by: -1) == single)
+        let clauses = segmenter.clauses("kyouhagoogle")
+        #expect(clauses.map(\.kind) == [.japanese, .english])
+        // 区間の外へは伸ばさない
+        #expect(segmenter.resize(clauses, at: 0, by: 1) == clauses)
+        // 1 かなより短くしない
+        let single = segmenter.resize(segmenter.clauses("kyouhaiitenkidesu"), at: 1, by: -4)
+        #expect(readings(single) == ["きょうはいい", "て", "んきです"])
+        #expect(segmenter.resize(single, at: 1, by: -1) == single)
     }
 
     @Test func englishClausesDoNotResize() {
@@ -231,31 +150,97 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.resize(clauses, at: 0, by: 1) == clauses)
     }
 
+    @Test func convertsOnlyTheFocusedJapaneseClause() {
+        let clauses = segmenter.clauses("kyouhaiitenkidesu")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .katakana) == "テンキデス")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .halfwidthKatakana) == "ﾃﾝｷﾃﾞｽ")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .roman) == "tenkidesu")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .fullwidthRoman) == "ｔｅｎｋｉｄｅｓｕ")
+        #expect(segmenter.convertClause(clauses, at: 0, to: .hiragana) == "きょうはいい")
+    }
+
+    @Test func convertsAnEnglishClauseByItsTypedSpelling() throws {
+        let clauses = segmenter.clauses("kyouhagoogle")
+        let english = try #require(clauses.firstIndex { $0.kind == .english })
+        #expect(segmenter.convertClause(clauses, at: english, to: .roman) == "google")
+        #expect(segmenter.convertClause(clauses, at: english, to: .fullwidthRoman) == "ｇｏｏｇｌｅ")
+    }
+
+    // MARK: 途中の確定
+
     @Test func committingThroughAClauseKeepsTheRestConverted() throws {
-        let clauses = segmenter.clauses("kyouhaii")
+        let clauses = segmenter.resize(segmenter.clauses("kyouhaiitenkidesu"), at: 0, by: -2)
+        #expect(readings(clauses) == ["きょうは", "いい", "てんきです"])
         let first = try #require(segmenter.commit(clauses, through: 0))
-        #expect(first.text == "きょ")
-        #expect(readings(first.rest) == ["うは", "いい"])
-        #expect(first.keys == "uhaii")
+        #expect(first.text == clauses[0].output)
+        #expect(readings(first.rest) == ["いい", "てんきです"])
+        #expect(first.keys == "iitenkidesu")
         let second = try #require(segmenter.commit(clauses, through: 1))
-        #expect(second.keys == "ii")
+        #expect(second.keys == "tenkidesu")
         // 残りの区間の中で伸縮しても、残りの読みの外へ出ない
-        #expect(readings(segmenter.resize(second.rest, at: 0, by: 1)) == ["いい"])
+        #expect(readings(segmenter.resize(second.rest, at: 0, by: 1)) == ["てんきです"])
     }
 
     @Test func committingAtASpanBoundaryLeavesTheNextSpans() throws {
         let clauses = segmenter.clauses("cwdde")
-        #expect(clauses.map(\.kind) == [.english, .japanese])
         let result = try #require(segmenter.commit(clauses, through: 0))
-        #expect(result.text == clauses[0].output)
+        #expect(result.text == "cwd")
         #expect(result.rest == [clauses[1]])
-        #expect(clauses[0].span.source + result.keys == "cwdde")
+        #expect(result.keys == "de")
     }
 
-    @Test func committingInsideOneSpellingIsRefused() {
-        // きゃ は 1 つの綴り kya なので、き と ゃ のあいだに当たる打鍵は無い
-        let clauses = segmenter.resize(segmenter.clauses("kyaku"), at: 0, by: -1)
+    /// きゃ は 1 つの綴り kya なので、き と ゃ のあいだに当たる打鍵は無い。かなの文字種にはでき、英字にはできない
+    @Test func refusesLettersForACutInsideOneSpelling() {
+        let clauses = segmenter.resize(segmenter.resize(segmenter.clauses("kyaku"), at: 0, by: -1), at: 0, by: -1)
         #expect(readings(clauses) == ["き", "ゃく"])
+        #expect(segmenter.convertClause(clauses, at: 0, to: .katakana) == "キ")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .katakana) == "ャク")
+        #expect(segmenter.convertClause(clauses, at: 0, to: .roman) == nil)
+        #expect(segmenter.convertClause(clauses, at: 1, to: .fullwidthRoman) == nil)
         #expect(segmenter.commit(clauses, through: 0) == nil)
+    }
+}
+
+/// 後ろの区間の表示の変換に、前の区間の表示を左の文脈として渡す
+@Suite struct LeftContextTests {
+    fileprivate let recorder = LeftRecorder()
+    let segmenter: Segmenter
+    /// 短い日本語区間・英語区間・長い日本語区間の順に並ぶ入力。短い区間はかなのまま見せるが、変換すると かわ は 川 になる
+    let input = "kawacwdkyouhaii"
+
+    init() throws {
+        segmenter = try Shared.make(recorder)
+    }
+
+    /// 短い区間を変換した表記と英語区間をつないだもの。かなのままの表示（かわcwd）とは違う
+    private func convertedLeft() throws -> String {
+        let left = try Shared.segmenter.get().displayText("kawa") + "cwd"
+        #expect(left != "かわcwd")
+        return left
+    }
+
+    @Test func liveTextPassesTheConvertedShortSpanToTheRight() throws {
+        let left = try convertedLeft()
+        #expect(segmenter.segment(input).map(\.kind) == [.japanese, .english, .japanese])
+        #expect(segmenter.liveText(input).hasPrefix("かわcwd"))
+        #expect(recorder.lefts == ["", left])
+    }
+
+    @Test func clausesPassTheSameLeftAsLiveText() throws {
+        let left = try convertedLeft()
+        _ = segmenter.clauses(input)
+        #expect(recorder.lefts == ["", left])
+    }
+
+    @Test func resizingRedisplaysTheLaterSpansWithTheNewLeft() {
+        let clauses = segmenter.clauses("kyouhaiicwdde")
+        #expect(clauses.map(\.kind) == [.japanese, .english, .japanese])
+        let resized = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(readings(resized) == ["きょうはい", "い", "cwd", "で"])
+        #expect(recorder.lefts.last == resized.dropLast().map(\.output).joined())
+    }
+
+    private func readings(_ clauses: [Clause]) -> [String] {
+        clauses.map(\.reading)
     }
 }
