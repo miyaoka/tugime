@@ -96,10 +96,10 @@ jobs:
       - name: Build .app
         run: |
           set -euo pipefail
-          TUGIME_VERSION="${TAG#v}" scripts/build-app.sh
+          TUGIME_BUILD_CHANNEL=stable TUGIME_VERSION="${TAG#v}" scripts/build-app.sh
 
       - name: Check .app
-        run: scripts/check-app.sh
+        run: scripts/check-app.sh dist/tugime.app
 
       - name: Package tarball
         run: scripts/package.sh

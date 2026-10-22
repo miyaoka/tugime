@@ -16,7 +16,13 @@ Apple Silicon の macOS。動作は macOS 27 でだけ確かめている。
 
 ## 導入
 
-GitHub Releases の最新版を `~/Library/Input Methods` に配置して登録する。
+[mise](https://mise.jdx.dev/) でインストールする。`postinstall` がインストール直後に GitHub Releases の版を `~/Library/Input Methods` に配置して登録する。更新は `mise up` で反映する。
+
+```bash
+mise use -g 'github:miyaoka/tugime[postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
+```
+
+mise を使わない場合は、最新版を取得して配置する。更新は同じコマンドで上書きする。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | bash
@@ -24,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | ba
 
 Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開したフォルダーで `bash install.sh` を実行する。
 
-配置したら、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。更新は同じ手順で上書きする。
+初めて配置したときだけ、ログアウトしてログインし直す。システム設定はログインし直すまで新しい入力ソースを一覧に出さない。その後、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。
 
 配布物は ad-hoc 署名で、Apple の公証を受けていない。
 
@@ -33,9 +39,11 @@ Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開し
 Xcode（Swift 6.2 以降）が要る。組み立てのときに Zenzai のモデル（約 70MB）を Hugging Face から `.zenz/` に取得する。
 
 ```bash
-scripts/build-app.sh            # dist/tugime.app を組み立てて ad-hoc 署名する
-./install.sh dist/tugime.app    # 配置して登録する
+scripts/build-app.sh                    # dist/tugime Local.app を組み立てて ad-hoc 署名する
+./install.sh "dist/tugime Local.app"    # 配置して登録する
 ```
+
+ソースから組み立てたものは `tugime Local` という別の入力ソースになり、配布版の tugime と並べて入れられる。入力ソースの追加では `tugime Local (日本語)` を選ぶ。
 
 ## リリース
 

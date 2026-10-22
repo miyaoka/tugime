@@ -5,9 +5,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>__BUNDLE_ID__</string>
 	<key>CFBundleName</key>
-	<string>tugime</string>
+	<string>__NAME__</string>
 	<key>CFBundleDisplayName</key>
-	<string>tugime</string>
+	<string>__NAME__</string>
 	<key>CFBundleExecutable</key>
 	<string>tugime</string>
 	<key>CFBundlePackageType</key>
