@@ -1,0 +1,145 @@
+# リリースワークフロー
+# main への push で、直近 tag からの feat / fix があればリリースを自動発行する。
+# 変換エンジンと辞書の更新（fix(deps)）は変換結果を変えるのでリリースする。開発用の依存の更新は chore(deps) で対象にならない。
+# バージョンは CalVer（vYYYY.M.PATCH、UTC）で自動採番し、Latest として出す
+name: release
+
+on:
+  push:
+    branches:
+      - main
+
+# decide と build は write 不要。release job 側の明示ブロックだけ昇格する
+permissions:
+  contents: read
+
+# macOS のジョブが使う Xcode。ランナーのイメージ（macos-26）とともに版を固定する
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+# PATCH は既存 tag の max + 1 で採番するため、リリースを直列化して同番号の衝突を防ぐ。
+# cancel はしない（ビルド途中の cancel は tag だけ残る等の中途半端な状態を作るため）
+concurrency:
+  group: release
+
+jobs:
+  # ==============================================================
+  # リリース判定と tag 採番
+  # ==============================================================
+  decide:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      proceed: ${{ steps.decide.outputs.proceed }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          show-progress: false
+          persist-credentials: false
+
+      - name: Decide release tag
+        id: decide
+        run: |
+          set -euo pipefail
+
+          # 発火判定: 直近の tag から HEAD に feat / fix があるか
+          last="$(git describe --tags --abbrev=0 2> /dev/null || true)"
+          if [[ -n "${last}" ]]; then
+            range="${last}..HEAD"
+          else
+            range="HEAD"
+          fi
+          count="$(git log "${range}" --format=%s | grep -cE '^(feat|fix)(\([^)]+\))?!?:' || true)"
+          if [[ "${count}" -eq 0 ]]; then
+            echo "no feat/fix commits since ${last:-repository root}; skipping release"
+            echo "proceed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # CalVer: YYYY.M は UTC の年月、PATCH は同じ年月の既存 tag の max + 1（無ければ 0）。
+          # 月をゼロ埋めしないのは、semver が先頭ゼロを正規化で消し、tag と焼き込む version がずれるため
+          year_month="$(date -u +%Y.%-m)"
+          last_patch="$(git tag -l "v${year_month}.*" | sed "s/^v${year_month}\.//" | sort -n | tail -1)"
+          if [[ -n "${last_patch}" ]]; then
+            patch=$((last_patch + 1))
+          else
+            patch=0
+          fi
+          tag="v${year_month}.${patch}"
+
+          echo "tag=${tag}"
+          {
+            echo "proceed=true"
+            echo "tag=${tag}"
+          } >> "${GITHUB_OUTPUT}"
+
+  # ==============================================================
+  # ビルド（macOS arm64）。外部パッケージをビルドするので、書き込みと署名の権限を持たせない
+  # ==============================================================
+  build:
+    needs: decide
+    if: needs.decide.outputs.proceed == 'true'
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      TAG: ${{ needs.decide.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          show-progress: false
+          persist-credentials: false
+
+      # tag 由来の version を Info.plist に焼き込み、ad-hoc 署名する
+      - name: Build .app
+        run: |
+          set -euo pipefail
+          TUGIME_VERSION="${TAG#v}" scripts/build-app.sh
+
+      - name: Check .app
+        run: scripts/check-app.sh
+
+      - name: Package tarball
+        run: scripts/package.sh
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tugime-macos-arm64
+          path: dist/tugime-macos-arm64.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  # ==============================================================
+  # 出自の証明と GitHub Release 作成。ビルドした成果物だけを受け取る
+  # ==============================================================
+  release:
+    needs: [decide, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ needs.decide.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tugime-macos-arm64
+          path: dist
+
+      # 署名の代わりの改竄検知。mise は GitHub attestation 検証をデフォルト有効にしている
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/tugime-macos-arm64.tar.gz
+
+      # install.sh と mise は /releases/latest で最新を解決するため、Latest を明示する
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" --generate-notes --latest --target "${GITHUB_SHA}" dist/tugime-macos-arm64.tar.gz
