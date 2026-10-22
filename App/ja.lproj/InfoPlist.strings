@@ -1,0 +1,3 @@
+CFBundleName = "tugime";
+com.apple.inputmethod.Japanese = "tugime (日本語)";
+com.apple.inputmethod.Roman = "tugime (英数)";

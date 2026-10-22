@@ -20,6 +20,8 @@ for bundle in "$bin"/*.bundle; do
 done
 sed -e "s/__BUNDLE_ID__/$bundle_id/g" -e "s/__VERSION__/$version/g" "$root/App/Info.plist" > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist"
+# 入力ソースの一覧に出るモードの表示名
+cp -R "$root/App/en.lproj" "$root/App/ja.lproj" "$app/Contents/Resources/"
 swift "$root/scripts/make-icons.swift" "$app/Contents/Resources"
 
 echo "== ad-hoc 署名"
