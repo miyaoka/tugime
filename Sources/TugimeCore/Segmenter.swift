@@ -4,7 +4,7 @@ public struct Segment: Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         case japanese
         case english
-        /// 日本語の記号にした句読点（, . ? !）
+        /// 日本語の記号にした句読点（, . ? ! ~）と記号の打鍵（zh [ / など）
         case punctuation
     }
 
@@ -135,26 +135,50 @@ public final class Segmenter {
     static let maxJapaneseFirstLength = 2
 
     /// 前の語の後ろに付く記号と、日本語の文で使う形
-    static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！"]
+    static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！", "~": "〜"]
 
-    /// 記号は前の語の後ろに付くので、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
-    /// 入力の先頭の記号は、入力欄の直前（leading）で決める。日本語の記号の位置で入力を切り、次の部分は文頭から評価する
+    /// 前後の区間によらず決まった記号にする打鍵。日本語モードでは打ったまま出さない
+    static let symbols: [String: String] = [
+        "zh": "←", "zj": "↓", "zk": "↑", "zl": "→",
+        "z.": "…", "z/": "・", "z-": "〜", "z[": "『", "z]": "』",
+        "/": "・", "[": "「", "]": "」",
+    ]
+    static let maxSymbolLength = symbols.keys.map(\.count).max()!
+
+    /// 句読点は前の語の後ろに付くので、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
+    /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
+    /// 日本語の記号の位置で入力を切る。句読点の後は文頭として、記号の打鍵の後は文の途中かもしれないものとして次の部分を評価する
     public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
         let chars = Array(input)
         var segments: [Segment] = []
         var runStart = 0
         var runLeading = leading
-        for (i, ch) in chars.enumerated() {
-            guard let mark = Self.punctuation[ch] else { continue }
+        var i = 0
+        while i < chars.count {
+            let symbol = Self.symbol(at: i, in: chars)
+            let key = symbol?.key ?? String(chars[i])
+            let mark = symbol?.mark ?? Self.punctuation[chars[i]]
+            let end = i + key.count
+            defer { i = end }
+            guard let mark else { continue }
             let before = segmentRun(String(chars[runStart..<i]), leading: runLeading.japaneseContext)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runLeading == .afterEnglish)
-            if previousIsEnglish { continue }
+            if symbol == nil, previousIsEnglish { continue }
             segments += before
-            segments.append(Segment(kind: .punctuation, source: String(ch), reading: mark, output: mark, score: 0, context: .start))
-            runStart = i + 1
-            runLeading = .start
+            segments.append(Segment(kind: .punctuation, source: key, reading: mark, output: mark, score: 0, context: .start))
+            runStart = end
+            runLeading = symbol == nil ? .start : .afterJapanese
         }
         return segments + segmentRun(String(chars[runStart...]), leading: runLeading.japaneseContext)
+    }
+
+    /// i から始まる記号の打鍵のうち最も長いもの
+    private static func symbol(at i: Int, in chars: [Character]) -> (key: String, mark: String)? {
+        for length in stride(from: min(maxSymbolLength, chars.count - i), through: 1, by: -1) {
+            let key = String(chars[i..<(i + length)])
+            if let mark = symbols[key] { return (key, mark) }
+        }
+        return nil
     }
 
     /// 句読点を含まない部分を、日本語区間と英語区間の並びに分ける。空でない入力には必ず 1 つ以上の区間を返す

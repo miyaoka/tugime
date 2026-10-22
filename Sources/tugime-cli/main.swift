@@ -1,5 +1,6 @@
 import Foundation
 import TugimeCore
+import TugimeCorpus
 
 let usage = """
     使い方（先頭に次を付けられる。--after <english|japanese> はカーソルの前にその文字がある状態として変換する。
@@ -14,13 +15,6 @@ let usage = """
       tugime-cli --corpus <例文集.tsv>        例文集の全件を通し、一致件数を出す
       tugime-cli --tune <例文集.tsv>          重みを格子状に試し、近傍平均の高い順に出す
     """
-
-struct Example {
-    var input: String
-    var expected: String
-    /// 出典が「完了条件」の例文。重みの探索では、これを落とす組を候補にしない
-    var required: Bool
-}
 
 func makeSegmenter(zenz: URL?) throws -> Segmenter {
     try Segmenter(table: .bundled(), english: .bundled(), japanese: AzooKeyConverter(zenzaiWeight: zenz))
@@ -54,20 +48,8 @@ func englishSources(_ segments: [Segment]) -> [String] {
     segments.filter { $0.kind == .english }.map(\.source)
 }
 
-func loadCorpus(path: String) throws -> [Example] {
-    let lines = try String(contentsOfFile: path, encoding: .utf8).split(separator: "\n")
-    return try lines.filter { !$0.hasPrefix("#") }.map { line in
-        let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
-        guard fields.count >= 2 else {
-            throw NSError(domain: "tugime", code: 1, userInfo: [NSLocalizedDescriptionKey: "例文集の行を読めない: \(line)"])
-        }
-        let source = fields.count >= 3 ? String(fields[2]) : ""
-        return Example(input: String(fields[0]), expected: String(fields[1]), required: source == "完了条件")
-    }
-}
-
-/// 一致件数を出す。全件一致は前提にしないので、件数によって終了コードを変えない
-func runCorpus(_ examples: [Example], segmenter: Segmenter, leading: Segmenter.Leading) {
+/// 一致件数と外れた例文の区切りを出す
+func runCorpus(_ examples: [CorpusExample], segmenter: Segmenter, leading: Segmenter.Leading) {
     var judged = 0
     var exact = 0
     for example in examples {
@@ -85,41 +67,35 @@ func runCorpus(_ examples: [Example], segmenter: Segmenter, leading: Segmenter.L
     print("変換結果の一致 \(exact) / \(examples.count)")
 }
 
-func countJudged(_ examples: [Example], segmenter: Segmenter) -> Int {
+func countJudged(_ examples: [CorpusExample], segmenter: Segmenter) -> Int {
     examples.filter { englishSources(segmenter.segment($0.input)) == asciiRuns($0.expected) }.count
 }
 
-/// 重みを格子状に試す。1 点だけ高い組は例文集への合わせ込みなので、隣接する組との平均でならして順位を付ける
-func tune(_ examples: [Example], segmenter: Segmenter) {
+/// 重みを格子状に試す。例文集の全件の日英判定を通す組だけを候補にする。
+/// 1 点だけ通る組は例文集への合わせ込みなので、隣接する組との平均でならして順位を付ける
+func tune(_ examples: [CorpusExample], segmenter: Segmenter) {
     let englishAxis = Array(stride(from: 0.8, through: 2.0, by: 0.1))
     let japanesePenaltyAxis = Array(stride(from: -4.0, through: 14.0, by: 1.0))
     let englishPenaltyAxis = Array(stride(from: -4.0, through: 12.0, by: 2.0))
-    let required = examples.filter(\.required)
     var counts: [[[Int]]] = []
-    var requiredPassed: [[[Bool]]] = []
     let started = Date()
     for english in englishAxis {
         print("english=\(String(format: "%.1f", english)) 開始 \(Int(Date().timeIntervalSince(started)))秒")
         var countPlane: [[Int]] = []
-        var requiredPlane: [[Bool]] = []
         for japanesePenalty in japanesePenaltyAxis {
             var countRow: [Int] = []
-            var requiredRow: [Bool] = []
             for englishPenalty in englishPenaltyAxis {
                 segmenter.weights = SegmentWeights(japanese: 1, english: english, japaneseSpanPenalty: japanesePenalty, englishSpanPenalty: englishPenalty)
                 countRow.append(countJudged(examples, segmenter: segmenter))
-                requiredRow.append(countJudged(required, segmenter: segmenter) == required.count)
             }
             countPlane.append(countRow)
-            requiredPlane.append(requiredRow)
         }
         counts.append(countPlane)
-        requiredPassed.append(requiredPlane)
     }
     var ranked: [(smoothed: Double, count: Int, i: Int, j: Int, k: Int)] = []
     for i in englishAxis.indices {
         for j in japanesePenaltyAxis.indices {
-            for k in englishPenaltyAxis.indices where requiredPassed[i][j][k] {
+            for k in englishPenaltyAxis.indices where counts[i][j][k] == examples.count {
                 var sum = 0
                 var n = 0
                 for di in -1...1 {
@@ -139,7 +115,7 @@ func tune(_ examples: [Example], segmenter: Segmenter) {
     for r in ranked.sorted(by: { $0.smoothed > $1.smoothed }).prefix(15) {
         print("近傍平均 \(String(format: "%.1f", r.smoothed))\t一致 \(r.count) / \(examples.count)\tenglish=\(String(format: "%.1f", englishAxis[r.i])) jPenalty=\(japanesePenaltyAxis[r.j]) ePenalty=\(englishPenaltyAxis[r.k])")
     }
-    print("試した組 \(englishAxis.count * japanesePenaltyAxis.count * englishPenaltyAxis.count) 件、完了条件の例文 \(required.count) 件を通す組 \(ranked.count) 件のうち、近傍平均の上位 15 件")
+    print("試した組 \(englishAxis.count * japanesePenaltyAxis.count * englishPenaltyAxis.count) 件、例文 \(examples.count) 件をすべて通す組 \(ranked.count) 件のうち、近傍平均の上位 15 件")
 }
 
 let leadings: [String: Segmenter.Leading] = ["english": .afterEnglish, "japanese": .afterJapanese]
@@ -171,7 +147,7 @@ do {
             print(usage)
             exit(2)
         }
-        let examples = try loadCorpus(path: args[1])
+        let examples = try CorpusExample.load(path: args[1])
         let segmenter = try makeSegmenter(zenz: zenz)
         if args[0] == "--tune" {
             tune(examples, segmenter: segmenter)

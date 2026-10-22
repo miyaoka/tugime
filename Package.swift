@@ -30,9 +30,11 @@ let package = Package(
             resources: [.copy("Resources")],
             swiftSettings: [cxx]
         ),
+        // 例文集の読み込み。CLI とテストだけが使い、入力メソッドには入れない
+        .target(name: "TugimeCorpus"),
         .executableTarget(
             name: "tugime-cli",
-            dependencies: ["TugimeCore"],
+            dependencies: ["TugimeCore", "TugimeCorpus"],
             swiftSettings: [cxx]
         ),
         .executableTarget(
@@ -44,8 +46,9 @@ let package = Package(
         ),
         .testTarget(
             name: "TugimeCoreTests",
-            dependencies: ["TugimeCore"],
-            swiftSettings: [cxx]
+            dependencies: ["TugimeCore", "TugimeCorpus"],
+            // テストは 1 つの本物の変換器を共有するので、同時に使わないようメインアクターで動かす
+            swiftSettings: [.defaultIsolation(MainActor.self), cxx]
         ),
     ]
 )
