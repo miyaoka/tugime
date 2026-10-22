@@ -50,7 +50,7 @@ let sharedSegmenter: Segmenter = {
 final class TugimeInputController: IMKInputController {
     /// 未確定の打鍵列
     private var keys = ""
-    /// Space で変換した文節。nil なら打っている途中の変換を表示している
+    /// 文節の選択に入った後の文節（Space・矢印キー・F6〜F10 で入る）。nil なら打っている途中の変換を表示している
     private var clauses: [Clause]?
     /// 候補を選ぶ対象の文節
     private var focus = 0
@@ -226,7 +226,7 @@ final class TugimeInputController: IMKInputController {
         return handleComposing(event, client: client)
     }
 
-    /// Space を押す前
+    /// 打っている途中（文節の選択に入る前）
     private func handleComposing(_ event: NSEvent, client: IMKTextInput) -> Bool {
         switch event.keyCode {
         case KeyCode.returnKey, KeyCode.enter:
@@ -245,6 +245,8 @@ final class TugimeInputController: IMKInputController {
             guard !keys.isEmpty else { return false }
             clauses = sharedSegmenter.clauses(keys, leading: leading)
             focus = 0
+            // ↑ ↓ は文節の表示を描き直さないので、先に文節の選択の表示にしておく
+            showMarkedText(client)
             return handleConverted(event, client: client)
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
@@ -263,7 +265,7 @@ final class TugimeInputController: IMKInputController {
         }
     }
 
-    /// Space で変換した後
+    /// 文節の選択に入った後
     private func handleConverted(_ event: NSEvent, client: IMKTextInput) -> Bool {
         let panelVisible = candidatePanel.isVisible()
         switch event.keyCode {
@@ -374,7 +376,7 @@ final class TugimeInputController: IMKInputController {
         return NSAttributedString(string: text, attributes: attributes)
     }
 
-    /// Space を押す前に表示する文字列
+    /// 打っている途中に表示する文字列
     private var liveText: String {
         sharedSegmenter.liveText(keys, leading: leading)
     }
