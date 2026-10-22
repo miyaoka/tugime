@@ -14,6 +14,10 @@ private final class KanaEcho: JapaneseConverting {
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { [kana] }
 
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseReading? {
+        convert(kana: kana, context: context)
+    }
+
     func endComposition() {}
 }
 

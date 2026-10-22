@@ -41,7 +41,7 @@ private enum KeyCode {
 /// 変換器はプロセスに 1 つだけ持つ。辞書と語表の読み込みが重いので、入力源ごとに作らない
 let sharedSegmenter: Segmenter = {
     do {
-        return try Segmenter(table: .bundled(), english: .bundled(), japanese: AzooKeyConverter())
+        return try Segmenter(table: .bundled(), english: .bundled(), japanese: AzooKeyConverter(zenzaiWeight: nil))
     } catch {
         fatalError("tugime を初期化できない: \(error)")
     }

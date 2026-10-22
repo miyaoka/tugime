@@ -48,11 +48,15 @@ public protocol JapaneseConverting: AnyObject {
     func convert(kana: String, context: JapaneseContext) -> JapaneseReading?
     /// 候補の窓に並べる変換結果。評価値の高い順で、重複は除く。件数は変換エンジンが決める。context に afterCaret は渡さず、convert が返した context を渡す
     func alternatives(kana: String, context: JapaneseContext) -> [String]
+    /// 区切りが決まった区間を表示するための変換。採点のように何百回も呼ばないので、重くて質の高い変換を使ってよい。
+    /// left は入力の中でこの区間より前に表示している文字列。context は afterCaret を渡さず、convert が返した context を渡す
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseReading?
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
     func endComposition()
 }
 
 /// AzooKeyKanaKanjiConverter による変換。学習は使わないので、同じかなには常に同じ結果を返す。
+/// 採点は辞書と n-gram だけで行い、表示は Zenzai（ニューラルの言語モデル）で左の文脈を見て選び直す
 public final class AzooKeyConverter: JapaneseConverting {
     /// 英語区間の代わりに前へ置く名詞。辞書で 1 語に定まり、後ろの語と融合しにくいもの
     private static let nounStandIn = (kana: "てすと", word: "テスト")
@@ -62,6 +66,10 @@ public final class AzooKeyConverter: JapaneseConverting {
     private static let listingBest = 20
 
     private let converter: KanaKanjiConverter
+    /// Zenzai のモデル。nil なら表示も採点と同じ変換にする
+    private let zenzaiWeight: URL?
+    /// 表示の変換を、区間・文脈・左の文字列ごとに覚える。未確定の文字列の寿命だけ持つ
+    private var displayCache: [DisplayKey: JapaneseReading?] = [:]
     /// 打鍵のたびに同じ区間を変換し直さないためのもの。未確定の文字列の寿命だけ持つ
     private var cache: [CacheKey: JapaneseReading?] = [:]
     /// 前に置くものだけを変換した評価値。未確定の文字列の寿命だけ持つ
@@ -89,11 +97,18 @@ public final class AzooKeyConverter: JapaneseConverting {
         var context: JapaneseContext
     }
 
-    public init() {
-        converter = KanaKanjiConverter.withDefaultDictionary()
+    private struct DisplayKey: Hashable {
+        var kana: String
+        var context: JapaneseContext
+        var left: String
     }
 
-    private static func options(nBest: Int) -> ConvertRequestOptions {
+    public init(zenzaiWeight: URL?) {
+        converter = KanaKanjiConverter.withDefaultDictionary()
+        self.zenzaiWeight = zenzaiWeight
+    }
+
+    private static func options(nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode) -> ConvertRequestOptions {
         // 学習しないので書き込み先は使われないが、引数として要る
         let unused = FileManager.default.temporaryDirectory
         return ConvertRequestOptions(
@@ -106,6 +121,7 @@ public final class AzooKeyConverter: JapaneseConverting {
             sharedContainerURL: unused,
             textReplacer: .empty,
             specialCandidateProviders: [],
+            zenzaiMode: zenzai,
             // 打ち間違いの補正は別の読みの語を出し、日英の比較を乱す
             typoCorrectionMode: .disabled,
             metadata: nil
@@ -149,19 +165,60 @@ public final class AzooKeyConverter: JapaneseConverting {
         return texts.filter { seen.insert($0).inserted }
     }
 
+    public func display(kana: String, context: JapaneseContext, left: String) -> JapaneseReading? {
+        guard let zenzaiWeight else { return convert(kana: kana, context: context) }
+        let key = DisplayKey(kana: kana, context: context, left: left)
+        if let cached = displayCache[key] { return cached }
+        // 左に文字列があれば、それを Zenzai に文脈として渡すので仮の名詞は置かない。数字は助数詞として読ませるため入力の前に置き、文脈からは外す
+        let prefix: Prefix?
+        var leftContext = left
+        switch context {
+        case .start: prefix = nil
+        case .afterWord: prefix = left.isEmpty ? Self.standIn : nil
+        case .afterCaret: preconditionFailure("afterCaret は convert で文頭か前の語に続く形に決めてから渡す")
+        case .afterNumber(let digits):
+            prefix = Prefix(input: digits, shown: digits)
+            leftContext = String(left.dropLast(digits.count))
+        }
+        let zenzai = ConvertRequestOptions.ZenzaiMode.on(
+            weight: zenzaiWeight,
+            personalizationMode: nil,
+            versionDependentMode: .v3(.init(leftSideContext: leftContext.isEmpty ? nil : leftContext))
+        )
+        let result: JapaneseReading?
+        if let prefix {
+            result = candidates(prefix.input + kana, nBest: Self.scoringBest, zenzai: zenzai)
+                .first { Self.drop(prefix, from: $0) != nil }
+                .flatMap { candidate in
+                    Self.drop(prefix, from: candidate).map { text in
+                        JapaneseReading(text: text, value: Double(candidate.value), clauses: Self.clauses(of: Self.words(after: prefix, in: candidate), kana: kana, text: text), context: context)
+                    }
+                }
+        } else {
+            result = candidates(kana, nBest: Self.scoringBest, zenzai: zenzai).first.map {
+                JapaneseReading(text: $0.text, value: Double($0.value), clauses: Self.clauses(of: $0.data[...], kana: kana, text: $0.text), context: context)
+            }
+        }
+        // Zenzai が前に置いたものを含む候補を返さなかったときは、採点の変換を表示にする。区間は採点の変換があるときだけ日本語になる
+        let shown = result ?? convert(kana: kana, context: context)
+        displayCache[key] = shown
+        return shown
+    }
+
     public func endComposition() {
         cache = [:]
         prefixValues = [:]
+        displayCache = [:]
     }
 
-    private func candidates(_ kana: String, nBest: Int) -> [Candidate] {
+    private func candidates(_ kana: String, nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode = .off) -> [Candidate] {
         var composing = ComposingText()
         composing.insertAtCursorPosition(kana, inputStyle: .direct)
         let kanaCount = kana.count
         // 変換エンジンは直前の入力との差分で計算するので、前の要求の状態を捨て、要求ごとに独立した結果にする
         converter.stopComposition()
         // 入力全体を覆い、言語モデルで評価された候補だけを採る
-        return converter.requestCandidates(composing, options: Self.options(nBest: nBest)).mainResults.filter {
+        return converter.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)).mainResults.filter {
             $0.rubyCount == kanaCount && !Self.isUnscoredWhole($0)
         }
     }

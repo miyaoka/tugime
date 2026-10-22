@@ -42,16 +42,19 @@ public struct ClauseSpan: Sendable, Equatable {
 }
 
 extension Segmenter {
-    /// 区切りを選び、日本語区間を文節に分けて、文節ごとに候補の一覧を付ける
+    /// 区切りを選び、日本語区間を文節に分けて、文節ごとに候補の一覧を付ける。
+    /// 日本語区間は、前の文節の表示を左の文脈にして表示の変換で文節に分ける
     public func clauses(_ input: String, leading: Leading = .start) -> [Clause] {
-        let segments = segment(input, leading: leading)
-        return segments.enumerated().flatMap { index, segment in
+        var result: [Clause] = []
+        for (index, segment) in segment(input, leading: leading).enumerated() {
             let span = ClauseSpan(index: index, source: segment.source, reading: segment.reading, context: segment.context)
             guard segment.kind == .japanese else {
-                return [Clause(kind: segment.kind, reading: segment.reading, candidates: candidates(for: segment), selected: 0, span: span)]
+                result.append(Clause(kind: segment.kind, reading: segment.reading, candidates: candidates(for: segment), selected: 0, span: span))
+                continue
             }
-            return japaneseClauses(from: 0, in: span)
+            result += japaneseClauses(from: 0, in: span, left: result.map(\.output).joined())
         }
+        return result
     }
 
     /// 日本語の文節を 1 かなずつ伸ばす（delta が正）・縮める（負）。区間の外へは伸ばさず、1 かなより短くしない。
@@ -67,14 +70,15 @@ extension Segmenter {
 
         let reading = String(span.reading.dropFirst(start).prefix(length))
         let context = start == 0 ? span.context : .afterWord
+        let left = clauses[..<index].map(\.output).joined()
         let resized = Clause(
             kind: .japanese,
             reading: reading,
-            candidates: japaneseCandidates(reading: reading, best: nil, context: context, span: span),
+            candidates: japaneseCandidates(reading: reading, best: japaneseConverter.display(kana: reading, context: context, left: left)?.text, context: context, span: span),
             selected: 0,
             span: span
         )
-        let rest = start + length < span.reading.count ? japaneseClauses(from: start + length, in: span) : []
+        let rest = start + length < span.reading.count ? japaneseClauses(from: start + length, in: span, left: left + resized.output) : []
         return Array(clauses[..<index]) + [resized] + rest + Array(clauses[(spanIndices.last! + 1)...])
     }
 
@@ -125,11 +129,11 @@ extension Segmenter {
         return String(through.dropFirst(before.count))
     }
 
-    /// 区間の読みのうち offset かな目から後ろを、変換エンジンの文節に分ける
-    private func japaneseClauses(from offset: Int, in span: ClauseSpan) -> [Clause] {
+    /// 区間の読みのうち offset かな目から後ろを、表示の変換の文節に分ける。left は入力の中でそれより前に表示している文字列
+    private func japaneseClauses(from offset: Int, in span: ClauseSpan, left: String) -> [Clause] {
         let kana = String(span.reading.dropFirst(offset))
         let context = offset == 0 ? span.context : .afterWord
-        let parts = japaneseConverter.convert(kana: kana, context: context)?.clauses ?? [JapaneseClause(reading: kana, text: kana)]
+        let parts = japaneseConverter.display(kana: kana, context: context, left: left)?.clauses ?? [JapaneseClause(reading: kana, text: kana)]
         return parts.enumerated().map { index, part in
             Clause(
                 kind: .japanese,

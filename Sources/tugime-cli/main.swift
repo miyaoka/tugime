@@ -2,7 +2,8 @@ import Foundation
 import TugimeCore
 
 let usage = """
-    使い方（先頭に --after <english|japanese> を付けると、カーソルの前にその文字がある状態として変換する）:
+    使い方（先頭に次を付けられる。--after <english|japanese> はカーソルの前にその文字がある状態として変換する。
+    --zenz <モデルのパス> は表示の変換に Zenzai を使う。scripts/fetch-zenz.sh が取得してパスを出す）:
       tugime-cli <打鍵列>...                  打鍵列を変換した結果を出す
       tugime-cli --live <打鍵列>...           Space を押す前に表示する文字列を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
@@ -21,8 +22,8 @@ struct Example {
     var required: Bool
 }
 
-func makeSegmenter() throws -> Segmenter {
-    try Segmenter(table: .bundled(), english: .bundled(), japanese: AzooKeyConverter())
+func makeSegmenter(zenz: URL?) throws -> Segmenter {
+    try Segmenter(table: .bundled(), english: .bundled(), japanese: AzooKeyConverter(zenzaiWeight: zenz))
 }
 
 let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P"]
@@ -71,7 +72,7 @@ func runCorpus(_ examples: [Example], segmenter: Segmenter, leading: Segmenter.L
     var exact = 0
     for example in examples {
         let segments = segmenter.segment(example.input, leading: leading)
-        let actual = segments.map(\.output).joined()
+        let actual = segmenter.displayText(example.input, leading: leading)
         let judgeOK = englishSources(segments) == asciiRuns(example.expected)
         let exactOK = actual == example.expected
         if judgeOK { judged += 1 }
@@ -141,16 +142,24 @@ func tune(_ examples: [Example], segmenter: Segmenter) {
     print("試した組 \(englishAxis.count * japanesePenaltyAxis.count * englishPenaltyAxis.count) 件、完了条件の例文 \(required.count) 件を通す組 \(ranked.count) 件のうち、近傍平均の上位 15 件")
 }
 
-/// 先頭の --after <english|japanese> は、入力欄のカーソルの前にその文字がある状態として変換する
 let leadings: [String: Segmenter.Leading] = ["english": .afterEnglish, "japanese": .afterJapanese]
 var args = Array(CommandLine.arguments.dropFirst())
 var leading = Segmenter.Leading.start
-if args.first == "--after" {
-    guard args.count >= 2, let value = leadings[args[1]] else {
+var zenz: URL?
+while let option = args.first, ["--after", "--zenz"].contains(option) {
+    guard args.count >= 2 else {
         print(usage)
         exit(2)
     }
-    leading = value
+    if option == "--after" {
+        guard let value = leadings[args[1]] else {
+            print(usage)
+            exit(2)
+        }
+        leading = value
+    } else {
+        zenz = URL(fileURLWithPath: args[1])
+    }
     args.removeFirst(2)
 }
 do {
@@ -163,7 +172,7 @@ do {
             exit(2)
         }
         let examples = try loadCorpus(path: args[1])
-        let segmenter = try makeSegmenter()
+        let segmenter = try makeSegmenter(zenz: zenz)
         if args[0] == "--tune" {
             tune(examples, segmenter: segmenter)
             exit(0)
@@ -172,7 +181,7 @@ do {
     case "--span":
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
-        let japanese = AzooKeyConverter()
+        let japanese = AzooKeyConverter(zenzaiWeight: zenz)
         for arg in args.dropFirst() {
             let isKana = arg.unicodeScalars.contains { $0.value > 0x3000 }
             if isKana {
@@ -185,13 +194,13 @@ do {
         }
     case "--whole":
         // F6〜F10 の全体の変換を並べる
-        let segmenter = try makeSegmenter()
+        let segmenter = try makeSegmenter(zenz: zenz)
         for input in args.dropFirst() {
             print("\(input)\t" + CharacterForm.allCases.map { segmenter.convertWhole(input, to: $0, leading: leading) }.joined(separator: " / "))
         }
     case "--clauses":
         // IME の候補の窓に並ぶものを区間ごとに出す
-        let segmenter = try makeSegmenter()
+        let segmenter = try makeSegmenter(zenz: zenz)
         for input in args.dropFirst() {
             print("== \(input)")
             for clause in segmenter.clauses(input, leading: leading) {
@@ -203,7 +212,7 @@ do {
             print(usage)
             exit(2)
         }
-        let segmenter = try makeSegmenter()
+        let segmenter = try makeSegmenter(zenz: zenz)
         var clauses = segmenter.clauses(args[1], leading: leading)
         var focus = 0
         func show(_ label: String) {
@@ -224,20 +233,20 @@ do {
             show(String(op))
         }
     case "--live":
-        let segmenter = try makeSegmenter()
+        let segmenter = try makeSegmenter(zenz: zenz)
         for input in args.dropFirst() {
             print("\(input)\t\(segmenter.liveText(input, leading: leading))")
         }
     case "--explain":
-        let segmenter = try makeSegmenter()
+        let segmenter = try makeSegmenter(zenz: zenz)
         for input in args.dropFirst() {
             let segments = segmenter.segment(input, leading: leading)
             print("\(segments.map(\.output).joined())\t\(describe(segments))")
         }
     default:
-        let segmenter = try makeSegmenter()
+        let segmenter = try makeSegmenter(zenz: zenz)
         for input in args {
-            print(segmenter.segment(input, leading: leading).map(\.output).joined())
+            print(segmenter.displayText(input, leading: leading))
         }
     }
 } catch {

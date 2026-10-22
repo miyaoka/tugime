@@ -85,9 +85,29 @@ public final class Segmenter {
 
     /// 打っている途中に見せる文字列。Enter で確定するのもこれ。日本語区間は長ければ変換し、短ければかなのまま、英語区間は打ったまま
     public func liveText(_ input: String, leading: Leading = .start) -> String {
-        segment(input, leading: leading).map { segment in
-            segment.kind == .japanese && segment.reading.count < Self.liveConversionMinLength ? segment.reading : segment.output
-        }.joined()
+        shownText(input, leading: leading, minLength: Self.liveConversionMinLength)
+    }
+
+    /// 日本語区間をすべて表示の変換にした文字列。打っている途中の表示から、かなのまま見せる規則を外したもの
+    public func displayText(_ input: String, leading: Leading = .start) -> String {
+        shownText(input, leading: leading, minLength: 0)
+    }
+
+    /// 区切りを選び、前の区間から順に表示する文字列を作る。日本語区間は、それまでに表示した文字列を左の文脈にして表示の変換をする
+    private func shownText(_ input: String, leading: Leading, minLength: Int) -> String {
+        var shown = ""
+        for segment in segment(input, leading: leading) {
+            guard segment.kind == .japanese else {
+                shown += segment.output
+                continue
+            }
+            guard segment.reading.count >= minLength else {
+                shown += segment.reading
+                continue
+            }
+            shown += japaneseConverter.display(kana: segment.reading, context: segment.context, left: shown)?.text ?? segment.output
+        }
+        return shown
     }
 
     /// この長さ以下の読める綴りは、英語の語であっても日本語として読む
