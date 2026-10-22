@@ -68,11 +68,13 @@ jobs:
       - name: Test
         run: swift test
 
-      # 日英判定の一致件数を記録に残す。件数では落とさず、CLI が実行に失敗したときだけ落とす
+      # 日英判定と変換結果の一致件数を記録に残す。件数では落とさず、CLI が実行に失敗したときだけ落とす。
+      # 変換結果は配布物と同じく、表示の変換に Zenzai を使って数える
       - name: Corpus
         run: |
           swift build --product tugime-cli
-          .build/debug/tugime-cli --corpus corpus/examples.tsv
+          zenz=$(scripts/fetch-zenz.sh)
+          .build/debug/tugime-cli --zenz "$zenz" --corpus corpus/examples.tsv
 
   # ==============================================================
   # 配布物の組み立て（リソースの同梱・Info.plist・署名）が壊れていないかを、release より前に検知する

@@ -11,14 +11,21 @@ app="$root/dist/tugime.app"
 # 対象は Apple Silicon だけなので arm64 だけを組み立てる。swiftbuild は指定しないと Intel 向けも含めた universal にする
 build=(swift build --package-path "$root" -c release --build-system swiftbuild --arch arm64)
 
+echo "== Zenzai のモデル"
+zenz=$("$root/scripts/fetch-zenz.sh")
+
 echo "== swift build"
 "${build[@]}" --product tugime
 bin=$("${build[@]}" --show-bin-path)
 
 echo "== 組み立て $app"
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/zenz" "$app/Contents/Frameworks"
 cp "$bin/tugime" "$app/Contents/MacOS/tugime"
+# Zenzai の推論に使う llama.cpp。実行ファイルは @rpath/llama.framework を探すので、Frameworks を探し場所に足す
+cp -R "$bin/llama.framework" "$app/Contents/Frameworks/"
+install_name_tool -add_rpath @executable_path/../Frameworks "$app/Contents/MacOS/tugime"
+cp "$zenz" "$app/Contents/Resources/zenz/"
 for bundle in "$bin"/*.bundle; do
     cp -R "$bundle" "$app/Contents/Resources/"
 done

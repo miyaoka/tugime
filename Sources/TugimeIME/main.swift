@@ -38,10 +38,10 @@ func printStatus() -> Int32 {
     return 0
 }
 
-/// 組み立てたバンドルから綴りの表・語表・辞書を読み、1 文を変換して出す。読めなければ初期化の時点で止まる
+/// 組み立てたバンドルから綴りの表・語表・辞書・Zenzai のモデルを読み、1 文を表示の変換で変換して出す。読めなければ初期化の時点で止まる
 func check() -> Int32 {
     let input = "kyouhagoogledekensaku"
-    print("\(input)\t\(sharedSegmenter.segment(input).map(\.output).joined())")
+    print("\(input)\t\(sharedSegmenter.displayText(input))")
     return 0
 }
 
@@ -67,6 +67,7 @@ let candidatePanel: IMKCandidates = {
     panel.setAttributes([IMKCandidatesSendServerKeyEventFirst: true])
     return panel
 }()
-// 辞書の読み込みを最初の打鍵より前に済ませる
-_ = sharedSegmenter
+// 辞書と Zenzai のモデルの読み込みを最初の打鍵より前に済ませる。モデルは最初の表示の変換で読まれ、2 秒ほどかかる
+_ = sharedSegmenter.displayText("nihongo")
+sharedSegmenter.endComposition()
 NSApplication.shared.run()
