@@ -218,9 +218,14 @@ public final class AzooKeyConverter: JapaneseConverting {
         // 変換エンジンは直前の入力との差分で計算するので、前の要求の状態を捨て、要求ごとに独立した結果にする
         converter.stopComposition()
         // 入力全体を覆い、言語モデルで評価された候補だけを採る
-        return converter.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)).mainResults.filter {
+        let results = converter.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)).mainResults.filter {
             $0.rubyCount == kanaCount && !Self.isUnscoredWhole($0)
         }
+        // 変換エンジンはモデルを読めないと黙って Zenzai なしで変換する。読めたときだけ zenzStatus が "load <URL>" になる
+        if let zenzaiWeight, zenzai != .off, converter.zenzStatus != "load \(zenzaiWeight.absoluteString)" {
+            fatalError("Zenzai のモデルを読めない: \(converter.zenzStatus)")
+        }
+        return results
     }
 
     /// 入力全体をカタカナ・ひらがな・大文字にしただけの候補。
