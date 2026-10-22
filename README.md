@@ -16,7 +16,13 @@ Apple Silicon の macOS。動作は macOS 27 でだけ確かめている。
 
 ## 導入
 
-GitHub Releases の最新版を `~/Library/Input Methods` に配置して登録する。
+[mise](https://mise.jdx.dev/) でインストールする。`postinstall` がインストール直後に GitHub Releases の版を `~/Library/Input Methods` に配置して登録する。更新は `mise up` で反映する。
+
+```bash
+mise use -g 'github:miyaoka/tugime[postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
+```
+
+mise を使わない場合は、最新版を取得して配置する。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | bash
