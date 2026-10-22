@@ -8,6 +8,7 @@ let package = Package(
     products: [
         .library(name: "TugimeCore", targets: ["TugimeCore"]),
         .executable(name: "tugime-cli", targets: ["tugime-cli"]),
+        .executable(name: "tugime", targets: ["TugimeIME"]),
     ],
     dependencies: [
         // 1.0 まではマイナー版でも破壊的変更があるため revision で固定する
@@ -27,6 +28,13 @@ let package = Package(
         .executableTarget(
             name: "tugime-cli",
             dependencies: ["TugimeCore"]
+        ),
+        .executableTarget(
+            name: "TugimeIME",
+            dependencies: ["TugimeCore"],
+            // InputMethodKit は並行性の注釈を持たないので、Swift 6 の検査を IME 層にだけ掛けない
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [.linkedFramework("InputMethodKit")]
         ),
         .testTarget(
             name: "TugimeCoreTests",

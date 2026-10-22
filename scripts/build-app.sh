@@ -1,0 +1,28 @@
+#!/bin/bash
+# tugime.app を dist/ に組み立てて ad-hoc で署名する。鍵束は使わない。
+set -euo pipefail
+
+bundle_id=io.github.miyaoka.inputmethod.tugime
+version=${TUGIME_VERSION:-0.0.0}
+root=$(cd "$(dirname "$0")/.." && pwd)
+app="$root/dist/tugime.app"
+
+echo "== swift build"
+swift build --package-path "$root" -c release --product tugime
+bin=$(swift build --package-path "$root" -c release --show-bin-path)
+
+echo "== 組み立て $app"
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp "$bin/tugime" "$app/Contents/MacOS/tugime"
+for bundle in "$bin"/*.bundle; do
+    cp -R "$bundle" "$app/Contents/Resources/"
+done
+sed -e "s/__BUNDLE_ID__/$bundle_id/g" -e "s/__VERSION__/$version/g" "$root/App/Info.plist" > "$app/Contents/Info.plist"
+plutil -lint "$app/Contents/Info.plist"
+swift "$root/scripts/make-icons.swift" "$app/Contents/Resources"
+
+echo "== ad-hoc 署名"
+codesign --force --timestamp=none --sign - "$app"
+codesign --verify --strict "$app"
+echo "== 完了 $app"
