@@ -16,6 +16,9 @@ public struct Segment: Sendable, Equatable {
     /// 確定する文字列
     public var output: String
     public var score: Double
+    /// この位置のかなを変換する文脈。日本語区間は変換で読んだ文脈（カーソルの前に続く形は文頭か前の語に続く形に決まる）、
+    /// 英語区間はその綴りをかなとして読むときに求める文脈
+    public var context: JapaneseContext
 }
 
 /// 日本語区間と英語区間の評価値を同じ尺度に揃える重み
@@ -106,7 +109,7 @@ public final class Segmenter {
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runLeading == .afterEnglish)
             if previousIsEnglish { continue }
             segments += before
-            segments.append(Segment(kind: .punctuation, source: String(ch), reading: mark, output: mark, score: 0))
+            segments.append(Segment(kind: .punctuation, source: String(ch), reading: mark, output: mark, score: 0, context: .start))
             runStart = i + 1
             runLeading = .start
         }
@@ -147,15 +150,15 @@ public final class Segmenter {
             guard reachable else { continue }
             // この位置から始まる日本語区間を採れた終端。英語区間を締め出すのは、日本語区間を採れるときだけにする
             var japaneseEnds: Set<Int> = []
+            // 日本語区間は日本語区間に続かないので、先頭でなければ直前は英語区間
+            let context = start == 0 ? leading : Self.context(after: chars[..<start])
             for (end, kana) in table.readings(from: start, in: chars) {
                 // 長音だけの区間は日本語として成り立たない（binge-watch の - など）
                 if kana.allSatisfy({ $0 == "ー" }) { continue }
-                // 日本語区間は日本語区間に続かないので、先頭でなければ直前は英語区間
-                let context = start == 0 ? leading : Self.context(after: chars[..<start])
                 guard let reading = japaneseConverter.convert(kana: kana, context: context) else { continue }
                 japaneseEnds.insert(end)
                 let s = weights.japanese * reading.value - weights.japaneseSpanPenalty
-                relax(end, start, Segment(kind: .japanese, source: String(chars[start..<end]), reading: kana, output: reading.text, score: s))
+                relax(end, start, Segment(kind: .japanese, source: String(chars[start..<end]), reading: kana, output: reading.text, score: s, context: reading.context))
             }
             // 句読点は前の語の後ろに付くので、英語区間を句読点から始めない。入力の先頭は、入力欄の前の英語に付いている
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
@@ -168,7 +171,7 @@ public final class Segmenter {
                     || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
                 if preferJapanese, japaneseEnds.contains(end) { continue }
                 let s = weights.english * english.logProbability(source) - weights.englishSpanPenalty
-                relax(end, start, Segment(kind: .english, source: source, reading: source, output: source, score: s))
+                relax(end, start, Segment(kind: .english, source: source, reading: source, output: source, score: s, context: context))
             }
         }
 

@@ -46,19 +46,11 @@ extension Segmenter {
     public func clauses(_ input: String, leading: Leading = .start) -> [Clause] {
         let segments = segment(input, leading: leading)
         return segments.enumerated().flatMap { index, segment in
-            // 句読点の直後は文頭、入力の先頭は入力欄の前の文脈、それ以外は前の語に続く形として変換する
-            let context: JapaneseContext = index == 0 ? leading.japaneseContext
-                : segments[index - 1].kind == .punctuation ? .start
-                : Self.context(after: segments[index - 1].source)
+            let span = ClauseSpan(index: index, source: segment.source, reading: segment.reading, context: segment.context)
             guard segment.kind == .japanese else {
-                let span = ClauseSpan(index: index, source: segment.source, reading: segment.reading, context: context)
-                return [Clause(kind: segment.kind, reading: segment.reading, candidates: candidates(for: segment, context: context), selected: 0, span: span)]
+                return [Clause(kind: segment.kind, reading: segment.reading, candidates: candidates(for: segment), selected: 0, span: span)]
             }
-            // カーソルの前に続く区間は、区切りを選んだときに読んだ形（文頭か前の語に続く形）で文節と候補を作る。区切りはこの区間を変換できたときだけ日本語にする
-            guard let resolved = japaneseConverter.convert(kana: segment.reading, context: context)?.context else {
-                preconditionFailure("日本語区間を変換できない: \(segment.reading)")
-            }
-            return japaneseClauses(from: 0, in: ClauseSpan(index: index, source: segment.source, reading: segment.reading, context: resolved))
+            return japaneseClauses(from: 0, in: span)
         }
     }
 
@@ -133,7 +125,7 @@ extension Segmenter {
         return Self.unique(list)
     }
 
-    private func candidates(for segment: Segment, context: JapaneseContext) -> [String] {
+    private func candidates(for segment: Segment) -> [String] {
         var list: [String] = [segment.output]
         switch segment.kind {
         case .punctuation:
@@ -144,7 +136,7 @@ extension Segmenter {
             // 英語と判定した区間も、綴りの表で読めればかなを選べるようにする
             if let kana = table.reading(of: segment.source) {
                 list += [kana, Self.katakana(kana)]
-                if let resolved = japaneseConverter.convert(kana: kana, context: context)?.context {
+                if let resolved = japaneseConverter.convert(kana: kana, context: segment.context)?.context {
                     list += japaneseConverter.alternatives(kana: kana, context: resolved)
                 }
             }
