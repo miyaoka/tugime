@@ -3,9 +3,13 @@ import TugimeCore
 
 let usage = """
     使い方:
-      tugime-cli [--explain] <打鍵列>...      打鍵列を変換した結果を出す
+      tugime-cli <打鍵列>...                  打鍵列を変換した結果を出す
+      tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
+      tugime-cli --clauses <打鍵列>...        文節ごとの候補を出す
+      tugime-cli --whole <打鍵列>...          F6〜F10 の全体の変換を出す
+      tugime-cli --span <英字|かな>...        英字は英語として、かなは日本語として評価値を出す
       tugime-cli --corpus <例文集.tsv>        例文集の全件を通し、一致件数を出す
-      tugime-cli --tune <例文集.tsv>          重みを格子状に試し、日英判定の一致が多い順に出す
+      tugime-cli --tune <例文集.tsv>          重みを格子状に試し、近傍平均の高い順に出す
     """
 
 struct Example {
