@@ -221,7 +221,10 @@ public final class Segmenter {
             let predecessors: [(kind: Segment.Kind?, context: JapaneseContext)] = start == 0
                 ? [(nil, leading)]
                 : [(.english, context), (.japanese, .start)]
-            for (end, kana) in table.readings(from: start, in: chars) {
+            let readings = table.readings(from: start, in: chars)
+            // この位置から綴りの表で最後まで読める終端。英語区間の候補が読める綴りかを引くのに使う
+            let readableEnds = Set(readings.map(\.end))
+            for (end, kana) in readings {
                 // 長音だけの区間は日本語として成り立たない（binge-watch の - など）
                 if kana.allSatisfy({ $0 == "ー" }) { continue }
                 for predecessor in predecessors {
@@ -239,7 +242,7 @@ public final class Segmenter {
                 let source = String(chars[start..<end])
                 // 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
                 // 日本語として採れるなら英語にしない
-                let readable = table.reading(of: source) != nil
+                let readable = readableEnds.contains(end)
                 let preferJapanese = table.isSingleKana(source)
                     || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
                 if preferJapanese, japaneseEnds.contains(end) { continue }
