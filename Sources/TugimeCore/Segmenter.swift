@@ -98,6 +98,8 @@ public final class Segmenter {
             }
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
+                // 1 つのかなになる綴りは助詞などの日本語として読む。英語の語表に ga to de no があっても英語にしない
+                if table.isSingleKana(source) { continue }
                 let s = weights.english * english.logProbability(source) - weights.englishSpanPenalty
                 relax(end, start, Segment(kind: .english, source: source, reading: source, output: source, score: s))
             }
