@@ -232,7 +232,14 @@ final class TugimeInputController: IMKInputController {
         switch event.keyCode {
         case KeyCode.returnKey, KeyCode.enter:
             guard !keys.isEmpty else { return false }
-            commit(client)
+            if event.modifierFlags.contains(.shift) {
+                // 矢印キーと同じく文節の選択に入り、最初の文節までを確定する
+                clauses = sharedSegmenter.clauses(keys, leading: leading)
+                focus = 0
+                commitThroughFocus(client)
+            } else {
+                commit(client)
+            }
             return true
         case KeyCode.space:
             guard !keys.isEmpty else { return false }
