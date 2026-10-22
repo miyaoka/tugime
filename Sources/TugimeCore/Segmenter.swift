@@ -77,6 +77,16 @@ public final class Segmenter {
         return digits.isEmpty ? .afterWord : .afterNumber(digits)
     }
 
+    /// 打っている途中に変換して見せる日本語区間の、かなの最短の長さ。短い断片は的外れな漢字になりやすい（きょ → 居）ので、それより短い区間はかなのまま見せる
+    static let liveConversionMinLength = 4
+
+    /// 打っている途中に見せる文字列。Enter で確定するのもこれ。日本語区間は長ければ変換し、短ければかなのまま、英語区間は打ったまま
+    public func liveText(_ input: String, leading: Leading = .start) -> String {
+        segment(input, leading: leading).map { segment in
+            segment.kind == .japanese && segment.reading.count < Self.liveConversionMinLength ? segment.reading : segment.output
+        }.joined()
+    }
+
     /// この長さ以下の読める綴りは、英語の語表に載っていても日本語として読む
     static let maxJapaneseFirstLength = 2
 

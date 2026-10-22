@@ -50,7 +50,7 @@ let sharedSegmenter: Segmenter = {
 final class TugimeInputController: IMKInputController {
     /// 未確定の打鍵列
     private var keys = ""
-    /// Space で変換した文節。nil なら読みを表示している
+    /// Space で変換した文節。nil なら打っている途中の変換を表示している
     private var clauses: [Clause]?
     /// 候補を選ぶ対象の文節
     private var focus = 0
@@ -226,7 +226,7 @@ final class TugimeInputController: IMKInputController {
         return handleComposing(event, client: client)
     }
 
-    /// 読みを表示している間
+    /// Space を押す前
     private func handleComposing(_ event: NSEvent, client: IMKTextInput) -> Bool {
         switch event.keyCode {
         case KeyCode.returnKey, KeyCode.enter:
@@ -239,6 +239,13 @@ final class TugimeInputController: IMKInputController {
             focus = 0
             showMarkedText(client)
             return true
+        case KeyCode.left, KeyCode.right, KeyCode.up, KeyCode.down:
+            // 打っている途中も変換して見せているので、矢印キーで Space を押さずに文節の選択に入る。
+            // Space と同じく最初の文節を選び、選んだ後の操作としてそのキーを扱う
+            guard !keys.isEmpty else { return false }
+            clauses = sharedSegmenter.clauses(keys, leading: leading)
+            focus = 0
+            return handleConverted(event, client: client)
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
             keys.removeLast()
@@ -283,7 +290,7 @@ final class TugimeInputController: IMKInputController {
             candidatePanel.hide()
             showMarkedText(client)
         case KeyCode.escape, KeyCode.backspace:
-            // 候補の窓を閉じる。窓が無ければ変換をやめて読みに戻る
+            // 候補の窓を閉じる。窓が無ければ文節の選択をやめて、打っている途中の表示に戻る
             if panelVisible {
                 candidatePanel.hide()
             } else {
@@ -334,7 +341,7 @@ final class TugimeInputController: IMKInputController {
 
     // MARK: 表示と確定
 
-    /// 変換前は、日本語区間をかな、英語区間を打ったままで表示する。変換後は文節ごとの選択を表示し、選んでいる文節を強調する
+    /// Space の前は打っている途中の変換を 1 つの未確定の文字列として表示する。Space の後は文節ごとの選択を表示し、選んでいる文節を強調する
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
         var focusStart = 0
@@ -345,7 +352,7 @@ final class TugimeInputController: IMKInputController {
                 marked.append(styled(clause.output, style: style, at: marked.length))
             }
         } else {
-            marked.append(styled(reading, style: kTSMHiliteSelectedRawText, at: 0))
+            marked.append(styled(liveText, style: kTSMHiliteSelectedRawText, at: 0))
             focusStart = marked.length
         }
         client.setMarkedText(
@@ -365,16 +372,16 @@ final class TugimeInputController: IMKInputController {
         return NSAttributedString(string: text, attributes: attributes)
     }
 
-    /// 変換前に表示する読み。日本語区間はかな、英語区間は打ったまま
-    private var reading: String {
-        sharedSegmenter.segment(keys, leading: leading).map(\.reading).joined()
+    /// Space を押す前に表示する文字列
+    private var liveText: String {
+        sharedSegmenter.liveText(keys, leading: leading)
     }
 
-    /// 未確定の文字列を、表示しているとおりに確定する。変換していなければ読みのまま確定する
+    /// 未確定の文字列を、表示しているとおりに確定する
     private func commit(_ client: IMKTextInput) {
         candidatePanel.hide()
         guard !keys.isEmpty else { return }
-        let text = clauses?.map(\.output).joined() ?? reading
+        let text = clauses?.map(\.output).joined() ?? liveText
         client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
         keys = ""
         clauses = nil

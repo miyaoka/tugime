@@ -4,6 +4,7 @@ import TugimeCore
 let usage = """
     使い方（先頭に --after <english|japanese> を付けると、カーソルの前にその文字がある状態として変換する）:
       tugime-cli <打鍵列>...                  打鍵列を変換した結果を出す
+      tugime-cli --live <打鍵列>...           Space を押す前に表示する文字列を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
       tugime-cli --clauses <打鍵列>...        文節ごとの候補を出す
       tugime-cli --resize <打鍵列> <操作>     文節を操作した結果を出す。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す
@@ -221,6 +222,11 @@ do {
                 exit(2)
             }
             show(String(op))
+        }
+    case "--live":
+        let segmenter = try makeSegmenter()
+        for input in args.dropFirst() {
+            print("\(input)\t\(segmenter.liveText(input, leading: leading))")
         }
     case "--explain":
         let segmenter = try makeSegmenter()
