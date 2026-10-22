@@ -25,7 +25,7 @@ extension Segmenter {
 
     /// 未確定の文字列全体を指定の文字種にした文字列
     public func convertWhole(_ input: String, to form: CharacterForm, leading: Leading = .start) -> String {
-        Self.text(kana: wholeReading(input, leading: leading), typed: input, form)
+        Self.text(form.usesKeystrokes ? input : wholeReading(input, leading: leading), form)
     }
 
     /// index の文節だけを指定の文字種にした文字列。英字にするには文節に当たる打鍵が要り、
@@ -34,23 +34,22 @@ extension Segmenter {
         let clause = clauses[index]
         guard form.usesKeystrokes else {
             let kana = clause.kind == .english ? table.reading(of: clause.span.source) ?? clause.span.source : clause.reading
-            return Self.text(kana: kana, typed: "", form)
+            return Self.text(kana, form)
         }
-        return typedSource(of: clauses, at: index).map { Self.text(kana: "", typed: $0, form) }
+        return typedSource(of: clauses, at: index).map { Self.text($0, form) }
     }
 
-    private static func text(kana: String, typed: String, _ form: CharacterForm) -> String {
+    /// source は、打鍵から作る文字種なら打鍵、それ以外ならかな
+    private static func text(_ source: String, _ form: CharacterForm) -> String {
         switch form {
-        case .hiragana:
-            kana
+        case .hiragana, .roman:
+            source
         case .katakana:
-            transform(kana, .hiraganaToKatakana, reverse: false)
+            transform(source, .hiraganaToKatakana, reverse: false)
         case .halfwidthKatakana:
-            transform(transform(kana, .hiraganaToKatakana, reverse: false), .fullwidthToHalfwidth, reverse: false)
+            transform(transform(source, .hiraganaToKatakana, reverse: false), .fullwidthToHalfwidth, reverse: false)
         case .fullwidthRoman:
-            transform(typed, .fullwidthToHalfwidth, reverse: true)
-        case .roman:
-            typed
+            transform(source, .fullwidthToHalfwidth, reverse: true)
         }
     }
 
