@@ -40,16 +40,10 @@ else
     src="$(download_latest)"
 fi
 [[ -d "$src/Contents" ]] || { echo "$src は .app ではない" >&2; exit 1; }
-# 置く名前は組み立てたときに焼いた名前から決める。引数のパスの名前は、渡し方で変わる
-name=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$src/Contents/Info.plist")
-# 名前をパスの 1 要素に限り、置く先を ~/Library/Input Methods の直下から出さない
-case "$name" in
-    "" | */* | .*)
-        echo "$src の CFBundleName は配置先の名前に使えない: '$name'" >&2
-        exit 1
-        ;;
-esac
-dest="$HOME/Library/Input Methods/$name.app"
+# 置く名前は .app のディレクトリ名にする。渡し方（相対パス・末尾の /.）で変わらないよう、実体の絶対パスに直してから取る
+src=$(CDPATH='' cd -- "$src" && pwd -P)
+app_dir=${src##*/}
+dest="$HOME/Library/Input Methods/$app_dir"
 exe="$dest/Contents/MacOS/tugime"
 
 # バンドルを消さずに中身を上書きする。バンドルが無い瞬間に macOS が入力源の一覧を作り直すと登録が消えるため
@@ -67,4 +61,4 @@ read -r -a pids <<< "$found"
 (( ${#pids[@]} == 0 )) || kill "${pids[@]}"
 echo "== 配置 $dest"
 # システム設定は、ログインし直すまで新しい入力ソースを一覧に出さない（https://developer.apple.com/forums/thread/775526）
-echo "初めて入れたときは、ログアウトしてログインし直してから、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 → $name (日本語) で追加する"
+echo "初めて入れたときは、ログアウトしてログインし直してから、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 → ${app_dir%.app} (日本語) で追加する"
