@@ -36,7 +36,7 @@ public struct SegmentWeights: Sendable {
         self.englishSpanPenalty = englishSpanPenalty
     }
 
-    /// corpus/examples.tsv に対して tugime-cli --tune で選んだ値。近傍の組でも一致件数が落ちにくい場所から採る
+    /// 他の IME の報告から作った例文集に対して tugime-cli --tune で選んだ値。今の例文集では選び直していない
     public static let standard = SegmentWeights(
         japanese: 1.0,
         english: 1.4,
@@ -90,7 +90,7 @@ public final class Segmenter {
         }.joined()
     }
 
-    /// この長さ以下の読める綴りは、英語の語表に載っていても日本語として読む
+    /// この長さ以下の読める綴りは、英語の語であっても日本語として読む
     static let maxJapaneseFirstLength = 2
 
     /// 前の語の後ろに付く記号と、日本語の文で使う形

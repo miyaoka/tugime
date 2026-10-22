@@ -58,7 +58,7 @@ main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PAT
 
 - 打っている途中に矢印キーを押すと、Space を押さなくても最初の文節を選び、そのキーの動きをする
 - `,` `.` `?` `!` は、直前が日本語なら `、` `。` `？` `！` になり、直前が英語なら打ったまま残る
-- 綴りの表で最後まで読めて英語の語表に無い綴り（`ime` `exe` など）と、読める 2 文字以下の綴り（`ie` など）は日本語になる。英字で残すときは F10 を押す
+- 綴りの表で最後まで読め、日本語の文の中に英字のまま書かれることの少ない綴り（`matte` など）と、読める 2 文字以下の綴り（`ie` など）は日本語になる。英字で残すときは F10 を押す
 - パスワード欄などで安全入力が有効な間は、キーを変換せずにアプリへ渡す
 
 ## 綴りの表
@@ -80,4 +80,5 @@ swift test
 ## 使っているもの
 
 - [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter)（MIT）と既定の辞書
-- 英語の語表: macOS 同梱の Webster's Second International（1934 年、著作権切れ）と固有名詞表
+- 英語の語の頻度: [wordfreq](https://github.com/rspeer/wordfreq) の日本語データ（CC BY-SA 4.0）
+- 英語の綴りらしさを数える語表: macOS 同梱の Webster's Second International（1934 年、著作権切れ）と固有名詞表

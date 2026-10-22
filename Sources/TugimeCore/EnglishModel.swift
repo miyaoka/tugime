@@ -1,13 +1,15 @@
 import Foundation
 
 /// 英語の区間の確からしさを測る。日本語の文の中に英字のまま書かれる語は、その出現頻度で測る。
-/// 頻度の表に無い綴り（claudecode、cwd など）は、未知の語として英語の綴りらしさ（文字の 3-gram）で測る。
+/// 頻度の表に無い綴り（claudecode、opencode など）は、未知の語として英語の綴りらしさ（文字の 3-gram）で測る。
 public struct EnglishModel: Sendable {
     public enum LoadError: Error, CustomStringConvertible {
         case missingResource(String)
+        case malformedLine(String, Int, String)
         public var description: String {
             switch self {
             case .missingResource(let name): "英語の語表がバンドルに無い: \(name)"
+            case .malformedLine(let name, let line, let text): "英語の語表 \(name) の \(line) 行目を読めない: \(text)"
             }
         }
     }
@@ -22,8 +24,9 @@ public struct EnglishModel: Sendable {
 
     /// 英語の語として扱う、日本語の文章での頻度（Zipf 値）の下限。使いながら調整する
     static let minWordZipf = 2.0
-    /// 英字の語が頻度の表に無い綴りである確率の自然対数。使いながら調整する
-    static let unknownLogProbability = -1.0
+    /// 表に無い語の項に掛ける重みの自然対数。表の語の項は出現確率そのもの（表全体の和は約 0.021）なので、
+    /// この重みは確率ではなく、表の語に対する未知の語の比として働く。使いながら調整する
+    static let unknownLogWeight = -1.0
 
     /// 英語の語として扱う語（小文字）
     private var vocabulary: Set<String> = []
@@ -68,9 +71,12 @@ public struct EnglishModel: Sendable {
     public static func bundled() throws -> EnglishModel {
         let spellings = try resource("english-words", "txt").split(separator: "\n")
         var zipf: [String: Double] = [:]
-        for line in try resource("english-frequency", "tsv").split(separator: "\n") {
+        for (index, line) in try resource("english-frequency", "tsv").split(separator: "\n").enumerated() {
             let fields = line.split(separator: "\t")
-            zipf[String(fields[0])] = Double(fields[1])!
+            guard fields.count == 2, let value = Double(fields[1]) else {
+                throw LoadError.malformedLine("english-frequency.tsv", index + 1, String(line))
+            }
+            zipf[String(fields[0])] = value
         }
         return EnglishModel(spellings: spellings, zipf: zipf)
     }
@@ -87,10 +93,11 @@ public struct EnglishModel: Sendable {
         vocabulary.contains(text.lowercased())
     }
 
-    /// 1 語として見たときの自然対数の尤度。頻度の表にある語として現れる確率と、未知の語として現れる確率の和
+    /// 1 語として見たときの自然対数の点。表の語としての出現確率と、重みを掛けた綴りらしさの和。
+    /// 正規化した確率ではないが、区間ごとに足す定数は区切りの重みが吸収するので、比べ合いには効かない
     public func logProbability(_ text: some StringProtocol) -> Double {
         let lowered = text.lowercased()
-        let unknown = Self.unknownLogProbability + spellingLogProbability(lowered)
+        let unknown = Self.unknownLogWeight + spellingLogProbability(lowered)
         guard let known = logFrequency[lowered] else { return unknown }
         let top = max(known, unknown)
         return top + log(exp(known - top) + exp(unknown - top))
