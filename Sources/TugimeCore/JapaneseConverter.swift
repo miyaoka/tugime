@@ -116,9 +116,45 @@ public final class AzooKeyConverter: JapaneseConverting {
         var left: String
     }
 
+    /// 採点に使う変換器の数。区切りは打鍵のたびに、同じ開始位置の読みを 1 かなずつ伸ばして採点するので、
+    /// 開始位置と文脈の組ごとに変換器があれば、変換エンジンが前の読みの途中の計算を使い回せる
+    private static let scoringEngineCount = 32
+
+    /// 辞書。すべての変換器で共有する
+    private let store: DicdataStore
+    /// 採点に使う変換器と、それぞれに前に渡した読み
+    private var scoringEngines: [(engine: KanaKanjiConverter, last: String, used: Int)] = []
+    private var scoringClock = 0
+    /// 表示に使う変換器と、前に渡した読み
+    private let displayConverter: KanaKanjiConverter
+    private var lastDisplayInput = ""
+
     public init(zenzaiWeight: URL?) {
-        converter = KanaKanjiConverter.withDefaultDictionary()
+        store = DicdataStore.withDefaultDictionary()
+        converter = KanaKanjiConverter(dicdataStore: store)
+        displayConverter = KanaKanjiConverter(dicdataStore: store)
         self.zenzaiWeight = zenzaiWeight
+    }
+
+    /// 採点の変換器を選ぶ。前に渡した読みが text の先頭と一致する変換器があればそれを使い、
+    /// 無ければ一番長く使っていない変換器の途中の計算を捨てて使う
+    private func scoringEngine(for text: String) -> KanaKanjiConverter {
+        scoringClock += 1
+        let continuing = scoringEngines.indices.filter { text.hasPrefix(scoringEngines[$0].last) }
+        if let index = continuing.max(by: { scoringEngines[$0].last.count < scoringEngines[$1].last.count }) {
+            scoringEngines[index].last = text
+            scoringEngines[index].used = scoringClock
+            return scoringEngines[index].engine
+        }
+        if scoringEngines.count < Self.scoringEngineCount {
+            scoringEngines.append((KanaKanjiConverter(dicdataStore: store), text, scoringClock))
+            return scoringEngines[scoringEngines.count - 1].engine
+        }
+        let index = scoringEngines.indices.min { scoringEngines[$0].used < scoringEngines[$1].used }!
+        scoringEngines[index].engine.stopComposition()
+        scoringEngines[index].last = text
+        scoringEngines[index].used = scoringClock
+        return scoringEngines[index].engine
     }
 
     private static func options(nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode) -> ConvertRequestOptions {
@@ -162,7 +198,7 @@ public final class AzooKeyConverter: JapaneseConverting {
     }
 
     private func convertAtStart(_ kana: String) -> JapaneseReading? {
-        candidates(kana, nBest: Self.scoringBest).first.map {
+        candidates(kana, nBest: Self.scoringBest, scoring: true).first.map {
             JapaneseReading(text: $0.text, value: Double($0.value), clauses: Self.clauses(of: $0.data[...], kana: kana, text: $0.text), context: .start)
         }
     }
@@ -242,19 +278,31 @@ public final class AzooKeyConverter: JapaneseConverting {
         displayCache = [:]
     }
 
-    private func candidates(_ kana: String, nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode = .off) -> [Candidate] {
+    /// 変換エンジンは直前の入力との差分で計算する。前に渡した読みの続きを渡すときだけ途中の計算を使い回し、
+    /// それ以外は前の状態を捨てて、要求ごとに独立した結果にする
+    private func engine(for kana: String, zenzai: ConvertRequestOptions.ZenzaiMode, scoring: Bool) -> KanaKanjiConverter {
+        if scoring { return scoringEngine(for: kana) }
+        if zenzai != .off {
+            if lastDisplayInput.isEmpty || !kana.hasPrefix(lastDisplayInput) { displayConverter.stopComposition() }
+            lastDisplayInput = kana
+            return displayConverter
+        }
+        converter.stopComposition()
+        return converter
+    }
+
+    private func candidates(_ kana: String, nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode = .off, scoring: Bool = false) -> [Candidate] {
         var composing = ComposingText()
         composing.insertAtCursorPosition(kana, inputStyle: .direct)
         let kanaCount = kana.count
-        // 変換エンジンは直前の入力との差分で計算するので、前の要求の状態を捨て、要求ごとに独立した結果にする
-        converter.stopComposition()
+        let engine = engine(for: kana, zenzai: zenzai, scoring: scoring)
         // 入力全体を覆い、言語モデルで評価された候補だけを採る
-        let results = converter.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)).mainResults.filter {
+        let results = engine.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)).mainResults.filter {
             $0.rubyCount == kanaCount && !Self.isUnscoredWhole($0)
         }
         // 変換エンジンはモデルを読めないと黙って Zenzai なしで変換する。読めたときだけ zenzStatus が "load <URL>" になる
-        if let zenzaiWeight, zenzai != .off, converter.zenzStatus != "load \(zenzaiWeight.absoluteString)" {
-            fatalError("Zenzai のモデルを読めない: \(converter.zenzStatus)")
+        if let zenzaiWeight, zenzai != .off, engine.zenzStatus != "load \(zenzaiWeight.absoluteString)" {
+            fatalError("Zenzai のモデルを読めない: \(engine.zenzStatus)")
         }
         return results
     }
@@ -309,7 +357,7 @@ public final class AzooKeyConverter: JapaneseConverting {
     /// 前に置くものだけの評価値。差し引きたいのは前に置いたものがある確からしさなので、表記（3 と 三）は問わず最良の候補で測る
     private func value(of prefix: Prefix) -> Double? {
         if let cached = prefixValues[prefix.input] { return cached }
-        let value = candidates(prefix.input, nBest: Self.scoringBest).first.map { Double($0.value) }
+        let value = candidates(prefix.input, nBest: Self.scoringBest, scoring: true).first.map { Double($0.value) }
         prefixValues[prefix.input] = value
         return value
     }
@@ -317,7 +365,7 @@ public final class AzooKeyConverter: JapaneseConverting {
     /// 前に置いたものに続けて変換し、前に置いたものだけの評価値を差し引く
     private func convert(_ kana: String, after prefix: Prefix, context: JapaneseContext) -> JapaneseReading? {
         guard let prefixOnly = value(of: prefix),
-              let combined = candidates(prefix.input + kana, nBest: Self.scoringBest).first(where: { Self.drop(prefix, from: $0) != nil }),
+              let combined = candidates(prefix.input + kana, nBest: Self.scoringBest, scoring: true).first(where: { Self.drop(prefix, from: $0) != nil }),
               let text = Self.drop(prefix, from: combined)
         else { return nil }
         let clauses = Self.clauses(of: Self.words(after: prefix, in: combined), kana: kana, text: text)
