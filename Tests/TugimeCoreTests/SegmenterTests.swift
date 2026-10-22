@@ -56,6 +56,32 @@ private final class LongReadingPenalty: JapaneseConverting {
     }
 }
 
+@Suite struct ClauseConversionTests {
+    let segmenter: Segmenter
+
+    init() throws {
+        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: KanaEcho())
+    }
+
+    /// KanaEcho は文節を 2 かなずつに分けるので、kyouhaii は きょ / うは / いい になる
+    @Test func convertsOnlyTheFocusedJapaneseClause() {
+        let clauses = segmenter.clauses("kyouhaii")
+        #expect(clauses.map(\.reading) == ["きょ", "うは", "いい"])
+        #expect(segmenter.convertClause(clauses, at: 1, to: .katakana) == "ウハ")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .halfwidthKatakana) == "ｳﾊ")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .roman) == "uha")
+        #expect(segmenter.convertClause(clauses, at: 0, to: .roman) == "kyo")
+        #expect(segmenter.convertClause(clauses, at: 2, to: .fullwidthRoman) == "ｉｉ")
+    }
+
+    @Test func convertsAnEnglishClauseByItsTypedSpelling() {
+        let clauses = segmenter.clauses("kyouhagoogle")
+        let english = clauses.firstIndex { $0.kind == .english }!
+        #expect(segmenter.convertClause(clauses, at: english, to: .roman) == "google")
+        #expect(segmenter.convertClause(clauses, at: english, to: .fullwidthRoman) == "ｇｏｏｇｌｅ")
+    }
+}
+
 @Suite struct SegmenterTests {
     let segmenter: Segmenter
 

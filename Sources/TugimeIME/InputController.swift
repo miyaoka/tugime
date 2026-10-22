@@ -218,7 +218,12 @@ final class TugimeInputController: IMKInputController {
             return false
         }
         if !keys.isEmpty, let kind = KeyCode.wholeConversions[event.keyCode] {
-            convertWhole(to: kind, client: client)
+            // 文節を選んでいる間は選んでいる文節だけ、打っている途中は未確定の文字列全体を変える
+            if let clauses, clauses.count > 1 {
+                convertFocusedClause(to: kind, client: client)
+            } else {
+                convertWhole(to: kind, client: client)
+            }
             return true
         }
         if clauses != nil {
@@ -333,6 +338,21 @@ final class TugimeInputController: IMKInputController {
         let span = ClauseSpan(index: 0, source: keys, reading: keys, context: .start)
         clauses = [Clause(kind: .english, reading: keys, candidates: [text], selected: 0, span: span)]
         focus = 0
+        candidatePanel.hide()
+        showMarkedText(client)
+    }
+
+    /// 選んでいる文節を指定の文字種にする。その文字列を文節の候補として選ぶので、候補の窓で選び直せる
+    private func convertFocusedClause(to kind: WholeConversion, client: IMKTextInput) {
+        guard var clauses else { return }
+        let text = sharedSegmenter.convertClause(clauses, at: focus, to: kind)
+        if let index = clauses[focus].candidates.firstIndex(of: text) {
+            clauses[focus].selected = index
+        } else {
+            clauses[focus].candidates.append(text)
+            clauses[focus].selected = clauses[focus].candidates.count - 1
+        }
+        self.clauses = clauses
         candidatePanel.hide()
         showMarkedText(client)
     }
