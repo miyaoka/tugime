@@ -19,10 +19,11 @@ func makeSegmenter() throws -> Segmenter {
     try Segmenter(table: .bundled(), english: .bundled(), japanese: AzooKeyConverter())
 }
 
+let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P"]
+
 func describe(_ segments: [Segment]) -> String {
     segments.map { s in
-        let tag = s.kind == .japanese ? "J" : "E"
-        return "\(tag)[\(s.source)→\(s.output) \(String(format: "%.1f", s.score))]"
+        "\(tag[s.kind]!)[\(s.source)→\(s.output) \(String(format: "%.1f", s.score))]"
     }.joined(separator: " ")
 }
 
@@ -171,7 +172,7 @@ do {
         for input in args.dropFirst() {
             print("== \(input)")
             for clause in segmenter.clauses(input) {
-                print("\(clause.kind == .japanese ? "J" : "E") \(clause.source)\t\(clause.candidates.joined(separator: " / "))")
+                print("\(tag[clause.kind]!) \(clause.source)\t\(clause.candidates.joined(separator: " / "))")
             }
         }
     case "--explain":

@@ -15,14 +15,19 @@ public struct Clause: Sendable, Equatable {
 extension Segmenter {
     /// 区切りを選び、区間ごとに候補の一覧を付ける
     public func clauses(_ input: String) -> [Clause] {
-        segment(input).enumerated().map { index, segment in
-            Clause(kind: segment.kind, source: segment.source, candidates: candidates(for: segment, isFirst: index == 0), selected: 0)
+        let segments = segment(input)
+        return segments.enumerated().map { index, segment in
+            // 先頭か句読点の直後は文頭として変換する
+            let isSentenceStart = index == 0 || segments[index - 1].kind == .punctuation
+            return Clause(kind: segment.kind, source: segment.source, candidates: candidates(for: segment, isFirst: isSentenceStart), selected: 0)
         }
     }
 
     private func candidates(for segment: Segment, isFirst: Bool) -> [String] {
         var list: [String] = [segment.output]
         switch segment.kind {
+        case .punctuation:
+            list.append(segment.source)
         case .japanese:
             // 日本語区間は日本語区間に続かないので、先頭でなければ直前は英語区間
             let context: JapaneseContext = isFirst ? .start : .afterEnglish

@@ -4,6 +4,8 @@ public struct Segment: Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         case japanese
         case english
+        /// 日本語の句読点にした , と .
+        case punctuation
     }
 
     public var kind: Kind
@@ -56,7 +58,28 @@ public final class Segmenter {
         self.weights = weights
     }
 
+    /// 前の語の後ろに付く記号と、日本語の文で使う形
+    static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！"]
+
+    /// 記号は前の語の後ろに付くので、直前の区間が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
+    /// 日本語の記号の位置で入力を切り、次の部分は文頭から評価する
     public func segment(_ input: String) -> [Segment] {
+        let chars = Array(input)
+        var segments: [Segment] = []
+        var runStart = 0
+        for (i, ch) in chars.enumerated() {
+            guard let mark = Self.punctuation[ch] else { continue }
+            let before = segmentRun(String(chars[runStart..<i]))
+            if before.last?.kind == .english { continue }
+            segments += before
+            segments.append(Segment(kind: .punctuation, source: String(ch), reading: mark, output: mark, score: 0))
+            runStart = i + 1
+        }
+        return segments + segmentRun(String(chars[runStart...]))
+    }
+
+    /// 句読点を含まない部分を、日本語区間と英語区間の並びに分ける
+    private func segmentRun(_ input: String) -> [Segment] {
         let chars = Array(input)
         let n = chars.count
         guard n > 0 else { return [] }
