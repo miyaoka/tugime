@@ -39,11 +39,11 @@ jobs:
       - name: Build .app
         run: scripts/build-app.sh
 
-      # 日英判定の一致件数を記録に残す。全件一致は前提にしないので gate にしない
+      # 日英判定の一致件数を記録に残す。件数では落とさず、CLI が実行に失敗したときだけ落とす
       - name: Corpus
         run: |
           swift build -c release --product tugime-cli
-          .build/release/tugime-cli --corpus corpus/examples.tsv | tail -2 || true
+          .build/release/tugime-cli --corpus corpus/examples.tsv
 
   # ==============================================================
   # workflow のセキュリティ検査

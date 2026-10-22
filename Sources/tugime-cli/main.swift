@@ -63,7 +63,8 @@ func loadCorpus(path: String) throws -> [Example] {
     }
 }
 
-func runCorpus(_ examples: [Example], segmenter: Segmenter) -> Bool {
+/// 一致件数を出す。全件一致は前提にしないので、件数によって終了コードを変えない
+func runCorpus(_ examples: [Example], segmenter: Segmenter) {
     var judged = 0
     var exact = 0
     for example in examples {
@@ -79,7 +80,6 @@ func runCorpus(_ examples: [Example], segmenter: Segmenter) -> Bool {
     }
     print("日英判定の一致 \(judged) / \(examples.count)")
     print("変換結果の一致 \(exact) / \(examples.count)")
-    return judged == examples.count
 }
 
 func countJudged(_ examples: [Example], segmenter: Segmenter) -> Int {
@@ -155,7 +155,7 @@ do {
             tune(examples, segmenter: segmenter)
             exit(0)
         }
-        exit(runCorpus(examples, segmenter: segmenter) ? 0 : 1)
+        runCorpus(examples, segmenter: segmenter)
     case "--span":
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
