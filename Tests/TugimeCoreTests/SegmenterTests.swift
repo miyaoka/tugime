@@ -172,12 +172,33 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(output("kore.") == "これ。")
         #expect(output("kore,sore?") == "これ、それ？")
         #expect(output("Hello.") == "Hello.")
+        #expect(output("ie~") == "いえ〜")
+        #expect(output("ie!~") == "いえ！〜")
+        #expect(output("cd~") == "cd~")
+    }
+
+    @Test func symbolKeysAreSymbolsWhateverSurroundsThem() {
+        #expect(output("[google]") == "「google」")
+        #expect(output("google/apple") == "google・apple")
+        #expect(output("zhzjzkzl") == "←↓↑→")
+        #expect(output("z.z/z-") == "…・〜")
+        // z, は記号にしないので、英単語の後のカンマは打ったまま残る
+        #expect(output("quiz,") == "quiz,")
+        #expect(output("z[kagiz]") == "『かぎ』")
+    }
+
+    @Test func symbolKeysCutTheInput() {
+        #expect(segmenter.segment("zhou").map(\.source) == ["zh", "ou"])
+        #expect(output("zhou") == "←おう")
+        #expect(output("iezlie") == "いえ→いえ")
     }
 
     @Test func leadingPunctuationFollowsTheTextBeforeTheCaret() {
         #expect(output(".", leading: .afterEnglish) == ".")
         #expect(output(".", leading: .afterJapanese) == "。")
         #expect(output(".", leading: .start) == "。")
+        #expect(output("~", leading: .afterJapanese) == "〜")
+        #expect(output("~", leading: .afterEnglish) == "~")
     }
 
     private func readings(_ clauses: [Clause]) -> [String] {
