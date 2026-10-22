@@ -55,11 +55,8 @@ xattr -dr com.apple.quarantine "$dest"
 "$exe" --register
 # 動いている古い版を止める。次に入力源が選ばれたときに新しい版が起動する
 # 実行ファイル名はどの .app も tugime なので、実行ファイルのパスと文字列として一致するものだけを止める
-pids=$(ps -axo pid=,comm= | exe="$exe" awk '{ pid = $1; sub(/^ *[0-9]+ /, ""); if ($0 == ENVIRON["exe"]) print pid }')
-if [[ -n "$pids" ]]; then
-    # shellcheck disable=SC2086 # 改行区切りの PID を引数に分ける
-    kill $pids
-fi
+read -r -a pids <<< "$(ps -axo pid=,comm= | exe="$exe" awk '{ pid = $1; sub(/^ *[0-9]+ /, ""); if ($0 == ENVIRON["exe"]) printf "%s ", pid }')"
+(( ${#pids[@]} == 0 )) || kill "${pids[@]}"
 echo "== 配置 $dest"
 # システム設定は、ログインし直すまで新しい入力ソースを一覧に出さない（https://developer.apple.com/forums/thread/775526）
 echo "初めて入れたときは、ログアウトしてログインし直してから、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 → $name (日本語) で追加する"

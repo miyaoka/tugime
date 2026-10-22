@@ -90,7 +90,6 @@ jobs:
           persist-credentials: false
           show-progress: false
 
-      # release と同じ配布版を組み立てる
       - name: Build .app
         run: TUGIME_BUILD_CHANNEL=stable scripts/build-app.sh
 
