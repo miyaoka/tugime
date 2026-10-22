@@ -63,6 +63,8 @@ public final class AzooKeyConverter: JapaneseConverting {
     private var cache: [CacheKey: JapaneseReading?] = [:]
     /// 前に置くものだけを変換した評価値。未確定の文字列の寿命だけ持つ
     private var prefixValues: [String: Double?] = [:]
+    /// カーソルの前の文字に続けて打ったかなを、文頭の形で読んだか。候補の一覧も同じ形で作るために覚える。未確定の文字列の寿命だけ持つ
+    private var readAtStartAfterCaret: [String: Bool] = [:]
 
     /// かなの前に置いて文脈にするもの。input は変換エンジンに渡す形、shown は変換結果の先頭に現れる形
     private struct Prefix {
@@ -72,11 +74,15 @@ public final class AzooKeyConverter: JapaneseConverting {
 
     private static let standIn = Prefix(input: nounStandIn.kana, shown: nounStandIn.word)
 
-    private static func prefix(for context: JapaneseContext) -> Prefix? {
+    /// かなの前に置くもの。カーソルの前の文字に続く形は、convert が採った形に合わせる
+    private func prefix(for kana: String, context: JapaneseContext) -> Prefix? {
         switch context {
-        case .start: nil
-        case .afterWord, .afterCaret: standIn
-        case .afterNumber(let digits): Prefix(input: digits, shown: digits)
+        case .start: return nil
+        case .afterWord: return Self.standIn
+        case .afterCaret:
+            _ = convert(kana: kana, context: context)
+            return readAtStartAfterCaret[kana] == true ? nil : Self.standIn
+        case .afterNumber(let digits): return Prefix(input: digits, shown: digits)
         }
     }
 
@@ -119,8 +125,11 @@ public final class AzooKeyConverter: JapaneseConverting {
             result = convert(kana, after: Self.standIn)
         case .afterCaret:
             // 前に置いた名詞は後ろの語と複合語（テスト用）を作るので、続く形だけで比べると新しく始まる読みを不当に下げる
-            let candidates = [convertAtStart(kana), convert(kana, after: Self.standIn)].compactMap { $0 }
-            result = candidates.max { $0.value < $1.value }
+            let atStart = convertAtStart(kana)
+            let continuing = convert(kana, after: Self.standIn)
+            let startWins = atStart.map { start in continuing.map { start.value > $0.value } ?? true } ?? false
+            readAtStartAfterCaret[kana] = startWins
+            result = startWins ? atStart : continuing
         case .afterNumber(let digits):
             result = convert(kana, after: Prefix(input: digits, shown: digits))
         }
@@ -136,7 +145,7 @@ public final class AzooKeyConverter: JapaneseConverting {
 
     public func alternatives(kana: String, context: JapaneseContext) -> [String] {
         let texts: [String]
-        if let prefix = Self.prefix(for: context) {
+        if let prefix = prefix(for: kana, context: context) {
             texts = candidates(prefix.input + kana, nBest: Self.listingBest).compactMap { Self.drop(prefix, from: $0) }
         } else {
             texts = candidates(kana, nBest: Self.listingBest).map(\.text)
@@ -148,6 +157,7 @@ public final class AzooKeyConverter: JapaneseConverting {
     public func endComposition() {
         cache = [:]
         prefixValues = [:]
+        readAtStartAfterCaret = [:]
     }
 
     private func candidates(_ kana: String, nBest: Int) -> [Candidate] {
