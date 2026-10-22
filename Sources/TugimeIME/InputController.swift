@@ -273,8 +273,13 @@ final class TugimeInputController: IMKInputController {
                 moveCandidate(by: -1, client: client)
             }
         case KeyCode.left, KeyCode.right:
-            let count = clauses?.count ?? 1
-            focus = min(max(focus + (event.keyCode == KeyCode.left ? -1 : 1), 0), count - 1)
+            // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する
+            let step = event.keyCode == KeyCode.left ? -1 : 1
+            if event.modifierFlags.contains(.shift) {
+                focus = min(max(focus + step, 0), (clauses?.count ?? 1) - 1)
+            } else if let clauses {
+                self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step)
+            }
             candidatePanel.hide()
             showMarkedText(client)
         case KeyCode.escape, KeyCode.backspace:
@@ -304,7 +309,8 @@ final class TugimeInputController: IMKInputController {
     /// 未確定の文字列全体を 1 つの文節にして、指定の文字種で表示する。Enter で確定する
     private func convertWhole(to kind: WholeConversion, client: IMKTextInput) {
         let text = sharedSegmenter.convertWhole(keys, to: kind, leading: leading)
-        clauses = [Clause(kind: .english, source: keys, candidates: [text], selected: 0)]
+        let span = ClauseSpan(index: 0, source: keys, reading: keys, context: .start)
+        clauses = [Clause(kind: .english, reading: keys, candidates: [text], selected: 0, span: span)]
         focus = 0
         candidatePanel.hide()
         showMarkedText(client)
@@ -328,7 +334,7 @@ final class TugimeInputController: IMKInputController {
 
     // MARK: 表示と確定
 
-    /// 変換前は、日本語区間をかな、英語区間を打ったままで表示する。変換後は文節ごとの選択を表示し、選ぶ対象の文節に太い下線を引く
+    /// 変換前は、日本語区間をかな、英語区間を打ったままで表示する。変換後は文節ごとの選択を表示し、選んでいる文節を強調する
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
         var focusStart = 0

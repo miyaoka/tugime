@@ -6,6 +6,7 @@ let usage = """
       tugime-cli <打鍵列>...                  打鍵列を変換した結果を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
       tugime-cli --clauses <打鍵列>...        文節ごとの候補を出す
+      tugime-cli --resize <打鍵列> <操作>     文節を操作した結果を出す。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す
       tugime-cli --whole <打鍵列>...          F6〜F10 の全体の変換を出す
       tugime-cli --span <英字|かな>...        英字は英語として、かなは日本語として評価値を出す
       tugime-cli --corpus <例文集.tsv>        例文集の全件を通し、一致件数を出す
@@ -182,8 +183,33 @@ do {
         for input in args.dropFirst() {
             print("== \(input)")
             for clause in segmenter.clauses(input) {
-                print("\(tag[clause.kind]!) \(clause.source)\t\(clause.candidates.joined(separator: " / "))")
+                print("\(tag[clause.kind]!) \(clause.reading)\t\(clause.candidates.joined(separator: " / "))")
             }
+        }
+    case "--resize":
+        guard args.count == 3 else {
+            print(usage)
+            exit(2)
+        }
+        let segmenter = try makeSegmenter()
+        var clauses = segmenter.clauses(args[1])
+        var focus = 0
+        func show(_ label: String) {
+            let marked = clauses.enumerated().map { $0.offset == focus ? "[\($0.element.output)]" : $0.element.output }
+            print("\(label)\t\(marked.joined(separator: " "))")
+        }
+        show("変換")
+        for op in args[2] {
+            switch op {
+            case "+": clauses = segmenter.resize(clauses, at: focus, by: 1)
+            case "-": clauses = segmenter.resize(clauses, at: focus, by: -1)
+            case ">": focus = min(focus + 1, clauses.count - 1)
+            case "<": focus = max(focus - 1, 0)
+            default:
+                print(usage)
+                exit(2)
+            }
+            show(String(op))
         }
     case "--explain":
         let segmenter = try makeSegmenter()
