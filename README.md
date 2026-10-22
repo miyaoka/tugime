@@ -68,10 +68,10 @@ main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PAT
 ## 開発
 
 ```bash
-swift build -c release --product tugime-cli
-.build/release/tugime-cli kyouhagoogledekensaku          # 変換結果
-.build/release/tugime-cli --explain kyouhagoogle          # 区間と評価値
-.build/release/tugime-cli --corpus corpus/examples.tsv    # 例文集の一致件数
+swift build --product tugime-cli
+.build/debug/tugime-cli kyouhagoogledekensaku          # 変換結果
+.build/debug/tugime-cli --explain kyouhagoogle          # 区間と評価値
+.build/debug/tugime-cli --corpus corpus/examples.tsv    # 例文集の一致件数（CI と同じ組み立て）
 swift test
 ```
 

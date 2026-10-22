@@ -21,9 +21,41 @@ concurrency:
 
 jobs:
   # ==============================================================
-  # ビルドとテスト（macOS 専用の IME なので macOS で走らせる）
+  # 配布物の組み立てに関わるファイルが変わったかを調べる。
+  # テストは変更の内容に関わらず常に走らせ、ここの結果で止めない
   # ==============================================================
-  validation:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      dist: ${{ steps.dist.outputs.any_modified }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # changed-files は PR の base と head を merge base で比べるので、全履歴を取る
+          fetch-depth: 0
+          filter: blob:none
+          show-progress: false
+
+      - uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        id: dist
+        with:
+          files: |
+            scripts/**
+            App/**
+            Package.swift
+            Package.resolved
+            Sources/TugimeIME/**
+            .github/workflows/**
+          skip_initial_fetch: true
+          # 差分を取れなかったときに「変更なし」と同じ結果を返させない
+          fail_on_initial_diff_error: true
+
+  # ==============================================================
+  # テストと例文集（macOS 専用の IME なので macOS で走らせる）
+  # ==============================================================
+  test:
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -35,19 +67,32 @@ jobs:
       - name: Test
         run: swift test
 
-      # 配布物の組み立て（リソースの同梱・Info.plist・署名）が壊れていないかを、release より前に検知する
+      # 日英判定の一致件数を記録に残す。件数では落とさず、CLI が実行に失敗したときだけ落とす
+      - name: Corpus
+        run: |
+          swift build --product tugime-cli
+          .build/debug/tugime-cli --corpus corpus/examples.tsv
+
+  # ==============================================================
+  # 配布物の組み立て（リソースの同梱・Info.plist・署名）が壊れていないかを、release より前に検知する
+  # ==============================================================
+  app:
+    needs: changes
+    if: needs.changes.outputs.dist == 'true'
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
       - name: Build .app
         run: scripts/build-app.sh
 
       # 利用者の Mac と同じく、組み立てたディレクトリが無い状態で辞書を読めるか。実行ファイルが arm64 だけか
       - name: Check .app
         run: scripts/check-app.sh
-
-      # 日英判定の一致件数を記録に残す。件数では落とさず、CLI が実行に失敗したときだけ落とす
-      - name: Corpus
-        run: |
-          swift build -c release --product tugime-cli
-          .build/release/tugime-cli --corpus corpus/examples.tsv
 
   # ==============================================================
   # workflow のセキュリティ検査
@@ -70,16 +115,21 @@ jobs:
           advanced-security: false
 
   # ==============================================================
-  # CI 全体のステータス集約。Branch Protection ではこのジョブだけを必須にする
+  # CI 全体のステータス集約。main の ruleset ではこのジョブだけを必須にする
   # ==============================================================
   all-green:
     runs-on: ubuntu-24.04
     if: always()
     needs:
+      # changes は常に走る。失敗したら app が飛ばされるので、allowed-skips に入れずに失敗を拾う
+      - changes
+      - test
+      - app
       - workflow_audit
-      - validation
     steps:
       - name: Check all CI jobs status
         uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
         with:
           jobs: ${{ toJSON(needs) }}
+          # app は配布物の組み立てに関わる変更が無ければ飛ばす
+          allowed-skips: app
