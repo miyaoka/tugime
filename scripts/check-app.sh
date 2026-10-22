@@ -1,11 +1,11 @@
 #!/bin/bash
-# 組み立てた tugime.app について、組み立てたディレクトリ（.build）に頼らずに綴りの表・語表・辞書・Zenzai のモデル・llama.framework を
+# 引数の組み立てた .app について、組み立てたディレクトリ（.build）に頼らずに綴りの表・語表・辞書・Zenzai のモデル・llama.framework を
 # 読めることと、実行ファイルと llama.framework が Apple Silicon 向け（arm64）だけを含むことを確かめる。
 # SwiftPM の生成するリソースの探し方はビルドの仕組みで違い、組み立てたマシンの絶対パスを探すものがあるので、.build を退避して実行する
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-app="$root/dist/tugime.app"
+app=$(cd "$1" && pwd)
 aside=$(mktemp -d)
 
 mv "$root/.build" "$aside/"

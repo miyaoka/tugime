@@ -96,7 +96,7 @@ jobs:
       # 利用者の Mac と同じく、組み立てたディレクトリが無い状態で辞書・Zenzai のモデル・llama.framework を読めるか。
       # 実行ファイルと llama.framework が arm64 だけか
       - name: Check .app
-        run: scripts/check-app.sh
+        run: scripts/check-app.sh "dist/tugime Local.app"
 
   # ==============================================================
   # workflow のセキュリティ検査

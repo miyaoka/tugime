@@ -1,11 +1,25 @@
 #!/bin/bash
-# tugime.app を dist/ に組み立てて ad-hoc で署名する。鍵束は使わない。
+# .app を dist/ に組み立てて ad-hoc で署名する。鍵束は使わない。
+# TUGIME_BUILD_CHANNEL=stable（release CI のみ）→ tugime.app。
+# 無指定 → local channel（tugime Local.app、bundle id 末尾 .local）。配布版と別の入力ソースになり、隣で共存できる
 set -euo pipefail
 
 bundle_id=io.github.miyaoka.inputmethod.tugime
+name=tugime
+case "${TUGIME_BUILD_CHANNEL:-}" in
+    stable) ;;
+    "")
+        bundle_id="$bundle_id.local"
+        name="tugime Local"
+        ;;
+    *)
+        echo "TUGIME_BUILD_CHANNEL は stable か無指定: $TUGIME_BUILD_CHANNEL" >&2
+        exit 1
+        ;;
+esac
 version=${TUGIME_VERSION:-0.0.0}
 root=$(cd "$(dirname "$0")/.." && pwd)
-app="$root/dist/tugime.app"
+app="$root/dist/$name.app"
 
 # SwiftPM の既定のビルドの仕組みは toolchain の版で違う。native はリソースを .app の Contents/Resources から探さないので、swiftbuild に固定する。
 # 対象は Apple Silicon だけなので arm64 だけを組み立てる。swiftbuild は指定しないと Intel 向けも含めた universal にする
@@ -34,10 +48,14 @@ cp "$zenz" "$app/Contents/Resources/zenz/"
 for bundle in "$bin"/*.bundle; do
     cp -R "$bundle" "$app/Contents/Resources/"
 done
-sed -e "s/__BUNDLE_ID__/$bundle_id/g" -e "s/__VERSION__/$version/g" "$root/App/Info.plist" > "$app/Contents/Info.plist"
+sed -e "s/__BUNDLE_ID__/$bundle_id/g" -e "s/__VERSION__/$version/g" -e "s/__NAME__/$name/g" "$root/App/Info.plist" > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist"
 # 入力ソースの一覧に出るモードの表示名
-cp -R "$root/App/en.lproj" "$root/App/ja.lproj" "$app/Contents/Resources/"
+for lproj in en.lproj ja.lproj; do
+    mkdir -p "$app/Contents/Resources/$lproj"
+    sed -e "s/__NAME__/$name/g" "$root/App/$lproj/InfoPlist.strings" > "$app/Contents/Resources/$lproj/InfoPlist.strings"
+    plutil -lint "$app/Contents/Resources/$lproj/InfoPlist.strings"
+done
 swift "$root/scripts/make-icons.swift" "$app/Contents/Resources"
 swift "$root/scripts/collect-notices.swift" "$root" "$app/Contents/Resources" "$app/Contents/Resources/ThirdPartyNotices.txt"
 

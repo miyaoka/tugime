@@ -39,9 +39,11 @@ Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開し
 Xcode（Swift 6.2 以降）が要る。組み立てのときに Zenzai のモデル（約 70MB）を Hugging Face から `.zenz/` に取得する。
 
 ```bash
-scripts/build-app.sh            # dist/tugime.app を組み立てて ad-hoc 署名する
-./install.sh dist/tugime.app    # 配置して登録する
+scripts/build-app.sh                    # dist/tugime Local.app を組み立てて ad-hoc 署名する
+./install.sh "dist/tugime Local.app"    # 配置して登録する
 ```
+
+ソースから組み立てたものは `tugime Local` という別の入力ソースになり、配布版の tugime と並べて入れられる。入力ソースの追加では `tugime Local (日本語)` を選ぶ。
 
 ## リリース
 

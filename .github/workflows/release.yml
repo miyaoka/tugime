@@ -92,14 +92,14 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # tag 由来の version を Info.plist に焼き込み、ad-hoc 署名する
+      # tag 由来の version を Info.plist に焼き込み、ad-hoc 署名する。配布版の名前と bundle id を名乗るのはここだけ
       - name: Build .app
         run: |
           set -euo pipefail
-          TUGIME_VERSION="${TAG#v}" scripts/build-app.sh
+          TUGIME_BUILD_CHANNEL=stable TUGIME_VERSION="${TAG#v}" scripts/build-app.sh
 
       - name: Check .app
-        run: scripts/check-app.sh
+        run: scripts/check-app.sh dist/tugime.app
 
       - name: Package tarball
         run: scripts/package.sh
