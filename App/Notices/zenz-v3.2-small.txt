@@ -3,3 +3,8 @@ zenz/ggml-model-Q5_K_M.gguf
 Zenzai のモデル zenz-v3.2-small（Q5_K_M）。
 出典: https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf（コミット c67e03e07d215c869f591b274c1631170d3e11fe）
 利用条件: Apache License 2.0（https://www.apache.org/licenses/LICENSE-2.0）。本文は、このファイルの azooKey_dictionary_storage/LICENSE の節と同じ。
+
+このモデルのファイルは、元のモデルとして ku-nlp/gpt2-small-japanese-char を記している。
+出典: https://huggingface.co/ku-nlp/gpt2-small-japanese-char
+利用条件: Creative Commons Attribution-ShareAlike 4.0 International（CC BY-SA 4.0）
+https://creativecommons.org/licenses/by-sa/4.0/
