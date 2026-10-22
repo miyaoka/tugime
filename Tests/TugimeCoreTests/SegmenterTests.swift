@@ -17,6 +17,44 @@ private final class KanaEcho: JapaneseConverting {
     func endComposition() {}
 }
 
+/// 長い読みほど評価値が長さ以上に下がる変換。読めるローマ字を日本語区間に分ける区切りを選ばせる。
+/// 変換結果は読みを [] で囲み、どの読みを 1 回で変換したかを出力から読めるようにする。maxLength より長い読みは変換できない
+private final class LongReadingPenalty: JapaneseConverting {
+    let maxLength: Int
+
+    init(maxLength: Int = .max) {
+        self.maxLength = maxLength
+    }
+
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
+        guard kana.count <= maxLength else { return nil }
+        let text = "[\(kana)]"
+        return JapaneseReading(text: text, value: -Double(kana.count * kana.count), clauses: [JapaneseClause(reading: kana, text: text)], context: context == .afterCaret ? .afterWord : context)
+    }
+
+    func alternatives(kana: String, context: JapaneseContext) -> [String] { [kana] }
+
+    func endComposition() {}
+}
+
+@Suite struct JapaneseSpanJoinTests {
+    @Test func readableRomajiStaysOneJapaneseSpan() throws {
+        let segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: LongReadingPenalty())
+        let segments = segmenter.segment("jaasousiro")
+        #expect(segments.map(\.kind) == [.japanese])
+        #expect(segments.map(\.output) == ["[じゃあそうしろ]"])
+    }
+
+    @Test func spansStaySplitWhenTheJoinedReadingCannotBeConverted() throws {
+        let segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: LongReadingPenalty(maxLength: 4))
+        let segments = segmenter.segment("jaasousiro")
+        #expect(segments.map(\.kind).allSatisfy { $0 == .japanese })
+        #expect(segments.count > 1)
+        #expect(segments.map(\.reading).joined() == "じゃあそうしろ")
+        #expect(segments.allSatisfy { $0.output == "[\($0.reading)]" })
+    }
+}
+
 @Suite struct SegmenterTests {
     let segmenter: Segmenter
 

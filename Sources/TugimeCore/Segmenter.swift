@@ -122,8 +122,7 @@ public final class Segmenter {
         let n = chars.count
         guard n > 0 else { return [] }
 
-        // best[位置][直前の区間の種類] = (評価値, 区間)。英語区間は英語区間に続けない。
-        // 日本語区間は日本語区間にも続けられる。読めるローマ字の途中で日本語の長さの不利を解くために、英語区間を挟ませないため
+        // best[位置][直前の区間の種類] = (評価値, 区間)。英語区間は英語区間に続けない。日本語区間は日本語区間にも続けられる
         struct Cell {
             var score: Double
             var segment: Segment
@@ -161,7 +160,8 @@ public final class Segmenter {
                 // 長音だけの区間は日本語として成り立たない（binge-watch の - など）
                 if kana.allSatisfy({ $0 == "ー" }) { continue }
                 for predecessor in predecessors {
-                    guard let reading = japaneseConverter.convert(kana: kana, context: predecessor.context) else { continue }
+                    guard score(at: start, after: predecessor.kind) != nil,
+                          let reading = japaneseConverter.convert(kana: kana, context: predecessor.context) else { continue }
                     japaneseEnds.insert(end)
                     let s = weights.japanese * reading.value - weights.japaneseSpanPenalty
                     let segment = Segment(kind: .japanese, source: String(chars[start..<end]), reading: kana, output: reading.text, score: s, context: reading.context)
@@ -197,7 +197,8 @@ public final class Segmenter {
     }
 
     /// 隣り合う日本語区間を 1 つにまとめ、まとめた読みを最初の区間の文脈で変換し直す。
-    /// まとめた読みを変換できなければ、区間ごとの変換を並べる
+    /// まとめた読みを変換できなければまとめない。各区間は採点のときに自分の文脈で変換できているので、文節に分けても同じ変換になる。
+    /// まとめた区間の点は、区切りを決めた区間ごとの点の和にする
     private func mergeJapanese(_ segments: [Segment]) -> [Segment] {
         var merged: [Segment] = []
         for segment in segments {
@@ -206,14 +207,17 @@ public final class Segmenter {
                 continue
             }
             let reading = last.reading + segment.reading
-            let whole = japaneseConverter.convert(kana: reading, context: last.context)
+            guard let whole = japaneseConverter.convert(kana: reading, context: last.context) else {
+                merged.append(segment)
+                continue
+            }
             merged[merged.count - 1] = Segment(
                 kind: .japanese,
                 source: last.source + segment.source,
                 reading: reading,
-                output: whole?.text ?? last.output + segment.output,
+                output: whole.text,
                 score: last.score + segment.score,
-                context: whole?.context ?? last.context
+                context: whole.context
             )
         }
         return merged
