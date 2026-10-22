@@ -27,8 +27,6 @@ private enum KeyCode {
     static let right: UInt16 = 124
     static let down: UInt16 = 125
     static let up: UInt16 = 126
-    /// 候補の窓の 1 行目から 9 行目を選ぶ数字キー
-    static let digits: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
 }
 
 /// 変換器はプロセスに 1 つだけ持つ。辞書と語表の読み込みが重いので、入力源ごとに作らない
@@ -82,11 +80,14 @@ final class TugimeInputController: IMKInputController {
         return clauses[focus].candidates
     }
 
+    /// マウスで候補を選んだとき。自分で窓を動かしている間の通知は反映済みなので無視する
     override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
+        guard !movingPanel else { return }
         select(candidateString?.string)
     }
 
     override func candidateSelected(_ candidateString: NSAttributedString!) {
+        guard !movingPanel else { return }
         select(candidateString?.string)
         candidatePanel.hide()
     }
@@ -95,21 +96,35 @@ final class TugimeInputController: IMKInputController {
         guard let text, var clauses, let index = clauses[focus].candidates.firstIndex(of: text) else { return }
         clauses[focus].selected = index
         self.clauses = clauses
+        panelIndex = index
         if let client = client() {
             showMarkedText(client)
         }
     }
 
+    /// 窓が強調している候補の番号。IMKCandidates の selectCandidate(withIdentifier:) と selectedCandidate() は
+    /// 選択を動かせず値も当てにならない（macOS 10.13 以降の既知の不具合）ので、位置はこちらで持つ
+    private var panelIndex = 0
+    private var movingPanel = false
+
     private func showCandidatePanel() {
+        guard let clauses else { return }
         candidatePanel.update()
         candidatePanel.show(kIMKLocateCandidatesBelowHint)
-        highlightSelectedCandidate()
+        // 窓は作り直すと先頭を強調するので、選んでいる候補まで送る
+        panelIndex = 0
+        movePanel(to: clauses[focus].selected)
     }
 
-    private func highlightSelectedCandidate() {
-        guard let clauses else { return }
-        let id = candidatePanel.candidateStringIdentifier(clauses[focus].output)
-        candidatePanel.selectCandidate(withIdentifier: id)
+    /// 矢印キーと同じ moveDown: / moveUp: を窓に送り、強調を index まで動かす
+    private func movePanel(to index: Int) {
+        movingPanel = true
+        defer { movingPanel = false }
+        let step = index > panelIndex ? #selector(NSResponder.moveDown(_:)) : #selector(NSResponder.moveUp(_:))
+        for _ in 0..<abs(index - panelIndex) {
+            candidatePanel.perform(step, with: nil)
+        }
+        panelIndex = index
     }
 
     // MARK: キー入力
@@ -202,10 +217,6 @@ final class TugimeInputController: IMKInputController {
                 showMarkedText(client)
             }
         default:
-            if panelVisible, let line = KeyCode.digits.firstIndex(of: event.keyCode) {
-                pickLine(line)
-                return true
-            }
             commit(client)
             return appendCharacter(event, client: client)
         }
@@ -217,16 +228,8 @@ final class TugimeInputController: IMKInputController {
         let count = clauses[focus].candidates.count
         clauses[focus].selected = (clauses[focus].selected + delta + count) % count
         self.clauses = clauses
-        highlightSelectedCandidate()
+        movePanel(to: clauses[focus].selected)
         showMarkedText(client)
-    }
-
-    private func pickLine(_ line: Int) {
-        let id = candidatePanel.candidateIdentifier(atLineNumber: line)
-        guard id != NSNotFound else { return }
-        candidatePanel.selectCandidate(withIdentifier: id)
-        select(candidatePanel.selectedCandidateString()?.string)
-        candidatePanel.hide()
     }
 
     /// 印字できる ASCII を打鍵列に足す。それ以外のキーは確定してからアプリに渡す
