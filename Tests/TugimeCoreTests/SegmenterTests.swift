@@ -56,6 +56,42 @@ private final class LongReadingPenalty: JapaneseConverting {
     }
 }
 
+@Suite struct ClauseConversionTests {
+    let segmenter: Segmenter
+
+    init() throws {
+        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: KanaEcho())
+    }
+
+    /// KanaEcho は文節を 2 かなずつに分けるので、kyouhaii は きょ / うは / いい になる
+    @Test func convertsOnlyTheFocusedJapaneseClause() {
+        let clauses = segmenter.clauses("kyouhaii")
+        #expect(clauses.map(\.reading) == ["きょ", "うは", "いい"])
+        #expect(segmenter.convertClause(clauses, at: 1, to: .katakana) == "ウハ")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .halfwidthKatakana) == "ｳﾊ")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .roman) == "uha")
+        #expect(segmenter.convertClause(clauses, at: 0, to: .roman) == "kyo")
+        #expect(segmenter.convertClause(clauses, at: 2, to: .fullwidthRoman) == "ｉｉ")
+    }
+
+    @Test func convertsAnEnglishClauseByItsTypedSpelling() throws {
+        let clauses = segmenter.clauses("kyouhagoogle")
+        let english = try #require(clauses.firstIndex { $0.kind == .english })
+        #expect(segmenter.convertClause(clauses, at: english, to: .roman) == "google")
+        #expect(segmenter.convertClause(clauses, at: english, to: .fullwidthRoman) == "ｇｏｏｇｌｅ")
+    }
+
+    /// きゃ の途中で文節を切ると、文節に当たる打鍵が無い。かなの文字種にはでき、英字にはできない
+    @Test func refusesLettersForAClauseCutInsideOneSpelling() {
+        let clauses = segmenter.resize(segmenter.clauses("kyaku"), at: 0, by: -1)
+        #expect(clauses.map(\.reading) == ["き", "ゃく"])
+        #expect(segmenter.convertClause(clauses, at: 0, to: .katakana) == "キ")
+        #expect(segmenter.convertClause(clauses, at: 1, to: .katakana) == "ャク")
+        #expect(segmenter.convertClause(clauses, at: 0, to: .roman) == nil)
+        #expect(segmenter.convertClause(clauses, at: 1, to: .fullwidthRoman) == nil)
+    }
+}
+
 @Suite struct SegmenterTests {
     let segmenter: Segmenter
 

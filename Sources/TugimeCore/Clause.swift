@@ -61,7 +61,7 @@ extension Segmenter {
         guard clause.kind == .japanese else { return clauses }
         let span = clause.span
         let spanIndices = clauses.indices.filter { clauses[$0].span == span }
-        let start = clauses[spanIndices.first!..<index].map(\.reading.count).reduce(0, +)
+        let start = kanaStart(of: clauses, at: index)
         let length = clause.reading.count + delta
         guard length >= 1, start + length <= span.reading.count else { return clauses }
 
@@ -85,8 +85,8 @@ extension Segmenter {
         var rest = Array(clauses[(index + 1)...])
         if let next = rest.first, next.span == clauses[index].span {
             let span = next.span
-            let done = clauses[...index].filter { $0.span == span }.map(\.reading.count).reduce(0, +)
-            guard let (_, tail) = table.split(span.source, kana: span.reading, atKana: done) else { return nil }
+            let done = kanaStart(of: clauses, at: index + 1)
+            guard let (_, tail) = splitSource(of: span, atKana: done) else { return nil }
             let remaining = ClauseSpan(index: span.index, source: tail, reading: String(span.reading.dropFirst(done)), context: .afterWord)
             for i in rest.indices where rest[i].span == span {
                 rest[i].span = remaining
@@ -99,6 +99,30 @@ extension Segmenter {
             lastSpan = clause.span
         }
         return (text, rest, keys)
+    }
+
+    /// index の文節が、その区間の読みの何かな目から始まるか
+    func kanaStart(of clauses: [Clause], at index: Int) -> Int {
+        let span = clauses[index].span
+        return clauses[..<index].filter { $0.span == span }.map(\.reading.count).reduce(0, +)
+    }
+
+    /// 区間の打鍵を、読みの kana かな目に当たる位置で切る。1 つの綴りの途中に当たれば nil
+    func splitSource(of span: ClauseSpan, atKana kana: Int) -> (head: String, tail: String)? {
+        if kana == 0 { return ("", span.source) }
+        if kana == span.reading.count { return (span.source, "") }
+        return table.split(span.source, kana: span.reading, atKana: kana)
+    }
+
+    /// index の文節に当たる打鍵。英語と句読点の文節は区間と同じ。日本語の文節の境目が 1 つの綴りの途中に当たれば nil
+    func typedSource(of clauses: [Clause], at index: Int) -> String? {
+        let clause = clauses[index]
+        guard clause.kind == .japanese else { return clause.span.source }
+        let start = kanaStart(of: clauses, at: index)
+        guard let before = splitSource(of: clause.span, atKana: start)?.head,
+              let through = splitSource(of: clause.span, atKana: start + clause.reading.count)?.head
+        else { return nil }
+        return String(through.dropFirst(before.count))
     }
 
     /// 区間の読みのうち offset かな目から後ろを、変換エンジンの文節に分ける
