@@ -44,15 +44,15 @@ public struct SegmentWeights: Sendable {
 /// 綴りの表で読めない箇所は日本語区間に入れられないので、そこは必ず英語になる。
 /// 読める箇所は、日本語として変換した評価値と英語の綴りとしての評価値を比べて決める。
 public final class Segmenter {
-    private let table: RomajiTable
+    let table: RomajiTable
     private let english: EnglishModel
-    private let japanese: any JapaneseConverting
+    let japaneseConverter: any JapaneseConverting
     public var weights: SegmentWeights
 
     public init(table: RomajiTable, english: EnglishModel, japanese: any JapaneseConverting, weights: SegmentWeights = .standard) {
         self.table = table
         self.english = english
-        self.japanese = japanese
+        self.japaneseConverter = japanese
         self.weights = weights
     }
 
@@ -92,7 +92,7 @@ public final class Segmenter {
                 if kana.allSatisfy({ $0 == "ー" }) { continue }
                 // 日本語区間は日本語区間に続かないので、先頭でなければ直前は英語区間
                 let context: JapaneseContext = start == 0 ? .start : .afterEnglish
-                guard let reading = japanese.convert(kana: kana, context: context) else { continue }
+                guard let reading = japaneseConverter.convert(kana: kana, context: context) else { continue }
                 let s = weights.japanese * reading.value - weights.japaneseSpanPenalty
                 relax(end, start, Segment(kind: .japanese, source: String(chars[start..<end]), reading: kana, output: reading.text, score: s))
             }

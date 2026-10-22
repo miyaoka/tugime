@@ -3,9 +3,7 @@ import Testing
 
 /// 区間全体を読み切ったときのかな。読めなければ nil
 private func read(_ input: String) throws -> String? {
-    let table = try RomajiTable.bundled()
-    let chars = Array(input)
-    return table.readings(from: 0, in: chars).first { $0.end == chars.count }?.kana
+    try RomajiTable.bundled().reading(of: input)
 }
 
 @Suite struct RomajiTableTests {

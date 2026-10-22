@@ -52,6 +52,12 @@ guard let connectionName = Bundle.main.infoDictionary?["InputMethodConnectionNam
 }
 // IMKServer はプロセスに 1 つだけ作る。2 つあると Chromium 系のアプリに入力が届かない
 let server = IMKServer(name: connectionName, bundleIdentifier: Bundle.main.bundleIdentifier)
+// 候補の窓もプロセスに 1 つ。窓を出している間も、キーはまず入力コントローラが受け取る
+let candidatePanel: IMKCandidates = {
+    let panel = IMKCandidates(server: server, panelType: kIMKSingleColumnScrollingCandidatePanel)!
+    panel.setAttributes([IMKCandidatesSendServerKeyEventFirst: true])
+    return panel
+}()
 // 辞書の読み込みを最初の打鍵より前に済ませる
 _ = sharedSegmenter
 NSApplication.shared.run()

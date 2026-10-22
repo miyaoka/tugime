@@ -75,6 +75,13 @@ public struct RomajiTable: Sendable {
             .map { ($0.key, $0.value.kana) }
     }
 
+    /// 綴り全体を最後まで読めればかなを返す
+    public func reading(of text: some StringProtocol) -> String? {
+        let chars = Array(text)
+        guard !chars.isEmpty else { return nil }
+        return readings(from: 0, in: chars).first { $0.end == chars.count }?.kana
+    }
+
     /// 綴りの表の 1 項目だけで 1 つのかな（が・と・で・の など）になる綴りか。長音記号は含めない
     public func isSingleKana(_ text: some StringProtocol) -> Bool {
         guard let kana = entries[String(text)] else { return false }

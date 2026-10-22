@@ -165,6 +165,15 @@ do {
             }
             print("E \(arg)\t\(english.logProbability(arg))")
         }
+    case "--clauses":
+        // IME の候補の窓に並ぶものを区間ごとに出す
+        let segmenter = try makeSegmenter()
+        for input in args.dropFirst() {
+            print("== \(input)")
+            for clause in segmenter.clauses(input) {
+                print("\(clause.kind == .japanese ? "J" : "E") \(clause.source)\t\(clause.candidates.joined(separator: " / "))")
+            }
+        }
     case "--explain":
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {

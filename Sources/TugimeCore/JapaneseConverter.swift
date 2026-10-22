@@ -17,16 +17,21 @@ public enum JapaneseContext: Sendable, Hashable {
 }
 
 public protocol JapaneseConverting: AnyObject {
+    /// 区切りの採点に使う最良の変換
     func convert(kana: String, context: JapaneseContext) -> JapaneseReading?
+    /// 候補の窓に並べる変換結果。評価値の高い順で、重複は除く
+    func alternatives(kana: String, context: JapaneseContext) -> [String]
 }
 
 /// AzooKeyKanaKanjiConverter による変換。学習は使わないので、同じかなには常に同じ結果を返す。
 public final class AzooKeyConverter: JapaneseConverting {
     /// 英語区間の代わりに前へ置く名詞。辞書で 1 語に定まり、後ろの語と融合しにくいもの
     private static let nounStandIn = (kana: "てすと", word: "テスト")
+    /// 採点は区間ごとに何百回も呼ぶので少なく、候補の窓は選べるだけ多く取る
+    private static let scoringBest = 5
+    private static let listingBest = 20
 
     private let converter: KanaKanjiConverter
-    private let options: ConvertRequestOptions
     private var cache: [CacheKey: JapaneseReading?] = [:]
 
     private struct CacheKey: Hashable {
@@ -36,10 +41,13 @@ public final class AzooKeyConverter: JapaneseConverting {
 
     public init() {
         converter = KanaKanjiConverter.withDefaultDictionary()
+    }
+
+    private static func options(nBest: Int) -> ConvertRequestOptions {
         // 学習しないので書き込み先は使われないが、引数として要る
         let unused = FileManager.default.temporaryDirectory
-        options = ConvertRequestOptions(
-            N_best: 5,
+        return ConvertRequestOptions(
+            N_best: nBest,
             requireJapanesePrediction: .disabled,
             requireEnglishPrediction: .disabled,
             keyboardLanguage: .ja_JP,
@@ -58,19 +66,32 @@ public final class AzooKeyConverter: JapaneseConverting {
         let key = CacheKey(kana: kana, context: context)
         if let cached = cache[key] { return cached }
         let result: JapaneseReading? = switch context {
-        case .start: convertWhole(kana)
-        case .afterEnglish: convertAfterNoun(kana)
+        case .start:
+            candidates(kana, nBest: Self.scoringBest).first.map { JapaneseReading(text: $0.text, value: Double($0.value)) }
+        case .afterEnglish:
+            convertAfterNoun(kana)
         }
         cache[key] = result
         return result
     }
 
-    private func candidates(_ kana: String) -> [Candidate] {
+    public func alternatives(kana: String, context: JapaneseContext) -> [String] {
+        let texts: [String] = switch context {
+        case .start:
+            candidates(kana, nBest: Self.listingBest).map(\.text)
+        case .afterEnglish:
+            candidates(Self.nounStandIn.kana + kana, nBest: Self.listingBest).compactMap(Self.dropNounStandIn)
+        }
+        var seen: Set<String> = []
+        return texts.filter { seen.insert($0).inserted }
+    }
+
+    private func candidates(_ kana: String, nBest: Int) -> [Candidate] {
         var composing = ComposingText()
         composing.insertAtCursorPosition(kana, inputStyle: .direct)
         let kanaCount = kana.count
         // 入力全体を覆い、言語モデルで評価された候補だけを採る
-        return converter.requestCandidates(composing, options: options).mainResults.filter {
+        return converter.requestCandidates(composing, options: Self.options(nBest: nBest)).mainResults.filter {
             $0.rubyCount == kanaCount && !Self.isUnscoredWhole($0)
         }
     }
@@ -84,17 +105,20 @@ public final class AzooKeyConverter: JapaneseConverting {
         return only.mid == unscoredMid && only.lcid == properNounCid
     }
 
-    private func convertWhole(_ kana: String) -> JapaneseReading? {
-        candidates(kana).first.map { JapaneseReading(text: $0.text, value: Double($0.value)) }
+    /// 辞書が名詞と後ろの語を 1 語にまとめることがあるので、語の切れ目ではなく文字列で名詞を外す
+    private static func dropNounStandIn(_ candidate: Candidate) -> String? {
+        guard candidate.text.hasPrefix(nounStandIn.word) else { return nil }
+        let rest = String(candidate.text.dropFirst(nounStandIn.word.count))
+        return rest.isEmpty ? nil : rest
     }
 
     /// 代わりの名詞を前に置いて変換し、名詞だけの評価値を差し引く
     private func convertAfterNoun(_ kana: String) -> JapaneseReading? {
         let standIn = Self.nounStandIn
-        guard let nounOnly = candidates(standIn.kana).first(where: { $0.text == standIn.word }) else { return nil }
-        // 辞書が名詞と後ろの語を 1 語にまとめることがあるので、語の切れ目ではなく文字列で名詞を外す
-        guard let withNoun = candidates(standIn.kana + kana).first(where: { $0.text.hasPrefix(standIn.word) }) else { return nil }
-        let text = String(withNoun.text.dropFirst(standIn.word.count))
+        guard let nounOnly = candidates(standIn.kana, nBest: Self.scoringBest).first(where: { $0.text == standIn.word }) else { return nil }
+        guard let withNoun = candidates(standIn.kana + kana, nBest: Self.scoringBest).first(where: { Self.dropNounStandIn($0) != nil }),
+              let text = Self.dropNounStandIn(withNoun)
+        else { return nil }
         return JapaneseReading(text: text, value: Double(withNoun.value - nounOnly.value))
     }
 }
