@@ -70,48 +70,90 @@ final class TugimeInputController: IMKInputController {
         return before.isASCII ? .afterEnglish : .afterJapanese
     }
 
-    override func recognizedEvents(_ sender: Any!) -> Int {
+    // MARK: InputMethodKit からの呼び出し
+    // InputMethodKit の基底クラスは隔離の指定を持たないので、上書きする関数は nonisolated にし、中身を onMain でメインアクターとして動かす。
+    // IMK から渡される引数は並行性で安全と示されていない型だが、同期的に使うだけなので nonisolated(unsafe) で受け直して渡す
+
+    /// メインアクターで同期実行する。IMK の呼び出しはメインスレッドで届く前提で、崩れたらここで止める
+    private nonisolated func onMain<T: Sendable>(_ work: @MainActor () -> T) -> T {
+        MainActor.assumeIsolated(work)
+    }
+
+    nonisolated override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
+        super.init(server: server, delegate: delegate, client: inputClient)
+    }
+
+    nonisolated override init() {
+        super.init()
+    }
+
+    nonisolated override func recognizedEvents(_ sender: Any!) -> Int {
         Int(NSEvent.EventTypeMask.keyDown.rawValue)
     }
 
-    override func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
+    nonisolated override func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
         guard let id = value as? String else { return }
-        let next = InputMode(sourceID: id)
-        if next == .roman, let client = sender as? IMKTextInput {
+        nonisolated(unsafe) let client = sender as? IMKTextInput
+        onMain { switchMode(to: InputMode(sourceID: id), client: client) }
+    }
+
+    nonisolated override func commitComposition(_ sender: Any!) {
+        guard let client = sender as? IMKTextInput else { return }
+        nonisolated(unsafe) let target = client
+        onMain { commit(target) }
+    }
+
+    nonisolated override func deactivateServer(_ sender: Any!) {
+        if let client = sender as? IMKTextInput {
+            nonisolated(unsafe) let target = client
+            onMain { commit(target) }
+        }
+        super.deactivateServer(sender)
+    }
+
+    nonisolated override func candidates(_ sender: Any!) -> [Any]! {
+        onMain { currentCandidates }
+    }
+
+    /// マウスで候補を選んだとき。自分で窓を動かしている間の通知は反映済みなので無視する
+    nonisolated override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
+        let text = candidateString?.string
+        onMain {
+            guard !movingPanel else { return }
+            select(text)
+        }
+    }
+
+    nonisolated override func candidateSelected(_ candidateString: NSAttributedString!) {
+        let text = candidateString?.string
+        onMain {
+            guard !movingPanel else { return }
+            select(text)
+            candidatePanel.hide()
+        }
+    }
+
+    nonisolated override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
+        guard let event, event.type == .keyDown, let client = sender as? IMKTextInput else { return false }
+        nonisolated(unsafe) let keyEvent = event
+        nonisolated(unsafe) let target = client
+        return onMain { handleKeyDown(keyEvent, client: target) }
+    }
+
+    // MARK: 状態
+
+    private func switchMode(to next: InputMode, client: IMKTextInput?) {
+        if next == .roman, let client {
             commit(client)
         }
         mode = next
     }
 
-    override func commitComposition(_ sender: Any!) {
-        guard let client = sender as? IMKTextInput else { return }
-        commit(client)
-    }
-
-    override func deactivateServer(_ sender: Any!) {
-        if let client = sender as? IMKTextInput {
-            commit(client)
-        }
-        super.deactivateServer(sender)
-    }
-
     // MARK: 候補の窓
 
-    override func candidates(_ sender: Any!) -> [Any]! {
+    private var currentCandidates: [String] {
         guard let clauses else { return [] }
         return clauses[focus].candidates
-    }
-
-    /// マウスで候補を選んだとき。自分で窓を動かしている間の通知は反映済みなので無視する
-    override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
-        guard !movingPanel else { return }
-        select(candidateString?.string)
-    }
-
-    override func candidateSelected(_ candidateString: NSAttributedString!) {
-        guard !movingPanel else { return }
-        select(candidateString?.string)
-        candidatePanel.hide()
     }
 
     private func select(_ text: String?) {
@@ -151,8 +193,7 @@ final class TugimeInputController: IMKInputController {
 
     // MARK: キー入力
 
-    override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
-        guard let event, event.type == .keyDown, let client = sender as? IMKTextInput else { return false }
+    private func handleKeyDown(_ event: NSEvent, client: IMKTextInput) -> Bool {
         // パスワード欄などで安全入力が有効なら、何も変換せずアプリに渡す
         if IsSecureEventInputEnabled() {
             commit(client)

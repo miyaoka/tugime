@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.2
 
 import PackageDescription
 
@@ -32,8 +32,8 @@ let package = Package(
         .executableTarget(
             name: "TugimeIME",
             dependencies: ["TugimeCore"],
-            // InputMethodKit は並行性の注釈を持たないので、Swift 6 の検査を IME 層にだけ掛けない
-            swiftSettings: [.swiftLanguageMode(.v5)],
+            // 入力メソッドの呼び出しはすべてメインスレッドで届くので、既定の隔離をメインアクターにする（SE-0466）
+            swiftSettings: [.defaultIsolation(MainActor.self)],
             linkerSettings: [.linkedFramework("InputMethodKit")]
         ),
         .testTarget(

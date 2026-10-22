@@ -30,7 +30,7 @@ Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開し
 
 ### ソースから
 
-Xcode（Swift 6.1 以降）が要る。
+Xcode（Swift 6.2 以降）が要る。
 
 ```bash
 scripts/build-app.sh            # dist/tugime.app を組み立てて ad-hoc 署名する
