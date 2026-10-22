@@ -28,8 +28,8 @@ private enum KeyCode {
     static let right = UInt16(kVK_RightArrow)
     static let down = UInt16(kVK_DownArrow)
     static let up = UInt16(kVK_UpArrow)
-    /// 未確定の文字列全体を 1 つの文字種にするキー
-    static let wholeConversions: [UInt16: WholeConversion] = [
+    /// 選んでいる文節か未確定の文字列全体を、1 つの文字種にするキー
+    static let characterForms: [UInt16: CharacterForm] = [
         UInt16(kVK_F6): .hiragana,
         UInt16(kVK_F7): .katakana,
         UInt16(kVK_F8): .halfwidthKatakana,
@@ -217,12 +217,12 @@ final class TugimeInputController: IMKInputController {
             commit(client)
             return false
         }
-        if !keys.isEmpty, let kind = KeyCode.wholeConversions[event.keyCode] {
-            // 文節を選んでいる間は選んでいる文節だけ、打っている途中は未確定の文字列全体を変える
+        if !keys.isEmpty, let form = KeyCode.characterForms[event.keyCode] {
+            // 文節が 2 つ以上ある間は選んでいる文節だけを変える。打っている途中と文節が 1 つのときは未確定の文字列全体を変える
             if let clauses, clauses.count > 1 {
-                convertFocusedClause(to: kind, client: client)
+                convertFocusedClause(to: form, client: client)
             } else {
-                convertWhole(to: kind, client: client)
+                convertWhole(to: form, client: client)
             }
             return true
         }
@@ -333,8 +333,8 @@ final class TugimeInputController: IMKInputController {
     }
 
     /// 未確定の文字列全体を 1 つの文節にして、指定の文字種で表示する。Enter で確定する
-    private func convertWhole(to kind: WholeConversion, client: IMKTextInput) {
-        let text = sharedSegmenter.convertWhole(keys, to: kind, leading: leading)
+    private func convertWhole(to form: CharacterForm, client: IMKTextInput) {
+        let text = sharedSegmenter.convertWhole(keys, to: form, leading: leading)
         let span = ClauseSpan(index: 0, source: keys, reading: keys, context: .start)
         clauses = [Clause(kind: .english, reading: keys, candidates: [text], selected: 0, span: span)]
         focus = 0
@@ -342,10 +342,10 @@ final class TugimeInputController: IMKInputController {
         showMarkedText(client)
     }
 
-    /// 選んでいる文節を指定の文字種にする。その文字列を文節の候補として選ぶので、候補の窓で選び直せる
-    private func convertFocusedClause(to kind: WholeConversion, client: IMKTextInput) {
-        guard var clauses else { return }
-        let text = sharedSegmenter.convertClause(clauses, at: focus, to: kind)
+    /// 選んでいる文節を指定の文字種にする。その文字列を文節の候補として選ぶので、候補の窓で選び直せる。
+    /// 文節の境目が 1 つの綴りの途中にあって英字にできないときは、Shift+Enter と同じく何もしない
+    private func convertFocusedClause(to form: CharacterForm, client: IMKTextInput) {
+        guard var clauses, let text = sharedSegmenter.convertClause(clauses, at: focus, to: form) else { return }
         if let index = clauses[focus].candidates.firstIndex(of: text) {
             clauses[focus].selected = index
         } else {

@@ -1,12 +1,15 @@
 import Foundation
 
-/// 未確定の文字列全体か、選んでいる文節を 1 つの文字種にする変換（標準の日本語入力の F6〜F10）
-public enum WholeConversion: Sendable, CaseIterable {
+/// 1 つの文字種にする変換（標準の日本語入力の F6〜F10）
+public enum CharacterForm: Sendable, CaseIterable {
     case hiragana
     case katakana
     case halfwidthKatakana
     case fullwidthRoman
     case roman
+
+    /// 打鍵から作る文字種か。かなの文字種は読みから作る
+    var usesKeystrokes: Bool { self == .fullwidthRoman || self == .roman }
 }
 
 extension Segmenter {
@@ -20,50 +23,43 @@ extension Segmenter {
         }.joined()
     }
 
-    public func convertWhole(_ input: String, to kind: WholeConversion, leading: Leading = .start) -> String {
-        Self.form(kana: wholeReading(input, leading: leading), typed: input, kind)
+    /// 未確定の文字列全体を指定の文字種にした文字列
+    public func convertWhole(_ input: String, to form: CharacterForm, leading: Leading = .start) -> String {
+        Self.text(kana: wholeReading(input, leading: leading), typed: input, form)
     }
 
-    /// index の文節だけを指定の文字種にした文字列。日本語の文節を英字にするときは、区間の打鍵からその文節に当たる部分を切り出す
-    public func convertClause(_ clauses: [Clause], at index: Int, to kind: WholeConversion) -> String {
+    /// index の文節だけを指定の文字種にした文字列。英字にするには文節に当たる打鍵が要り、
+    /// 文節の境目が 1 つの綴りの途中にあって打鍵を切り出せなければ nil
+    public func convertClause(_ clauses: [Clause], at index: Int, to form: CharacterForm) -> String? {
         let clause = clauses[index]
-        let typed = typedSource(of: clauses, at: index)
-        let kana = switch clause.kind {
-        case .japanese, .punctuation: clause.reading
-        case .english: table.reading(of: typed) ?? typed
+        guard form.usesKeystrokes else {
+            let kana = clause.kind == .english ? table.reading(of: clause.span.source) ?? clause.span.source : clause.reading
+            return Self.text(kana: kana, typed: "", form)
         }
-        return Self.form(kana: kana, typed: typed, kind)
+        return typedSource(of: clauses, at: index).map { Self.text(kana: "", typed: $0, form) }
     }
 
-    /// index の文節に当たる打鍵。英語と句読点の文節は区間と同じ。日本語の文節は、区間の打鍵を同じ区間の前の文節の読みの長さで切る
-    private func typedSource(of clauses: [Clause], at index: Int) -> String {
-        let clause = clauses[index]
-        let span = clause.span
-        guard clause.kind == .japanese else { return span.source }
-        let start = clauses[..<index].filter { $0.span == span }.map(\.reading.count).reduce(0, +)
-        let afterStart = start == 0 ? span.source : table.split(span.source, kana: span.reading, atKana: start)?.tail
-        guard let afterStart else { preconditionFailure("区間の打鍵を文節の始まりで切れない: \(span.source) \(start)") }
-        let restReading = String(span.reading.dropFirst(start))
-        guard clause.reading.count < restReading.count else { return afterStart }
-        guard let head = table.split(afterStart, kana: restReading, atKana: clause.reading.count)?.head else {
-            preconditionFailure("区間の打鍵を文節の終わりで切れない: \(afterStart) \(clause.reading.count)")
-        }
-        return head
-    }
-
-    private static func form(kana: String, typed: String, _ kind: WholeConversion) -> String {
-        switch kind {
+    private static func text(kana: String, typed: String, _ form: CharacterForm) -> String {
+        switch form {
         case .hiragana:
             kana
         case .katakana:
-            kana.applyingTransform(.hiraganaToKatakana, reverse: false) ?? kana
+            transform(kana, .hiraganaToKatakana, reverse: false)
         case .halfwidthKatakana:
-            form(kana: kana, typed: typed, .katakana).applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? kana
+            transform(transform(kana, .hiraganaToKatakana, reverse: false), .fullwidthToHalfwidth, reverse: false)
         case .fullwidthRoman:
-            typed.applyingTransform(.fullwidthToHalfwidth, reverse: true) ?? typed
+            transform(typed, .fullwidthToHalfwidth, reverse: true)
         case .roman:
             typed
         }
+    }
+
+    /// 文字種の変換は名前が決まっているので失敗しない
+    private static func transform(_ text: String, _ transform: StringTransform, reverse: Bool) -> String {
+        guard let result = text.applyingTransform(transform, reverse: reverse) else {
+            preconditionFailure("文字種の変換に失敗した: \(transform.rawValue) \(text)")
+        }
+        return result
     }
 
     /// 未確定の文字列を確定・取り消ししたときに呼ぶ
