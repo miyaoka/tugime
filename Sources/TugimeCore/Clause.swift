@@ -50,11 +50,15 @@ extension Segmenter {
             let context: JapaneseContext = index == 0 ? leading.japaneseContext
                 : segments[index - 1].kind == .punctuation ? .start
                 : Self.context(after: segments[index - 1].source)
-            let span = ClauseSpan(index: index, source: segment.source, reading: segment.reading, context: context)
             guard segment.kind == .japanese else {
+                let span = ClauseSpan(index: index, source: segment.source, reading: segment.reading, context: context)
                 return [Clause(kind: segment.kind, reading: segment.reading, candidates: candidates(for: segment, context: context), selected: 0, span: span)]
             }
-            return japaneseClauses(from: 0, in: span)
+            // カーソルの前に続く区間は、区切りを選んだときに読んだ形（文頭か前の語に続く形）で文節と候補を作る。区切りはこの区間を変換できたときだけ日本語にする
+            guard let resolved = japaneseConverter.convert(kana: segment.reading, context: context)?.context else {
+                preconditionFailure("日本語区間を変換できない: \(segment.reading)")
+            }
+            return japaneseClauses(from: 0, in: ClauseSpan(index: index, source: segment.source, reading: segment.reading, context: resolved))
         }
     }
 
@@ -139,7 +143,10 @@ extension Segmenter {
         case .english:
             // 英語と判定した区間も、綴りの表で読めればかなを選べるようにする
             if let kana = table.reading(of: segment.source) {
-                list += [kana, Self.katakana(kana)] + japaneseConverter.alternatives(kana: kana, context: context)
+                list += [kana, Self.katakana(kana)]
+                if let resolved = japaneseConverter.convert(kana: kana, context: context)?.context {
+                    list += japaneseConverter.alternatives(kana: kana, context: resolved)
+                }
             }
         }
         return Self.unique(list)

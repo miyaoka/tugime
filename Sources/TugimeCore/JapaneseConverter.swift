@@ -8,11 +8,14 @@ public struct JapaneseReading: Sendable, Equatable {
     public var value: Double
     /// text を文節に分けたもの。読みを繋ぐと変換したかなに、表記を繋ぐと text になる
     public var clauses: [JapaneseClause]
+    /// この変換を読んだ文脈。afterCaret は文頭か前の語に続く形のどちらかに決まり、それ以外は求めたとおり
+    public var context: JapaneseContext
 
-    public init(text: String, value: Double, clauses: [JapaneseClause]) {
+    public init(text: String, value: Double, clauses: [JapaneseClause], context: JapaneseContext) {
         self.text = text
         self.value = value
         self.clauses = clauses
+        self.context = context
     }
 }
 
@@ -34,7 +37,7 @@ public enum JapaneseContext: Sendable, Hashable {
     /// 前の語に続く形として評価する。英語区間の直後（混在文の英語は名詞として働く）
     case afterWord
     /// 入力欄のカーソルの前にある文字に続けて打ち始めたときの形。前の文字が文のどこに当たるかは分からないので、
-    /// 前の語に続く形と新しく始まる形のうち自然な方で評価する
+    /// 前の語に続く形と新しく始まる形のうち自然な方で評価する。convert だけが受け取り、どちらの形で読んだかを結果の context で返す
     case afterCaret
     /// 数字に続く形として評価する。数字は変換エンジンがそのまま扱えるので、助数詞（円・回・個）として読ませる
     case afterNumber(String)
@@ -43,7 +46,7 @@ public enum JapaneseContext: Sendable, Hashable {
 public protocol JapaneseConverting: AnyObject {
     /// 区切りの採点に使う最良の変換
     func convert(kana: String, context: JapaneseContext) -> JapaneseReading?
-    /// 候補の窓に並べる変換結果。評価値の高い順で、重複は除く。件数は変換エンジンが決める
+    /// 候補の窓に並べる変換結果。評価値の高い順で、重複は除く。件数は変換エンジンが決める。context に afterCaret は渡さず、convert が返した context を渡す
     func alternatives(kana: String, context: JapaneseContext) -> [String]
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
     func endComposition()
@@ -63,8 +66,6 @@ public final class AzooKeyConverter: JapaneseConverting {
     private var cache: [CacheKey: JapaneseReading?] = [:]
     /// 前に置くものだけを変換した評価値。未確定の文字列の寿命だけ持つ
     private var prefixValues: [String: Double?] = [:]
-    /// カーソルの前の文字に続けて打ったかなを、文頭の形で読んだか。候補の一覧も同じ形で作るために覚える。未確定の文字列の寿命だけ持つ
-    private var readAtStartAfterCaret: [String: Bool] = [:]
 
     /// かなの前に置いて文脈にするもの。input は変換エンジンに渡す形、shown は変換結果の先頭に現れる形
     private struct Prefix {
@@ -74,15 +75,12 @@ public final class AzooKeyConverter: JapaneseConverting {
 
     private static let standIn = Prefix(input: nounStandIn.kana, shown: nounStandIn.word)
 
-    /// かなの前に置くもの。カーソルの前の文字に続く形は、convert が採った形に合わせる
-    private func prefix(for kana: String, context: JapaneseContext) -> Prefix? {
+    private static func prefix(for context: JapaneseContext) -> Prefix? {
         switch context {
-        case .start: return nil
-        case .afterWord: return Self.standIn
-        case .afterCaret:
-            _ = convert(kana: kana, context: context)
-            return readAtStartAfterCaret[kana] == true ? nil : Self.standIn
-        case .afterNumber(let digits): return Prefix(input: digits, shown: digits)
+        case .start: nil
+        case .afterWord: standIn
+        case .afterCaret: preconditionFailure("afterCaret は convert で文頭か前の語に続く形に決めてから渡す")
+        case .afterNumber(let digits): Prefix(input: digits, shown: digits)
         }
     }
 
@@ -122,16 +120,13 @@ public final class AzooKeyConverter: JapaneseConverting {
         case .start:
             result = convertAtStart(kana)
         case .afterWord:
-            result = convert(kana, after: Self.standIn)
+            result = convert(kana, after: Self.standIn, context: context)
         case .afterCaret:
             // 前に置いた名詞は後ろの語と複合語（テスト用）を作るので、続く形だけで比べると新しく始まる読みを不当に下げる
-            let atStart = convertAtStart(kana)
-            let continuing = convert(kana, after: Self.standIn)
-            let startWins = atStart.map { start in continuing.map { start.value > $0.value } ?? true } ?? false
-            readAtStartAfterCaret[kana] = startWins
-            result = startWins ? atStart : continuing
+            let candidates = [convertAtStart(kana), convert(kana, after: Self.standIn, context: .afterWord)].compactMap { $0 }
+            result = candidates.max { $0.value < $1.value }
         case .afterNumber(let digits):
-            result = convert(kana, after: Prefix(input: digits, shown: digits))
+            result = convert(kana, after: Prefix(input: digits, shown: digits), context: context)
         }
         cache[key] = result
         return result
@@ -139,13 +134,13 @@ public final class AzooKeyConverter: JapaneseConverting {
 
     private func convertAtStart(_ kana: String) -> JapaneseReading? {
         candidates(kana, nBest: Self.scoringBest).first.map {
-            JapaneseReading(text: $0.text, value: Double($0.value), clauses: Self.clauses(of: $0.data[...], kana: kana, text: $0.text))
+            JapaneseReading(text: $0.text, value: Double($0.value), clauses: Self.clauses(of: $0.data[...], kana: kana, text: $0.text), context: .start)
         }
     }
 
     public func alternatives(kana: String, context: JapaneseContext) -> [String] {
         let texts: [String]
-        if let prefix = prefix(for: kana, context: context) {
+        if let prefix = Self.prefix(for: context) {
             texts = candidates(prefix.input + kana, nBest: Self.listingBest).compactMap { Self.drop(prefix, from: $0) }
         } else {
             texts = candidates(kana, nBest: Self.listingBest).map(\.text)
@@ -157,7 +152,6 @@ public final class AzooKeyConverter: JapaneseConverting {
     public func endComposition() {
         cache = [:]
         prefixValues = [:]
-        readAtStartAfterCaret = [:]
     }
 
     private func candidates(_ kana: String, nBest: Int) -> [Candidate] {
@@ -225,12 +219,12 @@ public final class AzooKeyConverter: JapaneseConverting {
     }
 
     /// 前に置いたものに続けて変換し、前に置いたものだけの評価値を差し引く
-    private func convert(_ kana: String, after prefix: Prefix) -> JapaneseReading? {
+    private func convert(_ kana: String, after prefix: Prefix, context: JapaneseContext) -> JapaneseReading? {
         guard let prefixOnly = value(of: prefix),
               let combined = candidates(prefix.input + kana, nBest: Self.scoringBest).first(where: { Self.drop(prefix, from: $0) != nil }),
               let text = Self.drop(prefix, from: combined)
         else { return nil }
         let clauses = Self.clauses(of: Self.words(after: prefix, in: combined), kana: kana, text: text)
-        return JapaneseReading(text: text, value: Double(combined.value) - prefixOnly, clauses: clauses)
+        return JapaneseReading(text: text, value: Double(combined.value) - prefixOnly, clauses: clauses, context: context)
     }
 }

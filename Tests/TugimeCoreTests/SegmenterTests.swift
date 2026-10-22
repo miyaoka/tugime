@@ -9,7 +9,7 @@ private final class KanaEcho: JapaneseConverting {
             let part = String(chars[$0..<min($0 + 2, chars.count)])
             return JapaneseClause(reading: part, text: part)
         }
-        return JapaneseReading(text: kana, value: -2 * Double(kana.count), clauses: clauses)
+        return JapaneseReading(text: kana, value: -2 * Double(kana.count), clauses: clauses, context: context == .afterCaret ? .afterWord : context)
     }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { [kana] }
