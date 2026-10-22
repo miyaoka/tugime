@@ -58,30 +58,46 @@ public final class Segmenter {
         self.weights = weights
     }
 
+    /// 入力の前に何があるか
+    public enum Leading: Sendable, Equatable {
+        /// 文頭。前に何も無いか、空白・改行・文末の記号の後
+        case start
+        /// 日本語の文の途中
+        case afterJapanese
+        /// 英字・数字・記号など ASCII の後
+        case afterEnglish
+
+        /// 最初の日本語区間の評価のしかた
+        var japaneseContext: JapaneseContext { self == .start ? .start : .afterWord }
+    }
+
+    /// この長さ以下の読める綴りは、英語の語表に載っていても日本語として読む
+    static let maxJapaneseFirstLength = 2
+
     /// 前の語の後ろに付く記号と、日本語の文で使う形
     static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！"]
 
-    /// 記号は前の語の後ろに付くので、直前の区間が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
-    /// 日本語の記号の位置で入力を切り、次の部分は文頭から評価する
-    /// - Parameter leading: 入力の前に何があるか。入力欄の文の途中から打ち始めたなら、最初の日本語区間を前の語に続く形で評価する
-    public func segment(_ input: String, leading: JapaneseContext = .start) -> [Segment] {
+    /// 記号は前の語の後ろに付くので、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
+    /// 入力の先頭の記号は、入力欄の直前（leading）で決める。日本語の記号の位置で入力を切り、次の部分は文頭から評価する
+    public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
         let chars = Array(input)
         var segments: [Segment] = []
         var runStart = 0
         var runLeading = leading
         for (i, ch) in chars.enumerated() {
             guard let mark = Self.punctuation[ch] else { continue }
-            let before = segmentRun(String(chars[runStart..<i]), leading: runLeading)
-            if before.last?.kind == .english { continue }
+            let before = segmentRun(String(chars[runStart..<i]), leading: runLeading.japaneseContext)
+            let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runLeading == .afterEnglish)
+            if previousIsEnglish { continue }
             segments += before
             segments.append(Segment(kind: .punctuation, source: String(ch), reading: mark, output: mark, score: 0))
             runStart = i + 1
             runLeading = .start
         }
-        return segments + segmentRun(String(chars[runStart...]), leading: runLeading)
+        return segments + segmentRun(String(chars[runStart...]), leading: runLeading.japaneseContext)
     }
 
-    /// 句読点を含まない部分を、日本語区間と英語区間の並びに分ける
+    /// 句読点を含まない部分を、日本語区間と英語区間の並びに分ける。空でない入力には必ず 1 つ以上の区間を返す
     private func segmentRun(_ input: String, leading: JapaneseContext) -> [Segment] {
         let chars = Array(input)
         let n = chars.count
@@ -113,21 +129,26 @@ public final class Segmenter {
         for start in 0..<n {
             let reachable = start == 0 || !best[start].isEmpty
             guard reachable else { continue }
+            // この位置から始まる日本語区間を採れた終端。英語区間を締め出すのは、日本語区間を採れるときだけにする
+            var japaneseEnds: Set<Int> = []
             for (end, kana) in table.readings(from: start, in: chars) {
                 // 長音だけの区間は日本語として成り立たない（binge-watch の - など）
                 if kana.allSatisfy({ $0 == "ー" }) { continue }
                 // 日本語区間は日本語区間に続かないので、先頭でなければ直前は英語区間
-                let context: JapaneseContext = start == 0 ? leading : .afterEnglish
+                let context: JapaneseContext = start == 0 ? leading : .afterWord
                 guard let reading = japaneseConverter.convert(kana: kana, context: context) else { continue }
+                japaneseEnds.insert(end)
                 let s = weights.japanese * reading.value - weights.japaneseSpanPenalty
                 relax(end, start, Segment(kind: .japanese, source: String(chars[start..<end]), reading: kana, output: reading.text, score: s))
             }
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
-                // 1 つのかなになる綴りは助詞などの日本語として読む。英語の語表に ga to de no があっても英語にしない
-                if table.isSingleKana(source) { continue }
-                // 綴りの表で最後まで読める区間は、英語の語表に載っている語のときだけ英語にする（utte deno は日本語）
-                if table.reading(of: source) != nil, !english.isWord(source) { continue }
+                // 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語表に無い綴り（utte deno）は、
+                // 日本語として採れるなら英語にしない
+                let readable = table.reading(of: source) != nil
+                let preferJapanese = table.isSingleKana(source)
+                    || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
+                if preferJapanese, japaneseEnds.contains(end) { continue }
                 let s = weights.english * english.logProbability(source) - weights.englishSpanPenalty
                 relax(end, start, Segment(kind: .english, source: source, reading: source, output: source, score: s))
             }
@@ -141,6 +162,8 @@ public final class Segmenter {
             pos = cell.from
             kind = cell.previousKind
         }
+        // どの区間も、日本語として採れなければ英語として採れるので、空でない入力には必ず区切りがある
+        precondition(pos == 0 && !segments.isEmpty, "区切りが見つからない: \(input)")
         return segments.reversed()
     }
 }

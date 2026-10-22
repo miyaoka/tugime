@@ -55,19 +55,19 @@ final class TugimeInputController: IMKInputController {
     /// 候補を選ぶ対象の文節
     private var focus = 0
     private var mode: InputMode = .japanese
-    /// 打ち始めたときにカーソルの前にあったもの。文の途中なら、最初の日本語区間を前の語に続く形で評価する
-    private var leading: JapaneseContext = .start
-    /// この文字の後ろから打ち始めたら文頭として扱う
-    private static let sentenceEnds: Set<Character> = ["\n", "\r", "。", "！", "？", ".", "!", "?"]
+    /// 打ち始めたときにカーソルの前にあったもの
+    private var leading: Segmenter.Leading = .start
 
-    /// 入力欄のカーソルの直前の 1 文字を読む。読めない、文頭、文末の後なら文頭として扱う
-    private static func leadingContext(of client: IMKTextInput) -> JapaneseContext {
+    /// 入力欄のカーソルの直前の 1 文字を読む。読めない、空白・改行、文末の記号の後なら文頭とする。
+    /// それ以外の ASCII（英字・数字・記号）の後は英語の後とする。日本語モードが出す文字は全角なので、ASCII があればそこは英語の文脈になる
+    private static func leadingContext(of client: IMKTextInput) -> Segmenter.Leading {
         let selection = client.selectedRange()
         guard selection.location != NSNotFound, selection.location > 0,
               let before = client.attributedSubstring(from: NSRange(location: selection.location - 1, length: 1))?.string.last,
-              !sentenceEnds.contains(before), !before.isWhitespace
+              !before.isWhitespace,
+              !before.unicodeScalars.contains(where: \.properties.isSentenceTerminal)
         else { return .start }
-        return .afterEnglish
+        return before.isASCII ? .afterEnglish : .afterJapanese
     }
 
     override func recognizedEvents(_ sender: Any!) -> Int {
@@ -201,11 +201,13 @@ final class TugimeInputController: IMKInputController {
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
             keys.removeLast()
+            if keys.isEmpty { sharedSegmenter.endComposition() }
             showMarkedText(client)
             return true
         case KeyCode.escape:
             guard !keys.isEmpty else { return false }
             keys = ""
+            sharedSegmenter.endComposition()
             showMarkedText(client)
             return true
         default:
@@ -260,7 +262,7 @@ final class TugimeInputController: IMKInputController {
 
     /// 未確定の文字列全体を 1 つの文節にして、指定の文字種で表示する。Enter で確定する
     private func convertWhole(to kind: WholeConversion, client: IMKTextInput) {
-        let text = sharedSegmenter.convertWhole(keys, to: kind)
+        let text = sharedSegmenter.convertWhole(keys, to: kind, leading: leading)
         clauses = [Clause(kind: .english, source: keys, candidates: [text], selected: 0)]
         focus = 0
         candidatePanel.hide()
@@ -324,5 +326,6 @@ final class TugimeInputController: IMKInputController {
         keys = ""
         clauses = nil
         focus = 0
+        sharedSegmenter.endComposition()
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// 確定前の 1 区間。候補の窓で選び直せる
+/// 確定前の 1 区間（日本語区間・英語区間・句読点）。候補の窓で選び直せる。日本語区間の中は区切り直さない
 public struct Clause: Sendable, Equatable {
     public var kind: Segment.Kind
     /// 打鍵列のうちこの区間に当たる部分
@@ -21,11 +21,11 @@ public struct Clause: Sendable, Equatable {
 
 extension Segmenter {
     /// 区切りを選び、区間ごとに候補の一覧を付ける
-    public func clauses(_ input: String, leading: JapaneseContext = .start) -> [Clause] {
+    public func clauses(_ input: String, leading: Leading = .start) -> [Clause] {
         let segments = segment(input, leading: leading)
         return segments.enumerated().map { index, segment in
             // 句読点の直後は文頭、入力の先頭は入力欄の前の文脈、それ以外は前の語に続く形として変換する
-            let context: JapaneseContext = index == 0 ? leading : segments[index - 1].kind == .punctuation ? .start : .afterEnglish
+            let context: JapaneseContext = index == 0 ? leading.japaneseContext : segments[index - 1].kind == .punctuation ? .start : .afterWord
             return Clause(kind: segment.kind, source: segment.source, candidates: candidates(for: segment, context: context), selected: 0)
         }
     }
