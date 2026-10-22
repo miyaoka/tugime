@@ -1,11 +1,15 @@
 import Foundation
 
-/// 英語らしさを文字の 3-gram で測る。語表から起動時に数える。
-/// 語表に無い綴り（github、cwd など）にも、英語の綴りとしての自然さで点を付けるために、語ではなく文字の並びを見る。
+/// 英語の区間の確からしさを測る。日本語の文の中に英字のまま書かれる語は、その出現頻度で測る。
+/// 頻度の表に無い綴り（claudecode、cwd など）は、未知の語として英語の綴りらしさ（文字の 3-gram）で測る。
 public struct EnglishModel: Sendable {
     public enum LoadError: Error, CustomStringConvertible {
-        case missingResource
-        public var description: String { "英語の語表がバンドルに無い" }
+        case missingResource(String)
+        public var description: String {
+            switch self {
+            case .missingResource(let name): "英語の語表がバンドルに無い: \(name)"
+            }
+        }
     }
 
     private static let begin: UInt8 = 0
@@ -16,8 +20,15 @@ public struct EnglishModel: Sendable {
     /// 3-gram, 2-gram, 1-gram, 一様分布の混合比
     private static let weights: (Double, Double, Double, Double) = (0.6, 0.3, 0.09, 0.01)
 
-    /// 語表の語（小文字）
-    private var vocabulary: Set<String>
+    /// 英語の語として扱う、日本語の文章での頻度（Zipf 値）の下限。使いながら調整する
+    static let minWordZipf = 2.0
+    /// 英字の語が頻度の表に無い綴りである確率の自然対数。使いながら調整する
+    static let unknownLogProbability = -1.0
+
+    /// 英語の語として扱う語（小文字）
+    private var vocabulary: Set<String> = []
+    /// 語ごとの、日本語の文章での出現確率の自然対数
+    private var logFrequency: [String: Double] = [:]
     private var trigram: [Int32]
     private var bigram: [Int32]
     private var unigram: [Int32]
@@ -25,7 +36,8 @@ public struct EnglishModel: Sendable {
     private var unigramContext: [Int32]
     private var total: Int32
 
-    public init(words: some Sequence<Substring>) {
+    /// spellings は綴りらしさを数える語、zipf は日本語の文章での語ごとの頻度
+    public init(spellings: some Sequence<Substring>, zipf: [String: Double]) {
         let n = Self.symbolCount
         trigram = Array(repeating: 0, count: n * n * n)
         bigram = Array(repeating: 0, count: n * n)
@@ -33,11 +45,8 @@ public struct EnglishModel: Sendable {
         bigramContext = Array(repeating: 0, count: n * n)
         unigramContext = Array(repeating: 0, count: n)
         total = 0
-        vocabulary = []
-        for word in words {
-            let lowered = word.lowercased()
-            vocabulary.insert(lowered)
-            let symbols = Self.symbols(lowered)
+        for word in spellings {
+            let symbols = Self.symbols(word.lowercased())
             for i in 2..<symbols.count {
                 let (a, b, c) = (Int(symbols[i - 2]), Int(symbols[i - 1]), Int(symbols[i]))
                 trigram[(a * n + b) * n + c] += 1
@@ -48,25 +57,49 @@ public struct EnglishModel: Sendable {
                 total += 1
             }
         }
+        for (word, value) in zipf {
+            let key = word.lowercased()
+            // Zipf 値は 10 億語あたりの出現回数の常用対数
+            logFrequency[key] = (value - 9) * log(10)
+            if value >= Self.minWordZipf { vocabulary.insert(key) }
+        }
     }
 
     public static func bundled() throws -> EnglishModel {
-        guard let url = Bundle.module.url(forResource: "english-words", withExtension: "txt", subdirectory: "Resources") else {
-            throw LoadError.missingResource
+        let spellings = try resource("english-words", "txt").split(separator: "\n")
+        var zipf: [String: Double] = [:]
+        for line in try resource("english-frequency", "tsv").split(separator: "\n") {
+            let fields = line.split(separator: "\t")
+            zipf[String(fields[0])] = Double(fields[1])!
         }
-        let text = try String(contentsOf: url, encoding: .utf8)
-        return EnglishModel(words: text.split(separator: "\n"))
+        return EnglishModel(spellings: spellings, zipf: zipf)
     }
 
-    /// 語表に載っている語か。大文字と小文字は区別しない
+    private static func resource(_ name: String, _ ext: String) throws -> String {
+        guard let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Resources") else {
+            throw LoadError.missingResource("\(name).\(ext)")
+        }
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// 日本語の文の中に英字のまま書かれる語か。大文字と小文字は区別しない
     public func isWord(_ text: some StringProtocol) -> Bool {
         vocabulary.contains(text.lowercased())
     }
 
-    /// 1 語として見たときの自然対数の尤度。語頭と語末も含めて測る。
+    /// 1 語として見たときの自然対数の尤度。頻度の表にある語として現れる確率と、未知の語として現れる確率の和
     public func logProbability(_ text: some StringProtocol) -> Double {
+        let lowered = text.lowercased()
+        let unknown = Self.unknownLogProbability + spellingLogProbability(lowered)
+        guard let known = logFrequency[lowered] else { return unknown }
+        let top = max(known, unknown)
+        return top + log(exp(known - top) + exp(unknown - top))
+    }
+
+    /// 英語の綴りとしての自然対数の尤度。語頭と語末も含めて測る
+    private func spellingLogProbability(_ lowered: String) -> Double {
         let n = Self.symbolCount
-        let symbols = Self.symbols(text.lowercased())
+        let symbols = Self.symbols(lowered)
         var sum = 0.0
         for i in 2..<symbols.count {
             let (a, b, c) = (Int(symbols[i - 2]), Int(symbols[i - 1]), Int(symbols[i]))

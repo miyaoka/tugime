@@ -172,7 +172,7 @@ public final class Segmenter {
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
-                // 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語表に無い綴り（utte deno）は、
+                // 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
                 // 日本語として採れるなら英語にしない
                 let readable = table.reading(of: source) != nil
                 let preferJapanese = table.isSingleKana(source)
