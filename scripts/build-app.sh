@@ -27,6 +27,7 @@ plutil -lint "$app/Contents/Info.plist"
 # 入力ソースの一覧に出るモードの表示名
 cp -R "$root/App/en.lproj" "$root/App/ja.lproj" "$app/Contents/Resources/"
 swift "$root/scripts/make-icons.swift" "$app/Contents/Resources"
+swift "$root/scripts/collect-notices.swift" "$root" "$app/Contents/Resources" "$app/Contents/Resources/ThirdPartyNotices.txt"
 
 echo "== ad-hoc 署名"
 codesign --force --timestamp=none --sign - "$app"
