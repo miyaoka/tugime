@@ -46,10 +46,11 @@ fi
 mkdir -p "$dest"
 rsync -a --delete "$src/" "$dest/"
 # ブラウザで取得した配布物から入れたときの隔離属性を外す。ad-hoc 署名なので、付いたままだと起動できない
-xattr -dr com.apple.quarantine "$dest" 2>/dev/null || true
+xattr -dr com.apple.quarantine "$dest"
 "$lsregister" -f "$dest"
 "$dest/Contents/MacOS/tugime" --register
 # 動いている古い版を止める。次に入力源が選ばれたときに新しい版が起動する
-pkill -x tugime || true
+# pkill は該当するプロセスが無いと 1 を返す。それ以外の失敗は止める
+pkill -x tugime || [[ $? -eq 1 ]]
 echo "== 配置 $dest"
 echo "初めて入れたときは、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 → tugime (日本語) で追加する"
