@@ -7,8 +7,9 @@ version=${TUGIME_VERSION:-0.0.0}
 root=$(cd "$(dirname "$0")/.." && pwd)
 app="$root/dist/tugime.app"
 
-# SwiftPM の既定のビルドの仕組みは toolchain の版で違う。native はリソースを .app の Contents/Resources から探さないので、swiftbuild に固定する
-build=(swift build --package-path "$root" -c release --build-system swiftbuild)
+# SwiftPM の既定のビルドの仕組みは toolchain の版で違う。native はリソースを .app の Contents/Resources から探さないので、swiftbuild に固定する。
+# 対象は Apple Silicon だけなので arm64 だけを組み立てる。swiftbuild は指定しないと Intel 向けも含めた universal にする
+build=(swift build --package-path "$root" -c release --build-system swiftbuild --arch arm64)
 
 echo "== swift build"
 "${build[@]}" --product tugime
