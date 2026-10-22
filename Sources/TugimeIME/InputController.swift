@@ -396,7 +396,11 @@ final class TugimeInputController: IMKInputController {
             commit(client)
             return
         }
-        guard let result = sharedSegmenter.commit(clauses, through: focus) else { return }
+        guard let result = sharedSegmenter.commit(clauses, through: focus) else {
+            // 確定しないときも、文節の選択に入った表示にそろえる。打っている途中から入ったときはまだ描いていない
+            showMarkedText(client)
+            return
+        }
         candidatePanel.hide()
         client.insertText(result.text, replacementRange: NSRange(location: NSNotFound, length: 0))
         keys = result.keys
