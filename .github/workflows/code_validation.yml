@@ -47,6 +47,7 @@ jobs:
             Package.swift
             Package.resolved
             Sources/TugimeIME/**
+            Sources/TugimeCore/Resources/**
             .github/workflows/**
           skip_initial_fetch: true
           # 差分を取れなかったときに「変更なし」と同じ結果を返させない
