@@ -15,25 +15,26 @@ enum InputMode: String {
     }
 }
 
+/// Carbon の仮想キーコード。NSEvent.keyCode と同じ UInt16 にそろえる
 private enum KeyCode {
-    static let returnKey: UInt16 = 36
-    static let enter: UInt16 = 76
-    static let space: UInt16 = 49
-    static let backspace: UInt16 = 51
-    static let escape: UInt16 = 53
-    static let eisu: UInt16 = 102
-    static let kana: UInt16 = 104
-    static let left: UInt16 = 123
-    static let right: UInt16 = 124
-    static let down: UInt16 = 125
-    static let up: UInt16 = 126
+    static let returnKey = UInt16(kVK_Return)
+    static let enter = UInt16(kVK_ANSI_KeypadEnter)
+    static let space = UInt16(kVK_Space)
+    static let backspace = UInt16(kVK_Delete)
+    static let escape = UInt16(kVK_Escape)
+    static let eisu = UInt16(kVK_JIS_Eisu)
+    static let kana = UInt16(kVK_JIS_Kana)
+    static let left = UInt16(kVK_LeftArrow)
+    static let right = UInt16(kVK_RightArrow)
+    static let down = UInt16(kVK_DownArrow)
+    static let up = UInt16(kVK_UpArrow)
     /// 未確定の文字列全体を 1 つの文字種にするキー
     static let wholeConversions: [UInt16: WholeConversion] = [
-        97: .hiragana,
-        98: .katakana,
-        100: .halfwidthKatakana,
-        101: .fullwidthRoman,
-        109: .roman,
+        UInt16(kVK_F6): .hiragana,
+        UInt16(kVK_F7): .katakana,
+        UInt16(kVK_F8): .halfwidthKatakana,
+        UInt16(kVK_F9): .fullwidthRoman,
+        UInt16(kVK_F10): .roman,
     ]
 }
 
