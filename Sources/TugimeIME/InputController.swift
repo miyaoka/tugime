@@ -55,6 +55,20 @@ final class TugimeInputController: IMKInputController {
     /// 候補を選ぶ対象の文節
     private var focus = 0
     private var mode: InputMode = .japanese
+    /// 打ち始めたときにカーソルの前にあったもの。文の途中なら、最初の日本語区間を前の語に続く形で評価する
+    private var leading: JapaneseContext = .start
+    /// この文字の後ろから打ち始めたら文頭として扱う
+    private static let sentenceEnds: Set<Character> = ["\n", "\r", "。", "！", "？", ".", "!", "?"]
+
+    /// 入力欄のカーソルの直前の 1 文字を読む。読めない、文頭、文末の後なら文頭として扱う
+    private static func leadingContext(of client: IMKTextInput) -> JapaneseContext {
+        let selection = client.selectedRange()
+        guard selection.location != NSNotFound, selection.location > 0,
+              let before = client.attributedSubstring(from: NSRange(location: selection.location - 1, length: 1))?.string.last,
+              !sentenceEnds.contains(before), !before.isWhitespace
+        else { return .start }
+        return .afterEnglish
+    }
 
     override func recognizedEvents(_ sender: Any!) -> Int {
         Int(NSEvent.EventTypeMask.keyDown.rawValue)
@@ -180,7 +194,7 @@ final class TugimeInputController: IMKInputController {
             return true
         case KeyCode.space:
             guard !keys.isEmpty else { return false }
-            clauses = sharedSegmenter.clauses(keys)
+            clauses = sharedSegmenter.clauses(keys, leading: leading)
             focus = 0
             showMarkedText(client)
             return true
@@ -261,6 +275,9 @@ final class TugimeInputController: IMKInputController {
             commit(client)
             return false
         }
+        if keys.isEmpty {
+            leading = Self.leadingContext(of: client)
+        }
         keys.append(text)
         showMarkedText(client)
         return true
@@ -281,7 +298,7 @@ final class TugimeInputController: IMKInputController {
                 ]))
             }
         } else {
-            let reading = sharedSegmenter.segment(keys).map(\.reading).joined()
+            let reading = sharedSegmenter.segment(keys, leading: leading).map(\.reading).joined()
             marked.append(NSAttributedString(string: reading, attributes: [
                 .underlineStyle: NSUnderlineStyle.single.rawValue,
             ]))
@@ -298,7 +315,7 @@ final class TugimeInputController: IMKInputController {
     private func commit(_ client: IMKTextInput) {
         candidatePanel.hide()
         guard !keys.isEmpty else { return }
-        let text = (clauses ?? sharedSegmenter.clauses(keys)).map(\.output).joined()
+        let text = (clauses ?? sharedSegmenter.clauses(keys, leading: leading)).map(\.output).joined()
         client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
         keys = ""
         clauses = nil

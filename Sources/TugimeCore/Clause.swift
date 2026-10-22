@@ -21,29 +21,26 @@ public struct Clause: Sendable, Equatable {
 
 extension Segmenter {
     /// 区切りを選び、区間ごとに候補の一覧を付ける
-    public func clauses(_ input: String) -> [Clause] {
-        let segments = segment(input)
+    public func clauses(_ input: String, leading: JapaneseContext = .start) -> [Clause] {
+        let segments = segment(input, leading: leading)
         return segments.enumerated().map { index, segment in
-            // 先頭か句読点の直後は文頭として変換する
-            let isSentenceStart = index == 0 || segments[index - 1].kind == .punctuation
-            return Clause(kind: segment.kind, source: segment.source, candidates: candidates(for: segment, isFirst: isSentenceStart), selected: 0)
+            // 句読点の直後は文頭、入力の先頭は入力欄の前の文脈、それ以外は前の語に続く形として変換する
+            let context: JapaneseContext = index == 0 ? leading : segments[index - 1].kind == .punctuation ? .start : .afterEnglish
+            return Clause(kind: segment.kind, source: segment.source, candidates: candidates(for: segment, context: context), selected: 0)
         }
     }
 
-    private func candidates(for segment: Segment, isFirst: Bool) -> [String] {
+    private func candidates(for segment: Segment, context: JapaneseContext) -> [String] {
         var list: [String] = [segment.output]
         switch segment.kind {
         case .punctuation:
             list.append(segment.source)
         case .japanese:
-            // 日本語区間は日本語区間に続かないので、先頭でなければ直前は英語区間
-            let context: JapaneseContext = isFirst ? .start : .afterEnglish
             list += japaneseConverter.alternatives(kana: segment.reading, context: context)
             list += [segment.reading, Self.katakana(segment.reading), segment.source]
         case .english:
             // 英語と判定した区間も、綴りの表で読めればかなを選べるようにする
             if let kana = table.reading(of: segment.source) {
-                let context: JapaneseContext = isFirst ? .start : .afterEnglish
                 list += [kana, Self.katakana(kana)] + japaneseConverter.alternatives(kana: kana, context: context)
             }
         }

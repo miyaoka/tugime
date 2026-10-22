@@ -12,7 +12,7 @@ public struct JapaneseReading: Sendable, Equatable {
 public enum JapaneseContext: Sendable, Hashable {
     /// 入力の先頭。文頭から始まる文として評価する
     case start
-    /// 英語区間の直後。混在文の英語は名詞として働くので、名詞に続く形として評価する
+    /// 前の語に続く形。英語区間の直後（混在文の英語は名詞として働く）と、入力欄の文の途中から打ち始めたとき
     case afterEnglish
 }
 

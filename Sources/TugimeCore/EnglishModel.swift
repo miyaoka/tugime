@@ -16,6 +16,8 @@ public struct EnglishModel: Sendable {
     /// 3-gram, 2-gram, 1-gram, 一様分布の混合比
     private static let weights: (Double, Double, Double, Double) = (0.6, 0.3, 0.09, 0.01)
 
+    /// 語表の語（小文字）
+    private var vocabulary: Set<String>
     private var trigram: [Int32]
     private var bigram: [Int32]
     private var unigram: [Int32]
@@ -31,8 +33,11 @@ public struct EnglishModel: Sendable {
         bigramContext = Array(repeating: 0, count: n * n)
         unigramContext = Array(repeating: 0, count: n)
         total = 0
+        vocabulary = []
         for word in words {
-            let symbols = Self.symbols(word.lowercased())
+            let lowered = word.lowercased()
+            vocabulary.insert(lowered)
+            let symbols = Self.symbols(lowered)
             for i in 2..<symbols.count {
                 let (a, b, c) = (Int(symbols[i - 2]), Int(symbols[i - 1]), Int(symbols[i]))
                 trigram[(a * n + b) * n + c] += 1
@@ -51,6 +56,11 @@ public struct EnglishModel: Sendable {
         }
         let text = try String(contentsOf: url, encoding: .utf8)
         return EnglishModel(words: text.split(separator: "\n"))
+    }
+
+    /// 語表に載っている語か。大文字と小文字は区別しない
+    public func isWord(_ text: some StringProtocol) -> Bool {
+        vocabulary.contains(text.lowercased())
     }
 
     /// 1 語として見たときの自然対数の尤度。語頭と語末も含めて測る。
