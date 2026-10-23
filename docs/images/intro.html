@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>tugime intro</title>
+<style>
+  :root {
+    --bg0: #0b1020;
+    --bg1: #141b34;
+    --ink: #eef2ff;
+    --sub: #9aa4c4;
+    --ja: #8fb8ff;
+    --en: #ffa564;
+    --gold: #ffd166;
+    --red: #ff6b7d;
+    --green: #5fe0a4;
+  }
+  html, body {
+    margin: 0;
+    width: 1100px;
+    height: 540px;
+    overflow: hidden;
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, "SF Pro Display", "Hiragino Sans", sans-serif;
+  }
+  body { position: relative; }
+  .wrap { position: relative; padding: 42px 56px 0; }
+  .brand { display: flex; align-items: baseline; gap: 18px; }
+  .logo {
+    font-size: 46px; font-weight: 800; letter-spacing: -1px;
+    color: var(--ink);
+  }
+  .pron { font-size: 17px; color: var(--sub); margin-left: -6px; }
+  .tag { font-size: 22px; font-weight: 600; margin-left: 10px; }
+  .tag em { font-style: normal; color: var(--gold); }
+
+  .panel {
+    margin-top: 28px; border-radius: 16px; padding: 22px 28px 24px;
+    background: rgba(255,255,255,0.045);
+  }
+  .lane + .lane { margin-top: 22px; }
+  .head { display: flex; width: 100%; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  .name { font-size: 16px; font-weight: 700; }
+  .rule { font-size: 13px; color: var(--sub); }
+  .track {
+    display: flex; align-items: center; height: 46px; padding: 0 12px; border-radius: 10px;
+    font-family: Menlo, monospace; font-size: 14.5px; width: max-content; flex-shrink: 0;
+  }
+  .lane.plain .track { padding: 0; }
+  .mode { display: flex; align-items: center; height: 34px; padding: 0 2px; margin: 0 2px; }
+  .mode.en { }
+  .mode.ja { background: rgba(143,184,255,0.22); box-shadow: inset 0 -2px 0 var(--ja); }
+  .legend .band { display: inline-block; width: 26px; height: 14px; vertical-align: middle; margin-right: 6px; }
+  .legend .band.en { background: rgba(255,165,100,0.22); box-shadow: inset 0 -2px 0 var(--en); }
+  .legend .band.ja { background: rgba(143,184,255,0.22); box-shadow: inset 0 -2px 0 var(--ja); }
+  .lane.tg .track { padding: 0; }
+  .t { color: #dfe6ff; white-space: pre; }
+  .s {
+    display: inline-block; flex-shrink: 0; width: 10px; height: 20px; margin: 0 2px;
+    background: rgba(255,209,102,0.25); box-shadow: inset 0 0 0 1.2px var(--gold);
+  }
+  .k {
+    font-family: -apple-system, "Hiragino Sans", sans-serif; font-size: 12px; font-weight: 700;
+    padding: 5px 6px; border-radius: 6px; margin: 0 3px; white-space: nowrap;
+  }
+  .k.x { color: var(--ink); background: rgba(255,255,255,0.16); }
+  .k.ok { color: var(--ink); background: rgba(255,255,255,0.16); }
+  .count { margin-left: auto; font-family: -apple-system, "Hiragino Sans", sans-serif; font-size: 13px; color: var(--sub); white-space: nowrap; }
+  .count b { font-size: 16px; }
+  .lane.plain .count b { color: var(--red); }
+  .lane.tg .count b { color: var(--green); }
+  .tgrow { display: flex; align-items: center; }
+
+  .out { margin-top: 28px; display: flex; align-items: center; gap: 18px; }
+  .out + .panel { margin-top: 18px; }
+  .out .arrow { color: var(--sub); font-size: 13px; white-space: nowrap; }
+  .text {
+    flex: 1; border-radius: 12px; padding: 16px 22px;
+    background: rgba(255,255,255,0.06);
+    font-family: "Hiragino Sans", -apple-system, sans-serif; font-size: 26px; font-weight: 600; white-space: nowrap;
+  }
+  .text .en { color: var(--en); }
+  .text .ja { color: var(--ja); }
+
+  .legend { margin-top: 22px; display: flex; gap: 26px; font-size: 13px; color: var(--sub); align-items: center; }
+  .legend .s { vertical-align: middle; margin-right: 6px; }
+  .legend .k { margin: 0 6px 0 0; }
+</style>
+</head>
+<body>
+    <div class="wrap">
+    <div class="brand">
+      <div class="logo">tugime</div>
+      <div class="pron">/tsɯɡime/ 継ぎ目</div>
+      <div class="tag">英語が混じった文を、IME のまま一息に変換</div>
+    </div>
+
+    <div class="out">
+      <span class="arrow">打ちたい文</span>
+      <div class="text"><span class="en">dark mode </span><span class="ja">の配色を変えて、</span><span class="en">pull request </span><span class="ja">を出しました。</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="lane plain">
+        <div class="head"><span class="name">ふつうの日本語入力</span><span class="rule">打っている途中の Space は変換。空白を入れるには英数に切り替える</span><span class="count">文字のほかに <b>8</b> キー</span></div>
+        <div class="track">
+          <span class="k x">英数</span><span class="mode en"><span class="t">dark</span><span class="s"></span><span class="t">mode</span><span class="s"></span></span><span class="k x">かな</span><span class="mode ja"><span class="t">nohaisyokuwokaete,</span><span class="k x">変換</span><span class="k x">Enter</span></span><span class="k x">英数</span><span class="mode en"><span class="t">pull</span><span class="s"></span><span class="t">request</span><span class="s"></span></span><span class="k x">かな</span><span class="mode ja"><span class="t">wodasimasita.</span><span class="k x">変換</span><span class="k x">Enter</span></span>
+        </div>
+      </div>
+
+      <div class="lane tg">
+        <div class="head"><span class="name">tugime</span><span class="rule">打っている途中の Space は空白。変換は打つそばから自動</span><span class="count">文字のほかに <b>1</b> キー</span></div>
+        <div class="track">
+          <span class="mode ja"><span class="t">dark</span><span class="s"></span><span class="t">mode</span><span class="s"></span><span class="t">nohaisyokuwokaete,pull</span><span class="s"></span><span class="t">request</span><span class="s"></span><span class="t">wodasimasita.</span><span class="k ok">Enter</span></span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="legend">
+      <span><i class="band ja"></i>IME が効いている打鍵</span>
+      <span><i class="s"></i>Space で入れた空白</span>
+      <span><span class="k x">英数</span>文字のほかに押すキー</span>
+    </div>
+  </div>
+</body>
+</html>
