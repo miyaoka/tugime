@@ -8,6 +8,7 @@ const images = join(root, "docs/images");
 const cli = join(root, ".build/debug/tugime-cli");
 const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const COMMAND_TIMEOUT_MS = 300_000;
+/// 変換の図の幅。紹介画像の幅は intro.html の指定を正本にする
 const WIDTH = 1100;
 
 /// 変換の図に載せる例文。hide が英語、日本語、英語と入れ替わる
@@ -112,9 +113,10 @@ async function readLattices(inputs: string[]): Promise<Map<string, Span[]>> {
       lattices.set(head[1], current);
       continue;
     }
-    // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点
+    // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点。変換エンジンのログも標準出力に混ざるので、数字とタブで始まる行だけを候補として読む
+    if (!/^\d+\t/.test(line)) continue;
     const cols = line.split("\t");
-    if (cols.length !== 7 || !/^\d+$/.test(cols[0])) continue;
+    if (cols.length !== 7) throw new Error(`--lattice の候補の行が 7 列でない: ${line}`);
     if (!current) throw new Error(`== の行より前に候補がある: ${line}`);
     current.push({ s: +cols[0], e: +cols[1], after: cols[2], kind: cols[3] as "J" | "E", output: cols[5], score: +cols[6] });
   }
@@ -328,13 +330,15 @@ const html = `<!doctype html>
 await Bun.write(join(images, "conversion.html"), html);
 console.error(`conversion.html 書き出し 区間 ${placed.length} 本、${laneEnds.length} 段 ${elapsed()}`);
 
-async function capture(name: string, pageHeight: number) {
+async function capture(name: string, pageWidth: number, pageHeight: number) {
   await step(`${name}.png の書き出し`, () =>
-    run([chrome, "--headless", `--screenshot=${join(images, `${name}.png`)}`, `--window-size=${WIDTH},${pageHeight}`, "--force-device-scale-factor=2", "--hide-scrollbars", `file://${join(images, `${name}.html`)}`]),
+    run([chrome, "--headless", `--screenshot=${join(images, `${name}.png`)}`, `--window-size=${pageWidth},${pageHeight}`, "--force-device-scale-factor=2", "--hide-scrollbars", `file://${join(images, `${name}.html`)}`]),
   );
 }
-await capture("conversion", height);
-// 紹介画像は HTML を手で書くので、高さは HTML の html, body の指定を正本にする
-const introHeight = (await Bun.file(join(images, "intro.html")).text()).match(/html, body \{[^}]*?height: (\d+)px/)?.[1];
-if (!introHeight) throw new Error("intro.html の html, body に height が無い");
-await capture("intro", +introHeight);
+await capture("conversion", WIDTH, height);
+// 紹介画像は HTML を手で書くので、幅と高さは HTML の html, body の指定を正本にする
+const introStyle = (await Bun.file(join(images, "intro.html")).text()).match(/html, body \{([^}]*)\}/)?.[1] ?? "";
+const introWidth = introStyle.match(/width: (\d+)px/)?.[1];
+const introHeight = introStyle.match(/height: (\d+)px/)?.[1];
+if (!introWidth || !introHeight) throw new Error("intro.html の html, body に width と height が無い");
+await capture("intro", +introWidth, +introHeight);
