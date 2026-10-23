@@ -175,6 +175,15 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.resize(restored, at: 0, by: -1).map(\.output) == segmenter.resize(clauses, at: 0, by: -1).map(\.output))
     }
 
+    /// 区間がいくつかの文節に分かれていても、最後の文節を伸ばして元に戻せば、伸ばす前と同じに伸縮する
+    @Test func restoredLastClauseOfASpanResizesAsBeforeExtending() {
+        let clauses = segmenter.clauses("kyouhaiitenkidesucwdde")
+        #expect(clauses.map(\.reading) == ["きょうはいい", "てんきです", "cwd", "で"])
+        let restored = segmenter.resize(segmenter.resize(clauses, at: 1, by: 1), at: 1, by: -1)
+        #expect(restored.map(\.output) == clauses.map(\.output))
+        #expect(segmenter.resize(restored, at: 1, by: -1).map(\.output) == segmenter.resize(clauses, at: 1, by: -1).map(\.output))
+    }
+
     /// 拗音で終わる文節も、1 つの綴り（kyo）ずつ手放すので、かなの途中で切れずに元に戻る
     @Test func shrinkingAClauseEndingInAContractedSoundRestoresTheEnglishSpan() {
         let clauses = segmenter.clauses("kyouhatokyo")

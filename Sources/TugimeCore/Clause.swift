@@ -32,7 +32,7 @@ public struct ClauseSpan: Sendable, Equatable {
     public var reading: String
     /// 区間の先頭の文節を変換するときの文脈
     public var context: JapaneseContext
-    /// 区切りの選択が決める区間と一致しない打鍵の範囲を、文節の伸縮で利用者が決めた区間か
+    /// 区切りの選択ではなく、文節の伸縮で利用者が打鍵の範囲を決めた区間か
     public var resized: Bool
 
     public init(index: Int, source: String, reading: String, context: JapaneseContext, resized: Bool = false) {
@@ -91,7 +91,20 @@ extension Segmenter {
             }
             end = next
         }
-        return rebuild(clauses, at: index, keys: keys, spanStart: own.start, range: range, end: end, leading: leading)
+        let rebuilt = rebuild(clauses, at: index, keys: keys, spanStart: own.start, range: range, end: end, leading: leading)
+        return withSegmentedSpans(rebuilt, keys: keys, leading: leading)
+    }
+
+    /// 文節の並びが、打鍵列の全体を区切りから作った文節の並びと読みと種類で一致すれば、各文節の区間を区切りから作った方に置き換える。
+    /// 伸ばして元に戻した文節は、伸ばす前と同じく区切りの選択が決めた区間の文節として伸縮する。選んだ候補は残す
+    private func withSegmentedSpans(_ clauses: [Clause], keys: [Character], leading: Leading) -> [Clause] {
+        let segmented = self.clauses(String(keys), leading: leading)
+        guard clauses.map(\.reading) == segmented.map(\.reading), clauses.map(\.kind) == segmented.map(\.kind) else { return clauses }
+        return zip(clauses, segmented).map { clause, original in
+            var clause = clause
+            clause.span = original.span
+            return clause
+        }
     }
 
     /// 日本語の文節を、区間の読みのかなの上で 1 かなずつ伸縮する。区間の外へは伸ばさず、1 かなより短くしない。
@@ -153,7 +166,7 @@ extension Segmenter {
             source: fixed.source,
             reading: fixed.reading,
             context: fixed.context,
-            resized: !isSegment(range.lowerBound..<end, of: keys, kind: fixed.kind, leading: leading)
+            resized: true
         )
         let resized = fixed.kind == .japanese
             ? Clause(
@@ -179,17 +192,6 @@ extension Segmenter {
             firstIndex: span.index + 1
         )
         return before + [resized] + rest
-    }
-
-    /// 打鍵列の range が、打鍵列の全体を区切りの選択にかけたときの kind の 1 区間と一致するか。伸ばして元に戻した文節は一致する
-    private func isSegment(_ range: Range<Int>, of keys: [Character], kind: Segment.Kind, leading: Leading) -> Bool {
-        var position = 0
-        for segment in segment(String(keys), leading: leading) {
-            let next = position + segment.source.count
-            if position == range.lowerBound, next == range.upperBound { return segment.kind == kind }
-            position = next
-        }
-        return false
     }
 
     /// 未確定の打鍵列の中での区間の位置
