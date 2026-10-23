@@ -1,5 +1,5 @@
 # 日本語の文章に英字のまま書かれる語と、その出現頻度（Zipf 値）の表を作る。
-# ローマ字で書いた日本語は英語の語ではないので、english-frequency-excluded.txt の語を外す。
+# 英語の語ではない綴りとして english-frequency-excluded.txt に挙げた語を外す。
 # 使い方: python3 -m venv <dir> && <dir>/bin/pip install wordfreq==3.1.1
 #         <dir>/bin/python -I scripts/make-english-frequency.py Sources/TugimeCore/Resources/english-frequency.tsv
 import math

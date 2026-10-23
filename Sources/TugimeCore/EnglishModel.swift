@@ -2,6 +2,8 @@ import Foundation
 
 /// 英語の区間の確からしさを測る。日本語の文の中に英字のまま書かれる語は、その出現頻度で測る。
 /// 頻度の表に無い綴り（claudecode、opencode など）は、未知の語として英語の綴りらしさ（文字の 3-gram）で測る。
+/// 文字の 3-gram は短い並びほど高い確率を割り振るので、英字だけの綴りは、綴りらしさを数える語の長さの分布より
+/// 多く割り振っている長さの分だけ下げる
 public struct EnglishModel: Sendable {
     public enum LoadError: Error, CustomStringConvertible {
         case missingResource(String)
@@ -27,6 +29,8 @@ public struct EnglishModel: Sendable {
     /// 表に無い語の項に掛ける重みの自然対数。表の語の項は出現確率そのもの（表全体の和は約 0.021）なので、
     /// この重みは確率ではなく、表の語に対する未知の語の比として働く。使いながら調整する
     static let unknownLogWeight = -1.0
+    /// 長さの分布を数える最長の綴り。これより長い綴りはこの長さとして扱う
+    private static let maxLength = 30
 
     /// 英語の語として扱う語（小文字）
     private var vocabulary: Set<String> = []
@@ -38,6 +42,9 @@ public struct EnglishModel: Sendable {
     private var bigramContext: [Int32]
     private var unigramContext: [Int32]
     private var total: Int32
+    /// 長さごとの、表に無い英字だけの綴りに足す自然対数。綴りらしさがその長さの並び全体に割り振る確率が、
+    /// 綴りらしさを数える語の長さの分布より多ければ、その比の分だけ下げる。少なければ 0
+    private var lengthLogCorrection: [Double] = []
 
     /// spellings は綴りらしさを数える語、zipf は日本語の文章での語ごとの頻度
     public init(spellings: some Sequence<Substring>, zipf: [String: Double]) {
@@ -48,8 +55,10 @@ public struct EnglishModel: Sendable {
         bigramContext = Array(repeating: 0, count: n * n)
         unigramContext = Array(repeating: 0, count: n)
         total = 0
+        var lengthCounts = Array(repeating: 1.0, count: Self.maxLength + 1)
         for word in spellings {
             let symbols = Self.symbols(word.lowercased())
+            lengthCounts[min(symbols.count - 3, Self.maxLength)] += 1
             for i in 2..<symbols.count {
                 let (a, b, c) = (Int(symbols[i - 2]), Int(symbols[i - 1]), Int(symbols[i]))
                 trigram[(a * n + b) * n + c] += 1
@@ -66,6 +75,44 @@ public struct EnglishModel: Sendable {
             logFrequency[key] = (value - 9) * log(10)
             if value >= Self.minWordZipf { vocabulary.insert(key) }
         }
+        lengthCounts[0] = 0
+        let lengthTotal = lengthCounts.reduce(0, +)
+        let mass = lengthMass()
+        lengthLogCorrection = (0...Self.maxLength).map { $0 == 0 ? 0 : min(0, log(lengthCounts[$0] / lengthTotal) - log(mass[$0])) }
+    }
+
+    /// 綴りらしさが長さごとの並び全体に割り振る確率。添字は長さ
+    private func lengthMass() -> [Double] {
+        let n = Self.symbolCount
+        var mass = Array(repeating: 0.0, count: Self.maxLength + 1)
+        var state = Array(repeating: 0.0, count: n * n)
+        state[Int(Self.begin) * n + Int(Self.begin)] = 1
+        for length in 1...Self.maxLength {
+            var next = Array(repeating: 0.0, count: n * n)
+            for a in 0..<n {
+                for b in 0..<n where state[a * n + b] > 0 {
+                    for c in Int(Self.other)..<n {
+                        next[b * n + c] += state[a * n + b] * probability(a, b, c)
+                    }
+                }
+            }
+            state = next
+            for a in 0..<n {
+                for b in 0..<n where state[a * n + b] > 0 {
+                    mass[length] += state[a * n + b] * probability(a, b, Int(Self.end))
+                }
+            }
+        }
+        return mass
+    }
+
+    private func probability(_ a: Int, _ b: Int, _ c: Int) -> Double {
+        let n = Self.symbolCount
+        let p3 = ratio(trigram[(a * n + b) * n + c], bigramContext[a * n + b])
+        let p2 = ratio(bigram[b * n + c], unigramContext[b])
+        let p1 = ratio(unigram[c], total)
+        let w = Self.weights
+        return w.0 * p3 + w.1 * p2 + w.2 * p1 + w.3 / Double(n)
     }
 
     public static func bundled() throws -> EnglishModel {
@@ -98,23 +145,21 @@ public struct EnglishModel: Sendable {
     public func logProbability(_ text: some StringProtocol) -> Double {
         let lowered = text.lowercased()
         let unknown = Self.unknownLogWeight + spellingLogProbability(lowered)
-        guard let known = logFrequency[lowered] else { return unknown }
+        guard let known = logFrequency[lowered] else {
+            // 長さの分布は英字だけの語から数えるので、数字や記号を含む綴り（A4 など）には当てはめない
+            let letters = lowered.unicodeScalars.allSatisfy { (97...122).contains($0.value) }
+            return letters ? unknown + lengthLogCorrection[min(lowered.count, Self.maxLength)] : unknown
+        }
         let top = max(known, unknown)
         return top + log(exp(known - top) + exp(unknown - top))
     }
 
     /// 英語の綴りとしての自然対数の尤度。語頭と語末も含めて測る
     private func spellingLogProbability(_ lowered: String) -> Double {
-        let n = Self.symbolCount
         let symbols = Self.symbols(lowered)
         var sum = 0.0
         for i in 2..<symbols.count {
-            let (a, b, c) = (Int(symbols[i - 2]), Int(symbols[i - 1]), Int(symbols[i]))
-            let p3 = ratio(trigram[(a * n + b) * n + c], bigramContext[a * n + b])
-            let p2 = ratio(bigram[b * n + c], unigramContext[b])
-            let p1 = ratio(unigram[c], total)
-            let w = Self.weights
-            sum += log(w.0 * p3 + w.1 * p2 + w.2 * p1 + w.3 / Double(n))
+            sum += log(probability(Int(symbols[i - 2]), Int(symbols[i - 1]), Int(symbols[i])))
         }
         return sum
     }
