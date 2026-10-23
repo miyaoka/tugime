@@ -3,11 +3,12 @@
 macOS の日本語入力。ローマ字のまま打つと、日本語の区間と英語の区間を見分け、日本語はかな漢字変換し、英語は英字のまま残す。
 
 ```
-kyouhagoogledekensaku → 今日はgoogleで検索
+nodewosakujosite,sitewokoukaisuru → nodeを削除して、siteを公開する
 ```
 
 - 日英の判定は学習しない。同じ入力には常に同じ結果を返す
 - 判定は利用者のローマ字の綴りに合わせる。その綴りで読めない並び（`gl` `pr` `c` `l` など）を含む区間は英語になる
+- ローマ字として読める英単語（`node` `site` など）も、日本語の文に英字のまま書かれることの多い語は英語になる
 - かな漢字変換は [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter) を使う。表示する変換は、Zenzai（小さな言語モデル）で前の文脈を見て選ぶ
 
 ## 動作環境
@@ -79,10 +80,10 @@ main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PAT
 
 ```bash
 swift build --product tugime-cli
-zenz=$(scripts/fetch-zenz.sh)                                         # Zenzai のモデルを取得してパスを出す
-.build/debug/tugime-cli --zenz "$zenz" kyouhagoogledekensaku          # 変換結果
-.build/debug/tugime-cli --explain kyouhagoogle                        # 区間と評価値（採点の変換）
-.build/debug/tugime-cli --zenz "$zenz" --corpus corpus/examples.tsv   # 例文集の一致件数（CI と同じ組み立て）
+zenz=$(scripts/fetch-zenz.sh)                                             # Zenzai のモデルを取得してパスを出す
+.build/debug/tugime-cli --zenz "$zenz" nodewosakujosite,sitewokoukaisuru  # 変換結果
+.build/debug/tugime-cli --explain sitewokoukaisuru                        # 区間と評価値（採点の変換）
+.build/debug/tugime-cli --zenz "$zenz" --corpus corpus/examples.tsv       # 例文集の一致件数（CI と同じ組み立て）
 swift test
 ```
 
