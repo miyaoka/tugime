@@ -259,10 +259,8 @@ public final class Segmenter {
             for (end, kana) in readings where Self.isScoredJapanese(kana) {
                 for predecessor in predecessors {
                     guard score(at: start, after: predecessor.kind) != nil,
-                          let reading = japaneseConverter.convert(kana: kana, context: predecessor.context) else { continue }
+                          let segment = japaneseSegment(String(chars[start..<end]), kana: kana, context: predecessor.context) else { continue }
                     japaneseEnds.insert(end)
-                    let s = weights.japanese * reading.value - weights.japaneseSpanPenalty
-                    let segment = Segment(kind: .japanese, source: String(chars[start..<end]), reading: kana, output: reading.text, score: s, context: reading.context)
                     relax(end, start, segment, after: predecessor.kind)
                 }
             }
@@ -271,14 +269,8 @@ public final class Segmenter {
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
-                // 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
-                // 日本語として採れるなら英語にしない
-                let readable = readableEnds.contains(end)
-                let preferJapanese = table.isSingleKana(source)
-                    || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
-                if preferJapanese, japaneseReach.contains(end) { continue }
-                let s = weights.english * english.logProbability(source) - weights.englishSpanPenalty
-                relax(end, start, Segment(kind: .english, source: source, reading: source, output: source, score: s, context: context), after: start == 0 ? nil : .japanese)
+                if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseReach.contains(end) { continue }
+                relax(end, start, englishSegment(source, context: context), after: start == 0 ? nil : .japanese)
             }
         }
 
@@ -293,6 +285,33 @@ public final class Segmenter {
         // どの区間も、日本語として採れなければ英語として採れるので、空でない入力には必ず区切りがある
         precondition(pos == 0 && !segments.isEmpty, "区切りが見つからない: \(input)")
         return mergeJapanese(segments.reversed())
+    }
+
+    /// source の全体を 1 区間として、日本語区間と英語区間のうち評価値の高い方にする。区切りの選択と同じく、
+    /// 読めない箇所を含めば英語、日本語として採れて英語にしない綴りなら日本語にする
+    func singleSpan(_ source: String, context: JapaneseContext) -> Segment {
+        let english = englishSegment(source, context: context)
+        guard let kana = table.reading(of: source), !kana.allSatisfy({ $0 == "ー" }),
+              let japanese = japaneseSegment(source, kana: kana, context: context)
+        else { return english }
+        return prefersJapanese(source, readable: true) || japanese.score >= english.score ? japanese : english
+    }
+
+    /// 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
+    /// 日本語として採れるなら英語にしない
+    private func prefersJapanese(_ source: String, readable: Bool) -> Bool {
+        table.isSingleKana(source) || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
+    }
+
+    private func japaneseSegment(_ source: String, kana: String, context: JapaneseContext) -> Segment? {
+        guard let reading = japaneseConverter.convert(kana: kana, context: context) else { return nil }
+        let score = weights.japanese * reading.value - weights.japaneseSpanPenalty
+        return Segment(kind: .japanese, source: source, reading: kana, output: reading.text, score: score, context: reading.context)
+    }
+
+    private func englishSegment(_ source: String, context: JapaneseContext) -> Segment {
+        let score = weights.english * english.logProbability(source) - weights.englishSpanPenalty
+        return Segment(kind: .english, source: source, reading: source, output: source, score: score, context: context)
     }
 
     /// 隣り合う日本語区間を 1 つにまとめ、まとめた読みを最初の区間の文脈で変換し直す。

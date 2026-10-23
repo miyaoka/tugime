@@ -139,21 +139,38 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(readings(segmenter.resize(clauses, at: 1, by: -1)) == ["きょうはいい", "てんきで", "す"])
     }
 
-    @Test func resizingStaysInsideTheSpan() {
-        let clauses = segmenter.clauses("kyouhagoogle")
-        #expect(clauses.map(\.kind) == [.japanese, .english])
-        // 区間の外へは伸ばさない
-        #expect(segmenter.resize(clauses, at: 0, by: 1) == clauses)
-        // 1 かなより短くしない
+    @Test func japaneseClausesKeepOneKana() {
         let single = segmenter.resize(segmenter.clauses("kyouhaiitenkidesu"), at: 1, by: -4)
         #expect(readings(single) == ["きょうはいい", "て", "んきです"])
         #expect(segmenter.resize(single, at: 1, by: -1) == single)
     }
 
-    @Test func englishClausesDoNotResize() {
+    /// 日本語の文節は、区間の終わりを越えて英語の打鍵を取り込める。読めない打鍵を含めば英語の文節になり、縮めれば戻る
+    @Test func resizingCrossesIntoTheEnglishSpan() throws {
+        let clauses = segmenter.clauses("main,dev")
+        #expect(clauses.map(\.output) == ["main,", "で", "v"])
+        let extended = segmenter.resize(clauses, at: 1, by: 1)
+        #expect(extended.map(\.output) == ["main,", "dev"])
+        #expect(extended.map(\.kind) == [.english, .english])
+        #expect(try #require(segmenter.commit(extended, through: 0)).keys == "dev")
+        #expect(segmenter.resize(extended, at: 1, by: -1).map(\.output) == ["main,", "で", "v"])
+    }
+
+    /// 英語の文節は 1 打鍵ずつ伸縮し、日本語の区間からは 1 つの綴りずつ取り込む
+    @Test func englishClausesResizeByKeystrokes() {
         let clauses = segmenter.clauses("cwdde")
         #expect(clauses.map(\.kind) == [.english, .japanese])
+        #expect(segmenter.resize(clauses, at: 0, by: 1).map(\.output) == ["cwdde"])
+        #expect(segmenter.resize(clauses, at: 0, by: -1).first?.output == "cw")
+        #expect(segmenter.resize(segmenter.clauses("c"), at: 0, by: -1) == segmenter.clauses("c"))
+    }
+
+    /// 句読点と記号は取り込まない
+    @Test func resizingStopsAtPunctuation() {
+        let clauses = segmenter.clauses("kore,sore")
+        #expect(clauses.map(\.kind) == [.japanese, .punctuation, .japanese])
         #expect(segmenter.resize(clauses, at: 0, by: 1) == clauses)
+        #expect(segmenter.resize(clauses, at: 1, by: 1) == clauses)
     }
 
     @Test func convertsOnlyTheFocusedJapaneseClause() {

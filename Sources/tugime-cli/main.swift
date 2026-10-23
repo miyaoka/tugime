@@ -198,8 +198,8 @@ do {
         show("変換")
         for op in args[2] {
             switch op {
-            case "+": clauses = segmenter.resize(clauses, at: focus, by: 1)
-            case "-": clauses = segmenter.resize(clauses, at: focus, by: -1)
+            case "+": clauses = segmenter.resize(clauses, at: focus, by: 1, leading: leading)
+            case "-": clauses = segmenter.resize(clauses, at: focus, by: -1, leading: leading)
             case ">": focus = min(focus + 1, clauses.count - 1)
             case "<": focus = max(focus - 1, 0)
             default:

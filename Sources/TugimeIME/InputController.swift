@@ -319,7 +319,7 @@ final class TugimeInputController: IMKInputController {
             if event.modifierFlags.contains(.shift) {
                 focus = min(max(focus + step, 0), (clauses?.count ?? 1) - 1)
             } else if let clauses {
-                self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step)
+                self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step, leading: leading)
             }
             candidatePanel.hide()
             showMarkedText(client)

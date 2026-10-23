@@ -8,7 +8,7 @@ public struct Clause: Sendable, Equatable {
     /// 先頭が区切りを選んだときの結果。重複は無い
     public var candidates: [String]
     public var selected: Int
-    /// この文節を含む区間。同じ区間の文節は同じ値を持ち、文節の伸縮はこの中で行う
+    /// この文節を含む区間。同じ区間の文節は同じ値を持つ
     public var span: ClauseSpan
 
     public init(kind: Segment.Kind, reading: String, candidates: [String], selected: Int, span: ClauseSpan) {
@@ -45,10 +45,14 @@ extension Segmenter {
     /// 区切りを選び、日本語区間を文節に分けて、文節ごとに候補の一覧を付ける。
     /// 日本語区間は、前の区間の表示を左の文脈にして表示の変換で文節に分ける
     public func clauses(_ input: String, leading: Leading = .start) -> [Clause] {
-        let segments = segment(input, leading: leading)
-        return zip(segments, displays(of: segments.map(ShownSpan.init))).enumerated().flatMap { index, pair in
+        clauses(of: segment(input, leading: leading), left: "", firstIndex: 0)
+    }
+
+    /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る
+    private func clauses(of segments: [Segment], left: String, firstIndex: Int) -> [Clause] {
+        zip(segments, displays(of: segments.map(ShownSpan.init), left: left)).enumerated().flatMap { offset, pair in
             let (segment, display) = pair
-            let span = ClauseSpan(index: index, source: segment.source, reading: segment.reading, context: segment.context)
+            let span = ClauseSpan(index: firstIndex + offset, source: segment.source, reading: segment.reading, context: segment.context)
             guard let display else {
                 return [Clause(kind: segment.kind, reading: segment.reading, candidates: candidates(for: segment), selected: 0, span: span)]
             }
@@ -56,17 +60,23 @@ extension Segmenter {
         }
     }
 
-    /// 日本語の文節を 1 かなずつ伸ばす（delta が正）・縮める（負）。区間の外へは伸ばさず、1 かなより短くしない。
+    /// 文節を伸ばす（delta が正）・縮める（負）。日本語の文節は区間の中では 1 かなずつ伸縮し、1 かなより短くしない。
+    /// 区間の終わりを越えて伸ばすときと英語の文節は、未確定の打鍵列の上で境目を動かす（`resizeAcrossSpans`）。
     /// 伸縮した文節の後ろにある同じ区間の残りは、文節に分け直して変換する。後ろの区間は、伸縮した区間の表示を左の文脈にして
     /// 表示の変換をし直す。伸縮できなければ元のまま返す
-    public func resize(_ clauses: [Clause], at index: Int, by delta: Int) -> [Clause] {
+    public func resize(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading = .start) -> [Clause] {
         let clause = clauses[index]
-        guard clause.kind == .japanese else { return clauses }
+        guard clause.kind == .japanese else {
+            return resizeAcrossSpans(clauses, at: index, by: delta, leading: leading) ?? clauses
+        }
         let span = clause.span
         let spanIndices = clauses.indices.filter { clauses[$0].span == span }
         let start = kanaStart(of: clauses, at: index)
         let length = clause.reading.count + delta
-        guard length >= 1, start + length <= span.reading.count else { return clauses }
+        guard length >= 1 else { return clauses }
+        guard start + length <= span.reading.count else {
+            return resizeAcrossSpans(clauses, at: index, by: delta, leading: leading) ?? clauses
+        }
 
         let reading = String(span.reading.dropFirst(start).prefix(length))
         let context = start == 0 ? span.context : .afterWord
@@ -86,6 +96,113 @@ extension Segmenter {
         )
         let later = redisplay(Array(clauses[(spanIndices.last! + 1)...]), left: left + ([resized] + rest).map(\.output).joined())
         return Array(clauses[..<index]) + [resized] + rest + later
+    }
+
+    /// 未確定の打鍵列の上で、index の文節の終わりを動かす。伸ばすときは次の 1 単位（`unitEnd`）ずつ取り込み、
+    /// 縮めるときは 1 打鍵ずつ手放して 1 打鍵より短くしない。文節の打鍵は全体を 1 区間として日英を判定し、
+    /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。
+    /// 句読点と記号の文節、文節の始まりが 1 つの綴りの途中にあるとき、動かせないときは nil
+    private func resizeAcrossSpans(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading) -> [Clause]? {
+        let clause = clauses[index]
+        guard clause.kind != .punctuation else { return nil }
+        let spans = keySpans(of: clauses)
+        let keys = Array(spans.map(\.span.source).joined())
+        guard let own = spans.first(where: { $0.span == clause.span }), let range = keyRange(of: clauses, at: index, from: own.start) else { return nil }
+        var end = range.upperBound
+        for _ in 0..<abs(delta) {
+            guard let next = delta > 0 ? unitEnd(from: end, in: spans) : end - 1, next > range.lowerBound else { return nil }
+            end = next
+        }
+
+        // 同じ区間の前の文節は、文節の始まりまでを 1 つの区間として持ち直す
+        var before = Array(clauses[..<index])
+        if let first = before.firstIndex(where: { $0.span == clause.span }) {
+            let head = ClauseSpan(
+                index: clause.span.index,
+                source: String(keys[own.start..<range.lowerBound]),
+                reading: String(clause.span.reading.prefix(kanaStart(of: clauses, at: index))),
+                context: clause.span.context
+            )
+            for i in first..<before.count {
+                before[i].span = head
+            }
+        }
+        let left = before.map(\.output).joined()
+        let fixed = singleSpan(String(keys[range.lowerBound..<end]), context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading))
+        let span = ClauseSpan(index: (before.last?.span.index ?? -1) + 1, source: fixed.source, reading: fixed.reading, context: fixed.context)
+        let resized = fixed.kind == .japanese
+            ? Clause(
+                kind: .japanese,
+                reading: fixed.reading,
+                candidates: japaneseCandidates(
+                    reading: fixed.reading,
+                    best: japaneseConverter.display(kana: fixed.reading, context: fixed.context, left: left)?.text,
+                    context: fixed.context,
+                    span: span
+                ),
+                selected: 0,
+                span: span
+            )
+            : Clause(kind: fixed.kind, reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span)
+        let rest = self.clauses(
+            of: segment(String(keys[end...]), leading: fixed.kind == .japanese ? .afterJapanese : .afterEnglish),
+            left: left + resized.output,
+            firstIndex: span.index + 1
+        )
+        return before + [resized] + rest
+    }
+
+    /// 未確定の打鍵列の中での区間の位置
+    private struct KeySpan {
+        var span: ClauseSpan
+        var kind: Segment.Kind
+        var start: Int
+        var end: Int { start + span.source.count }
+    }
+
+    private func keySpans(of clauses: [Clause]) -> [KeySpan] {
+        var spans: [KeySpan] = []
+        for clause in clauses where clause.span != spans.last?.span {
+            spans.append(KeySpan(span: clause.span, kind: clause.kind, start: spans.last?.end ?? 0))
+        }
+        return spans
+    }
+
+    /// index の文節に当たる、未確定の打鍵列の範囲。spanStart はその文節の区間の始まり。文節の境目が 1 つの綴りの途中に当たれば nil
+    private func keyRange(of clauses: [Clause], at index: Int, from spanStart: Int) -> Range<Int>? {
+        let clause = clauses[index]
+        guard let typed = typedSource(of: clauses, at: index),
+              let before = clause.kind == .japanese ? splitSource(of: clause.span, atKana: kanaStart(of: clauses, at: index))?.head : ""
+        else { return nil }
+        let start = spanStart + before.count
+        return start..<(start + typed.count)
+    }
+
+    /// 打鍵列の position から始まる、文節が取り込む 1 単位の終わり。日本語の区間では 1 つの綴り、英語の区間では 1 打鍵。
+    /// 句読点と記号の区間と、打鍵列の終わりでは nil
+    private func unitEnd(from position: Int, in spans: [KeySpan]) -> Int? {
+        guard let next = spans.first(where: { $0.start <= position && position < $0.end }) else { return nil }
+        switch next.kind {
+        case .punctuation:
+            return nil
+        case .english:
+            return position + 1
+        case .japanese:
+            return table.readings(from: position - next.start, in: Array(next.span.source)).first.map { next.start + $0.end }
+        }
+    }
+
+    /// 文節を変換する文脈。英語の後は前の語に続く形（数字の後は助数詞）、日本語の後は前の文節に続く形、句読点と記号の後は文頭の形
+    private func context(after previous: Clause?, keys: ArraySlice<Character>, leading: Leading) -> JapaneseContext {
+        guard let previous else { return leading.japaneseContext }
+        switch previous.kind {
+        case .english:
+            return Self.context(after: keys)
+        case .japanese:
+            return .afterWord
+        case .punctuation:
+            return .start
+        }
     }
 
     /// 区間ごとの文節を、left に続けて前から順に表示の変換にし直す。日本語区間は文節に分け直し、それ以外の区間は選んだ文字列のまま残す
