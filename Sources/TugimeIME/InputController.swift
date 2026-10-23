@@ -321,14 +321,17 @@ final class TugimeInputController: IMKInputController {
             }
         case KeyCode.left, KeyCode.right:
             // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する。
-            // 全体を 1 つの文字種にした後は、区切りから文節を作り直して最初の文節を伸縮する
+            // 全体を 1 つの文字種にした後は、区切りから文節を作り直して最初の文節を伸縮する。伸縮できなければ全体の変換のまま残す
             let step = event.keyCode == KeyCode.left ? -1 : 1
             if event.modifierFlags.contains(.shift) {
                 focus = min(max(focus + step, 0), (clauses?.count ?? 1) - 1)
             } else if let clauses {
                 let base = wholeConverted ? sharedSegmenter.clauses(keys, leading: leading) : clauses
-                wholeConverted = false
-                self.clauses = sharedSegmenter.resize(base, at: focus, by: step, leading: leading)
+                let resized = sharedSegmenter.resize(base, at: focus, by: step, leading: leading)
+                if !wholeConverted || resized != base {
+                    self.clauses = resized
+                    wholeConverted = false
+                }
             }
             candidatePanel.hide()
             showMarkedText(client)
