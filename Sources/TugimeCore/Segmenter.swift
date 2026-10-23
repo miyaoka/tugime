@@ -21,6 +21,15 @@ public struct Segment: Sendable, Equatable {
     public var context: JapaneseContext
 }
 
+/// 区切りの採点で比べた区間の候補。start と end は入力全体の文字の位置
+public struct ScoredSpan: Sendable, Equatable {
+    public var start: Int
+    public var end: Int
+    /// 直前の区間の種類。入力か句読点の後の先頭なら nil
+    public var after: Segment.Kind?
+    public var segment: Segment
+}
+
 /// 日本語区間と英語区間の評価値を同じ尺度に揃える重み
 public struct SegmentWeights: Sendable {
     public var japanese: Double
@@ -181,8 +190,20 @@ public final class Segmenter {
         segment(input, leading: leading, context: leading.japaneseContext)
     }
 
+    /// 区切りの採点で比べた区間の候補をすべて返す。診断用
+    public func candidates(_ input: String, leading: Leading = .start) -> [ScoredSpan] {
+        var spans: [ScoredSpan] = []
+        _ = segment(input, leading: leading, context: leading.japaneseContext) { spans.append($0) }
+        return spans
+    }
+
     /// context は、最初の句読点か記号までの部分の最初の日本語区間を評価する形
     func segment(_ input: String, leading: Leading, context: JapaneseContext) -> [Segment] {
+        segment(input, leading: leading, context: context, observe: nil)
+    }
+
+    /// observe には、区切りを決めた部分の区間の候補だけを渡す。句読点の前で英語に続くと分かって採点し直す部分の候補は渡さない
+    private func segment(_ input: String, leading: Leading, context: JapaneseContext, observe: ((ScoredSpan) -> Void)?) -> [Segment] {
         let chars = Array(input)
         var segments: [Segment] = []
         var runStart = 0
@@ -196,16 +217,19 @@ public final class Segmenter {
             let end = i + key.count
             defer { i = end }
             guard let mark else { continue }
-            let before = segmentRun(String(chars[runStart..<i]), leading: runContext)
+            var runSpans: [ScoredSpan] = []
+            let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
+            let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, observe: collect)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runLeading == .afterEnglish)
             if symbol == nil, previousIsEnglish { continue }
+            runSpans.forEach { observe?($0) }
             segments += before
             segments.append(Segment(kind: .punctuation, source: key, reading: mark, output: mark, score: 0, context: .start))
             runStart = end
             runLeading = Self.leading(after: key)
             runContext = runLeading.japaneseContext
         }
-        return segments + segmentRun(String(chars[runStart...]), leading: runContext)
+        return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe)
     }
 
     /// i から始まる記号の打鍵のうち最も長いもの
@@ -217,8 +241,9 @@ public final class Segmenter {
         return nil
     }
 
-    /// 句読点を含まない部分を、日本語区間と英語区間の並びに分ける。空でない入力には必ず 1 つ以上の区間を返す
-    private func segmentRun(_ input: String, leading: JapaneseContext) -> [Segment] {
+    /// 句読点を含まない部分を、日本語区間と英語区間の並びに分ける。空でない入力には必ず 1 つ以上の区間を返す。
+    /// offset は input が入力全体のどの位置から始まるかで、observe に渡す区間の候補の位置に足す
+    private func segmentRun(_ input: String, leading: JapaneseContext, offset: Int, observe: ((ScoredSpan) -> Void)?) -> [Segment] {
         let chars = Array(input)
         let n = chars.count
         guard n > 0 else { return [] }
@@ -241,6 +266,7 @@ public final class Segmenter {
 
         func relax(_ end: Int, _ start: Int, _ segment: Segment, after previous: Segment.Kind?) {
             guard let base = score(at: start, after: previous) else { return }
+            observe?(ScoredSpan(start: offset + start, end: offset + end, after: previous, segment: segment))
             let total = base + segment.score
             if let current = best[end][segment.kind], current.score >= total { return }
             best[end][segment.kind] = Cell(score: total, segment: segment, from: start, previousKind: previous)

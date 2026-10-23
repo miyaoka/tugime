@@ -8,6 +8,7 @@ let usage = """
       tugime-cli <打鍵列>...                  打鍵列を変換した結果を出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
+      tugime-cli --lattice <打鍵列>...        区切りの採点で比べた区間の候補を、打鍵列の位置と直前の区間の種類とともにすべて出す
       tugime-cli --clauses <打鍵列>...        文節ごとの候補を出す
       tugime-cli --resize <打鍵列> <操作>     文節を操作した結果を出す。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す
       tugime-cli --whole <打鍵列>...          F6〜F10 の全体の変換を出す
@@ -219,6 +220,15 @@ do {
         for input in args.dropFirst() {
             let segments = segmenter.segment(input, leading: leading)
             print("\(segments.map(\.output).joined())\t\(describe(segments))")
+        }
+    case "--lattice":
+        let segmenter = try makeSegmenter(zenz: zenz)
+        for input in args.dropFirst() {
+            print("== \(input)\t\(describe(segmenter.segment(input, leading: leading)))")
+            for span in segmenter.candidates(input, leading: leading) {
+                let after = span.after.map { tag[$0]! } ?? "-"
+                print("\(span.start)..<\(span.end)\t\(after)\t\(describe([span.segment]))")
+            }
         }
     default:
         let segmenter = try makeSegmenter(zenz: zenz)
