@@ -18,7 +18,7 @@ extension Segmenter {
         segment(input, leading: leading).map { segment in
             switch segment.kind {
             case .japanese, .punctuation: segment.reading
-            case .english: table.readingKeepingSpaces(of: segment.source) ?? segment.source
+            case .english: englishReading(of: segment.source) ?? segment.source
             }
         }.joined()
     }
@@ -33,7 +33,7 @@ extension Segmenter {
     public func convertClause(_ clauses: [Clause], at index: Int, to form: CharacterForm) -> String? {
         let clause = clauses[index]
         guard form.usesKeystrokes else {
-            let kana = clause.kind == .english ? table.readingKeepingSpaces(of: clause.span.source) ?? clause.span.source : clause.reading
+            let kana = clause.kind == .english ? englishReading(of: clause.span.source) ?? clause.span.source : clause.reading
             return Self.text(kana, form)
         }
         return typedSource(of: clauses, at: index).map { Self.text($0, form) }

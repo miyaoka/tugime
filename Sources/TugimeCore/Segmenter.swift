@@ -142,6 +142,17 @@ public final class Segmenter {
         kana.count <= maxScoredKana && !kana.allSatisfy { $0 == "ー" }
     }
 
+    /// 英語区間を、空白で区切った語ごとに綴りの表で読んだもの。読めない語は打ったまま、空白はそのまま残す。1 語も読めなければ nil
+    func englishReading(of source: String) -> String? {
+        var readAny = false
+        let words = source.split(separator: " ", omittingEmptySubsequences: false).map { word in
+            guard let kana = table.reading(of: word) else { return String(word) }
+            readAny = true
+            return kana
+        }
+        return readAny ? words.joined(separator: " ") : nil
+    }
+
     /// 前の語の後ろに付く記号と、日本語の文で使う形
     static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！", "~": "〜"]
 
