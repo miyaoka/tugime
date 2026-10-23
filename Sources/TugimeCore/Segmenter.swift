@@ -133,6 +133,9 @@ public final class Segmenter {
 
     /// この長さ以下の読める綴りは、英語の語であっても日本語として読む
     static let maxJapaneseFirstLength = 2
+    /// 区切りの採点で変換する日本語区間の読みの長さの上限。長い日本語は短い日本語区間の連なりとして採点し、
+    /// 区切りが決まってからまとめて変換し直す。上限が無いと、打鍵のたびに入力の長さに比例した長い読みを変換し直す
+    static let maxScoredKana = 8
 
     /// 前の語の後ろに付く記号と、日本語の文で使う形
     static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！", "~": "〜"]
@@ -224,7 +227,7 @@ public final class Segmenter {
             let readings = table.readings(from: start, in: chars)
             // この位置から綴りの表で最後まで読める終端。英語区間の候補が読める綴りかを引くのに使う
             let readableEnds = Set(readings.map(\.end))
-            for (end, kana) in readings {
+            for (end, kana) in readings where kana.count <= Self.maxScoredKana {
                 // 長音だけの区間は日本語として成り立たない（binge-watch の - など）
                 if kana.allSatisfy({ $0 == "ー" }) { continue }
                 for predecessor in predecessors {
