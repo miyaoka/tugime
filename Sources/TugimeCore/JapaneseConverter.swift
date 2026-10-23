@@ -116,45 +116,38 @@ public final class AzooKeyConverter: JapaneseConverting {
         var left: String
     }
 
-    /// 採点に使う変換器の数。区切りは打鍵のたびに、同じ開始位置の読みを 1 かなずつ伸ばして採点するので、
-    /// 開始位置と文脈の組ごとに変換器があれば、変換エンジンが前の読みの途中の計算を使い回せる
-    private static let scoringEngineCount = 32
+    /// 採点に使うセッションの数。区切りは打鍵のたびに、同じ開始位置の読みを 1 かなずつ伸ばして採点するので、
+    /// 開始位置と文脈の組ごとにセッションがあれば、変換エンジンが前の読みの途中の計算を使い回せる
+    private static let scoringSessionCount = 32
 
-    /// 辞書。すべての変換器で共有する
-    private let store: DicdataStore
-    /// 採点に使う変換器と、それぞれに前に渡した読み
-    private var scoringEngines: [(engine: KanaKanjiConverter, last: String, used: Int)] = []
+    /// 採点に使うセッションと、それぞれに前に渡した読み
+    private var scoringSessions: [(id: KanaKanjiConverter.ConversionSessionID, last: String, used: Int)] = []
     private var scoringClock = 0
-    /// 表示に使う変換器と、前に渡した読み
-    private let displayConverter: KanaKanjiConverter
-    private var lastDisplayInput = ""
 
     public init(zenzaiWeight: URL?) {
-        store = DicdataStore.withDefaultDictionary()
-        converter = KanaKanjiConverter(dicdataStore: store)
-        displayConverter = KanaKanjiConverter(dicdataStore: store)
+        converter = KanaKanjiConverter.withDefaultDictionary()
         self.zenzaiWeight = zenzaiWeight
     }
 
-    /// 採点の変換器を選ぶ。前に渡した読みが text の先頭と一致する変換器があればそれを使い、
-    /// 無ければ一番長く使っていない変換器の途中の計算を捨てて使う
-    private func scoringEngine(for text: String) -> KanaKanjiConverter {
+    /// 採点のセッションを選ぶ。前に渡した読みが text の先頭と一致するセッションがあればそれを使い、
+    /// 無ければ一番長く使っていないセッションを作り直して使う
+    private func scoringSession(for text: String) -> KanaKanjiConverter.ConversionSessionID {
         scoringClock += 1
-        let continuing = scoringEngines.indices.filter { text.hasPrefix(scoringEngines[$0].last) }
-        if let index = continuing.max(by: { scoringEngines[$0].last.count < scoringEngines[$1].last.count }) {
-            scoringEngines[index].last = text
-            scoringEngines[index].used = scoringClock
-            return scoringEngines[index].engine
+        let continuing = scoringSessions.indices.filter { text.hasPrefix(scoringSessions[$0].last) }
+        let index: Int
+        if let longest = continuing.max(by: { scoringSessions[$0].last.count < scoringSessions[$1].last.count }) {
+            index = longest
+        } else if scoringSessions.count < Self.scoringSessionCount {
+            scoringSessions.append((converter.createSession(), text, scoringClock))
+            index = scoringSessions.count - 1
+        } else {
+            index = scoringSessions.indices.min { scoringSessions[$0].used < scoringSessions[$1].used }!
+            converter.removeSession(scoringSessions[index].id)
+            scoringSessions[index].id = converter.createSession()
         }
-        if scoringEngines.count < Self.scoringEngineCount {
-            scoringEngines.append((KanaKanjiConverter(dicdataStore: store), text, scoringClock))
-            return scoringEngines[scoringEngines.count - 1].engine
-        }
-        let index = scoringEngines.indices.min { scoringEngines[$0].used < scoringEngines[$1].used }!
-        scoringEngines[index].engine.stopComposition()
-        scoringEngines[index].last = text
-        scoringEngines[index].used = scoringClock
-        return scoringEngines[index].engine
+        scoringSessions[index].last = text
+        scoringSessions[index].used = scoringClock
+        return scoringSessions[index].id
     }
 
     private static func options(nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode) -> ConvertRequestOptions {
@@ -278,31 +271,28 @@ public final class AzooKeyConverter: JapaneseConverting {
         displayCache = [:]
     }
 
-    /// 変換エンジンは直前の入力との差分で計算する。前に渡した読みの続きを渡すときだけ途中の計算を使い回し、
-    /// それ以外は前の状態を捨てて、要求ごとに独立した結果にする
-    private func engine(for kana: String, zenzai: ConvertRequestOptions.ZenzaiMode, scoring: Bool) -> KanaKanjiConverter {
-        if scoring { return scoringEngine(for: kana) }
-        if zenzai != .off {
-            if lastDisplayInput.isEmpty || !kana.hasPrefix(lastDisplayInput) { displayConverter.stopComposition() }
-            lastDisplayInput = kana
-            return displayConverter
-        }
-        converter.stopComposition()
-        return converter
-    }
-
+    /// 変換エンジンは直前の入力との差分で計算する。採点は前に渡した読みの続きを同じセッションに渡して途中の計算を使い回す。
+    /// Zenzai は前の変換で選んだ表記も次の変換に引き継ぐので、表示と候補の窓は前の状態を捨てて、要求ごとに独立した結果にする
     private func candidates(_ kana: String, nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode = .off, scoring: Bool = false) -> [Candidate] {
         var composing = ComposingText()
         composing.insertAtCursorPosition(kana, inputStyle: .direct)
         let kanaCount = kana.count
-        let engine = engine(for: kana, zenzai: zenzai, scoring: scoring)
+        let request = { self.converter.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)) }
+        let result: ConversionResult
+        if scoring {
+            // セッションは採点が作ったものだけなので、見つからないことは無い
+            result = try! converter.withSession(scoringSession(for: kana), operation: request)
+        } else {
+            converter.stopComposition()
+            result = request()
+        }
         // 入力全体を覆い、言語モデルで評価された候補だけを採る
-        let results = engine.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)).mainResults.filter {
+        let results = result.mainResults.filter {
             $0.rubyCount == kanaCount && !Self.isUnscoredWhole($0)
         }
         // 変換エンジンはモデルを読めないと黙って Zenzai なしで変換する。読めたときだけ zenzStatus が "load <URL>" になる
-        if let zenzaiWeight, zenzai != .off, engine.zenzStatus != "load \(zenzaiWeight.absoluteString)" {
-            fatalError("Zenzai のモデルを読めない: \(engine.zenzStatus)")
+        if let zenzaiWeight, zenzai != .off, converter.zenzStatus != "load \(zenzaiWeight.absoluteString)" {
+            fatalError("Zenzai のモデルを読めない: \(converter.zenzStatus)")
         }
         return results
     }
