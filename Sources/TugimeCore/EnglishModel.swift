@@ -2,8 +2,8 @@ import Foundation
 
 /// 英語の区間の確からしさを測る。日本語の文の中に英字のまま書かれる語は、その出現頻度で測る。
 /// 頻度の表に無い綴り（claudecode、opencode など）は、未知の語として英語の綴りらしさ（文字の 3-gram）で測る。
-/// 文字の 3-gram は短い並びほど高い確率を割り振るので、英字だけの綴りは、綴りらしさを数える語の長さの分布より
-/// 多く割り振っている長さの分だけ下げる
+/// 文字の 3-gram が長さごとに割り振る確率は、綴りらしさを数える語の長さの分布と合わないので、頻度の表に無い英字だけの綴りは、
+/// 語の長さの分布より多く割り振っている長さ（短い綴りと、とても長い綴り）の分だけ下げる
 public struct EnglishModel: Sendable {
     public enum LoadError: Error, CustomStringConvertible {
         case missingResource(String)
@@ -29,8 +29,10 @@ public struct EnglishModel: Sendable {
     /// 表に無い語の項に掛ける重みの自然対数。表の語の項は出現確率そのもの（表全体の和は約 0.021）なので、
     /// この重みは確率ではなく、表の語に対する未知の語の比として働く。使いながら調整する
     static let unknownLogWeight = -1.0
-    /// 長さの分布を数える最長の綴り。これより長い綴りはこの長さとして扱う
+    /// 長さの分布を数える最長の綴り。これより長い綴りは、まとめてこの長さとして数える
     private static let maxLength = 30
+    /// 語の長さの分布を数えるときに、長さごとの語の数に足す値。語の一覧に無い長さにも確率を残す
+    private static let lengthPseudoCount = 1.0
 
     /// 英語の語として扱う語（小文字）
     private var vocabulary: Set<String> = []
@@ -55,7 +57,7 @@ public struct EnglishModel: Sendable {
         bigramContext = Array(repeating: 0, count: n * n)
         unigramContext = Array(repeating: 0, count: n)
         total = 0
-        var lengthCounts = Array(repeating: 1.0, count: Self.maxLength + 1)
+        var lengthCounts = Array(repeating: Self.lengthPseudoCount, count: Self.maxLength + 1)
         for word in spellings {
             let symbols = Self.symbols(word.lowercased())
             lengthCounts[min(symbols.count - 3, Self.maxLength)] += 1
@@ -78,16 +80,19 @@ public struct EnglishModel: Sendable {
         lengthCounts[0] = 0
         let lengthTotal = lengthCounts.reduce(0, +)
         let mass = lengthMass()
-        lengthLogCorrection = (0...Self.maxLength).map { $0 == 0 ? 0 : min(0, log(lengthCounts[$0] / lengthTotal) - log(mass[$0])) }
+        lengthLogCorrection = (0...Self.maxLength).map { length in
+            guard length > 0, mass[length] > 0 else { return 0 }
+            return min(0, log(lengthCounts[length] / lengthTotal) - log(mass[length]))
+        }
     }
 
-    /// 綴りらしさが長さごとの並び全体に割り振る確率。添字は長さ
+    /// 綴りらしさが長さごとの並び全体に割り振る確率。添字は長さで、maxLength はそれ以上の長さすべての和
     private func lengthMass() -> [Double] {
         let n = Self.symbolCount
         var mass = Array(repeating: 0.0, count: Self.maxLength + 1)
         var state = Array(repeating: 0.0, count: n * n)
         state[Int(Self.begin) * n + Int(Self.begin)] = 1
-        for length in 1...Self.maxLength {
+        for length in 1..<Self.maxLength {
             var next = Array(repeating: 0.0, count: n * n)
             for a in 0..<n {
                 for b in 0..<n where state[a * n + b] > 0 {
@@ -103,6 +108,8 @@ public struct EnglishModel: Sendable {
                 }
             }
         }
+        // 綴りらしさはすべての並びに割り振る確率の和が 1 なので、残りが maxLength 以上の長さの分になる
+        mass[Self.maxLength] = 1 - mass.reduce(0, +)
         return mass
     }
 
@@ -146,7 +153,7 @@ public struct EnglishModel: Sendable {
         let lowered = text.lowercased()
         let unknown = Self.unknownLogWeight + spellingLogProbability(lowered)
         guard let known = logFrequency[lowered] else {
-            // 長さの分布は英字だけの語から数えるので、数字や記号を含む綴り（A4 など）には当てはめない
+            // 頻度の表は英字だけの語でできているので、数字や記号を含む綴り（A4 など）は正しい綴りでも必ず表の外になる。補正を当てない
             let letters = lowered.unicodeScalars.allSatisfy { (97...122).contains($0.value) }
             return letters ? unknown + lengthLogCorrection[min(lowered.count, Self.maxLength)] : unknown
         }
