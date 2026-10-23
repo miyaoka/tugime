@@ -13,7 +13,7 @@ public enum CharacterForm: Sendable, CaseIterable {
 }
 
 extension Segmenter {
-    /// 日本語区間はかな、英語区間は綴りの表で読めればかな、読めなければ打ったまま、を並べたもの
+    /// 日本語区間はかな、英語区間は `englishReading` で読めたもの、読めなければ打ったまま、を並べたもの
     public func wholeReading(_ input: String, leading: Leading = .start) -> String {
         segment(input, leading: leading).map { segment in
             switch segment.kind {

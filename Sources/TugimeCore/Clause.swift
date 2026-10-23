@@ -184,7 +184,7 @@ extension Segmenter {
         case .japanese:
             preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
         case .english:
-            // 英語と判定した区間も、綴りの表で読めればかなを選べるようにする
+            // 英語と判定した区間も、`englishReading` で読めればかなを選べるようにする
             if let kana = englishReading(of: segment.source) {
                 list += [kana, Self.katakana(kana)]
                 // 変換エンジンには前後の空白を除いた 1 語の読みを渡し、候補に空白を付け直す
