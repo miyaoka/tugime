@@ -6,7 +6,7 @@ let usage = """
     使い方（先頭に次を付けられる。--after <english|japanese> はカーソルの前にその文字がある状態として変換する。
     --zenz <モデルのパス> は表示の変換に Zenzai を使う。scripts/fetch-zenz.sh が取得してパスを出す）:
       tugime-cli <打鍵列>...                  打鍵列を変換した結果を出す
-      tugime-cli --live <打鍵列>...           Space を押す前に表示する文字列を出す
+      tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
       tugime-cli --clauses <打鍵列>...        文節ごとの候補を出す
       tugime-cli --resize <打鍵列> <操作>     文節を操作した結果を出す。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す

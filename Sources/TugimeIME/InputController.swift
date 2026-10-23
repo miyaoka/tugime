@@ -257,7 +257,7 @@ final class TugimeInputController: IMKInputController {
         case KeyCode.space:
             guard !keys.isEmpty else { return false }
             // 打っている途中も変換して見せているので、Space は日本語の文に英語の語句を空白で区切って混ぜるのに使い、
-            // 文節の選択には Shift+Space で入る。空白は綴りの表で読めないので、空白を含む区間は英語になる
+            // 文節の選択には Shift+Space で入る
             if !event.modifierFlags.contains(.shift) {
                 keys.append(" ")
                 showMarkedText(client)
