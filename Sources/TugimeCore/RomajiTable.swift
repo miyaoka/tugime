@@ -82,6 +82,21 @@ public struct RomajiTable: Sendable {
         return readings(from: 0, in: chars).first { $0.end == chars.count }?.kana
     }
 
+    /// 空白で区切った語をそれぞれ最後まで読めれば、空白を残してかなを返す（make  → まけ ）。空白だけなら nil
+    public func readingKeepingSpaces(of text: some StringProtocol) -> String? {
+        var words: [String] = []
+        for word in text.split(separator: " ", omittingEmptySubsequences: false) {
+            if word.isEmpty {
+                words.append("")
+                continue
+            }
+            guard let kana = reading(of: word) else { return nil }
+            words.append(kana)
+        }
+        guard words.contains(where: { !$0.isEmpty }) else { return nil }
+        return words.joined(separator: " ")
+    }
+
     /// 読みが kana の綴りを、読みの先頭 kanaCount 文字に当たる綴りと残りの綴りに分ける。
     /// 1 つの綴りが複数のかなになる（kya → きゃ）ところの途中では切れないので nil
     public func split(_ text: String, kana whole: String, atKana kanaCount: Int) -> (head: String, tail: String)? {

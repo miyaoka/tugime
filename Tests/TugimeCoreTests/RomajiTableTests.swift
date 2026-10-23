@@ -39,6 +39,14 @@ private func read(_ input: String) throws -> String? {
         #expect(try read(input) == nil)
     }
 
+    @Test func readsEachWordAndKeepsTheSpaces() throws {
+        let table = try RomajiTable.bundled()
+        #expect(table.readingKeepingSpaces(of: "make ") == "まけ ")
+        #expect(table.readingKeepingSpaces(of: " dame desu") == " だめ です")
+        #expect(table.readingKeepingSpaces(of: "dark mode") == nil)
+        #expect(table.readingKeepingSpaces(of: " ") == nil)
+    }
+
     @Test func doesNotReadNBeforeYOrN() throws {
         // n の後ろが y なら「にゃ」と読み、単独の「ん」にはしない
         #expect(try read("nya") == "にゃ")

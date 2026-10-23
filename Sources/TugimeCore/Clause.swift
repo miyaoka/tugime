@@ -185,9 +185,9 @@ extension Segmenter {
             preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
         case .english:
             // 英語と判定した区間も、綴りの表で読めればかなを選べるようにする
-            if let kana = table.reading(of: segment.source) {
+            if let kana = table.readingKeepingSpaces(of: segment.source) {
                 list += [kana, Self.katakana(kana)]
-                if let resolved = japaneseConverter.convert(kana: kana, context: segment.context)?.context {
+                if !kana.contains(" "), let resolved = japaneseConverter.convert(kana: kana, context: segment.context)?.context {
                     list += japaneseConverter.alternatives(kana: kana, context: resolved)
                 }
             }
