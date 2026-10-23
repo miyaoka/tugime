@@ -6,6 +6,8 @@ public struct Segment: Sendable, Equatable {
         case english
         /// 日本語の記号にした句読点（, . ? ! ~）と記号の打鍵（zh [ / など）
         case punctuation
+        /// 未確定の文字列全体を 1 つの文字種にした文節（F6〜F10）。区切りの選択はこの種類の区間を作らない
+        case whole
     }
 
     public var kind: Kind

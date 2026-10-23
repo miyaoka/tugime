@@ -20,7 +20,7 @@ func makeSegmenter(zenz: URL?) throws -> Segmenter {
     try Segmenter(table: .bundled(), english: .bundled(), japanese: AzooKeyConverter(zenzaiWeight: zenz))
 }
 
-let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P"]
+let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .whole: "W"]
 
 func describe(_ segments: [Segment]) -> String {
     segments.map { s in

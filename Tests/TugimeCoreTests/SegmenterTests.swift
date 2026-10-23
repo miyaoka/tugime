@@ -241,6 +241,18 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.resize(segmenter.clauses("c"), at: 0, by: -1) == segmenter.clauses("c"))
     }
 
+    /// 全体を 1 つの文字種にした文節は、区切りから文節を作り直して最初の文節を伸縮する。記号を打ったまま文節に入れない
+    @Test func resizingAWholeConversionResizesTheSegmentedClauses() {
+        let whole = [segmenter.wholeClause("kyouhagoogle", to: .katakana)]
+        #expect(whole.map(\.kind) == [.whole])
+        let segmented = segmenter.clauses("kyouhagoogle")
+        #expect(segmenter.resize(whole, at: 0, by: -1) == segmenter.resize(segmented, at: 0, by: -1))
+        // 最初の文節が記号で伸縮できなければ、全体の変換のまま残す
+        let bracketed = [segmenter.wholeClause("[kore", to: .katakana)]
+        #expect(segmenter.resize(bracketed, at: 0, by: -1) == bracketed)
+        #expect(segmenter.resize(bracketed, at: 0, by: 1) == bracketed)
+    }
+
     /// 句読点と記号は取り込まない
     @Test func resizingStopsAtPunctuation() {
         let clauses = segmenter.clauses("kore,sore")

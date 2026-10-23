@@ -67,9 +67,15 @@ extension Segmenter {
     /// 1 かなより短くしない（`resizeInsideSpan`）。文節の始まりが 1 つの綴りの途中にあって打鍵を切り出せないときも同じにする。
     /// それ以外（区間の終わりを越えて伸ばすとき、英語の文節、伸縮で作った区間の文節）は、打鍵列の上で文節の終わりを 1 単位ずつ動かし
     /// （`unitEnd`、`unitStart`）、文節の打鍵を 1 区間として日英を判定して、後ろの打鍵は日英判定と変換をやり直す（`rebuild`）。
-    /// 句読点と記号の文節は伸縮しない。伸縮できなければ元のまま返す
+    /// 句読点と記号の文節は伸縮しない。全体を 1 つの文字種にした文節は、区切りから文節を作り直して最初の文節を伸縮する。
+    /// 伸縮できなければ元のまま返す
     public func resize(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading = .start) -> [Clause] {
         let clause = clauses[index]
+        if clause.kind == .whole {
+            let segmented = self.clauses(clause.span.source, leading: leading)
+            let resized = resize(segmented, at: 0, by: delta, leading: leading)
+            return resized == segmented ? clauses : resized
+        }
         guard clause.kind != .punctuation else { return clauses }
         let spans = keySpans(of: clauses)
         let keys = Array(spans.map(\.span.source).joined())
@@ -251,7 +257,7 @@ extension Segmenter {
     private func unitEnd(from position: Int, in spans: [KeySpan]) -> Int? {
         guard let next = spans.first(where: { $0.start <= position && position < $0.end }) else { return nil }
         switch next.kind {
-        case .punctuation:
+        case .punctuation, .whole:
             return nil
         case .english:
             return position + 1
@@ -265,7 +271,7 @@ extension Segmenter {
     private func unitStart(before position: Int, in spans: [KeySpan]) -> Int? {
         guard let span = spans.first(where: { $0.start < position && position <= $0.end }) else { return nil }
         switch span.kind {
-        case .punctuation:
+        case .punctuation, .whole:
             return nil
         case .english:
             return position - 1
@@ -285,6 +291,8 @@ extension Segmenter {
             return .afterWord
         case .punctuation:
             return Self.leading(after: previous.span.source).japaneseContext
+        case .whole:
+            preconditionFailure("全体の変換の文節は 1 つだけで、後ろに文節を持たない")
         }
     }
 
@@ -383,6 +391,8 @@ extension Segmenter {
             list.append(segment.source)
         case .japanese:
             preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
+        case .whole:
+            preconditionFailure("区切りの選択は全体の変換の区間を作らない")
         case .english:
             // 英語と判定した区間も、`englishReading` で読めればかなを選べるようにする
             if let kana = englishReading(of: segment.source) {

@@ -19,6 +19,7 @@ extension Segmenter {
             switch segment.kind {
             case .japanese, .punctuation: segment.reading
             case .english: englishReading(of: segment.source) ?? segment.source
+            case .whole: preconditionFailure("区切りの選択は全体の変換の区間を作らない")
             }
         }.joined()
     }
@@ -26,6 +27,14 @@ extension Segmenter {
     /// 未確定の文字列全体を指定の文字種にした文字列
     public func convertWhole(_ input: String, to form: CharacterForm, leading: Leading = .start) -> String {
         Self.text(form.usesKeystrokes ? input : wholeReading(input, leading: leading), form)
+    }
+
+    /// 未確定の文字列全体を指定の文字種にした 1 文節。読みは `wholeReading`。
+    /// 伸縮するときは区切りから文節を作り直す（`resize`）
+    public func wholeClause(_ input: String, to form: CharacterForm, leading: Leading = .start) -> Clause {
+        let reading = wholeReading(input, leading: leading)
+        let span = ClauseSpan(index: 0, source: input, reading: reading, context: leading.japaneseContext)
+        return Clause(kind: .whole, reading: reading, candidates: [convertWhole(input, to: form, leading: leading)], selected: 0, span: span)
     }
 
     /// index の文節だけを指定の文字種にした文字列。英字にするには文節に当たる打鍵が要り、
