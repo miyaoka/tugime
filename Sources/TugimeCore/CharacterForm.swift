@@ -19,7 +19,6 @@ extension Segmenter {
             switch segment.kind {
             case .japanese, .punctuation: segment.reading
             case .english: englishReading(of: segment.source) ?? segment.source
-            case .whole: preconditionFailure("区切りの選択は全体の変換の区間を作らない")
             }
         }.joined()
     }

@@ -2,8 +2,24 @@ import Foundation
 
 /// 確定前の 1 文節。日本語区間は変換エンジンの文節に分け、英語区間と句読点はそれぞれ 1 文節にする。候補の窓で選び直せる
 public struct Clause: Sendable, Equatable {
-    public var kind: Segment.Kind
-    /// 日本語はかな、それ以外は打ったまま
+    public enum Kind: Sendable, Equatable {
+        case japanese
+        case english
+        case punctuation
+        /// 未確定の文字列全体を 1 つの文字種にした文節（F6〜F10）。読みは全体の読み（`wholeReading`）
+        case whole
+
+        init(_ kind: Segment.Kind) {
+            switch kind {
+            case .japanese: self = .japanese
+            case .english: self = .english
+            case .punctuation: self = .punctuation
+            }
+        }
+    }
+
+    public var kind: Kind
+    /// 日本語はかな、全体の変換は全体の読み、それ以外は打ったまま
     public var reading: String
     /// 先頭が区切りを選んだときの結果。重複は無い
     public var candidates: [String]
@@ -11,7 +27,7 @@ public struct Clause: Sendable, Equatable {
     /// この文節を含む区間。同じ区間の文節は同じ値を持つ
     public var span: ClauseSpan
 
-    public init(kind: Segment.Kind, reading: String, candidates: [String], selected: Int, span: ClauseSpan) {
+    public init(kind: Kind, reading: String, candidates: [String], selected: Int, span: ClauseSpan) {
         self.kind = kind
         self.reading = reading
         self.candidates = candidates
@@ -57,7 +73,7 @@ extension Segmenter {
             let (segment, display) = pair
             let span = ClauseSpan(index: firstIndex + offset, source: segment.source, reading: segment.reading, context: segment.context)
             guard let display else {
-                return [Clause(kind: segment.kind, reading: segment.reading, candidates: candidates(for: segment), selected: 0, span: span)]
+                return [Clause(kind: Clause.Kind(segment.kind), reading: segment.reading, candidates: candidates(for: segment), selected: 0, span: span)]
             }
             return japaneseClauses(display.clauses, context: span.context, in: span)
         }
@@ -212,7 +228,7 @@ extension Segmenter {
                 selected: 0,
                 span: span
             )
-            : Clause(kind: fixed.kind, reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span)
+            : Clause(kind: Clause.Kind(fixed.kind), reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span)
         let rest = self.clauses(
             of: segment(
                 String(keys[end...]),
@@ -228,7 +244,7 @@ extension Segmenter {
     /// 未確定の打鍵列の中での区間の位置
     private struct KeySpan {
         var span: ClauseSpan
-        var kind: Segment.Kind
+        var kind: Clause.Kind
         var start: Int
         var end: Int { start + span.source.count }
     }
@@ -391,8 +407,6 @@ extension Segmenter {
             list.append(segment.source)
         case .japanese:
             preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
-        case .whole:
-            preconditionFailure("区切りの選択は全体の変換の区間を作らない")
         case .english:
             // 英語と判定した区間も、`englishReading` で読めればかなを選べるようにする
             if let kana = englishReading(of: segment.source) {

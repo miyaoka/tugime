@@ -20,7 +20,8 @@ func makeSegmenter(zenz: URL?) throws -> Segmenter {
     try Segmenter(table: .bundled(), english: .bundled(), japanese: AzooKeyConverter(zenzaiWeight: zenz))
 }
 
-let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .whole: "W"]
+let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P"]
+let clauseTag: [Clause.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .whole: "W"]
 
 func describe(_ segments: [Segment]) -> String {
     segments.map { s in
@@ -180,7 +181,7 @@ do {
         for input in args.dropFirst() {
             print("== \(input)")
             for clause in segmenter.clauses(input, leading: leading) {
-                print("\(tag[clause.kind]!) \(clause.reading)\t\(clause.candidates.joined(separator: " / "))")
+                print("\(clauseTag[clause.kind]!) \(clause.reading)\t\(clause.candidates.joined(separator: " / "))")
             }
         }
     case "--resize":
