@@ -178,10 +178,16 @@ public final class Segmenter {
     /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
     /// 日本語の記号の位置で入力を切る。句読点の後は文頭として、記号の打鍵の後は文の途中かもしれないものとして次の部分を評価する
     public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
+        segment(input, leading: leading, context: leading.japaneseContext)
+    }
+
+    /// context は、最初の句読点か記号までの部分の最初の日本語区間を評価する形
+    func segment(_ input: String, leading: Leading, context: JapaneseContext) -> [Segment] {
         let chars = Array(input)
         var segments: [Segment] = []
         var runStart = 0
         var runLeading = leading
+        var runContext = context
         var i = 0
         while i < chars.count {
             let symbol = Self.symbol(at: i, in: chars)
@@ -190,15 +196,16 @@ public final class Segmenter {
             let end = i + key.count
             defer { i = end }
             guard let mark else { continue }
-            let before = segmentRun(String(chars[runStart..<i]), leading: runLeading.japaneseContext)
+            let before = segmentRun(String(chars[runStart..<i]), leading: runContext)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runLeading == .afterEnglish)
             if symbol == nil, previousIsEnglish { continue }
             segments += before
             segments.append(Segment(kind: .punctuation, source: key, reading: mark, output: mark, score: 0, context: .start))
             runStart = end
             runLeading = Self.leading(after: key)
+            runContext = runLeading.japaneseContext
         }
-        return segments + segmentRun(String(chars[runStart...]), leading: runLeading.japaneseContext)
+        return segments + segmentRun(String(chars[runStart...]), leading: runContext)
     }
 
     /// i から始まる記号の打鍵のうち最も長いもの

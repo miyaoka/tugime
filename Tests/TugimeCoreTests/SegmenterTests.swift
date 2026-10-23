@@ -156,6 +156,17 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.resize(extended, at: 1, by: -1).map(\.output) == ["main,", "で", "v"])
     }
 
+    /// 英語の打鍵を取り込んで日本語になった文節も、縮めれば手放した打鍵を判定し直すので元に戻る。
+    /// g と o を 1 打鍵ずつ取り込んだ 今日はご は、1 かな（go）を手放して 今日は に戻る
+    @Test func shrinkingAfterExtendingRestoresTheEnglishSpan() {
+        let clauses = segmenter.clauses("kyouhagoogle")
+        let extended = segmenter.resize(segmenter.resize(clauses, at: 0, by: 1), at: 0, by: 1)
+        #expect(extended.first?.reading == "きょうはご")
+        let restored = segmenter.resize(extended, at: 0, by: -1)
+        #expect(restored.map(\.output) == clauses.map(\.output))
+        #expect(restored.map(\.kind) == [.japanese, .english])
+    }
+
     /// 英語の文節は 1 打鍵ずつ伸縮し、日本語の区間からは 1 つの綴りずつ取り込む
     @Test func englishClausesResizeByKeystrokes() {
         let clauses = segmenter.clauses("cwdde")

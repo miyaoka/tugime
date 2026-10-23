@@ -32,12 +32,15 @@ public struct ClauseSpan: Sendable, Equatable {
     public var reading: String
     /// 区間の先頭の文節を変換するときの文脈
     public var context: JapaneseContext
+    /// 区切りの選択ではなく、文節の伸縮で利用者が打鍵の範囲を決めた区間か
+    public var resized: Bool
 
-    public init(index: Int, source: String, reading: String, context: JapaneseContext) {
+    public init(index: Int, source: String, reading: String, context: JapaneseContext, resized: Bool = false) {
         self.index = index
         self.source = source
         self.reading = reading
         self.context = context
+        self.resized = resized
     }
 }
 
@@ -61,22 +64,51 @@ extension Segmenter {
     }
 
     /// 文節を伸ばす（delta が正）・縮める（負）。日本語の文節は区間の中では 1 かなずつ伸縮し、1 かなより短くしない。
-    /// 区間の終わりを越えて伸ばすときと英語の文節は、未確定の打鍵列の上で境目を動かす（`resizeAcrossSpans`）。
-    /// 伸縮した文節の後ろにある同じ区間の残りは、文節に分け直して変換する。後ろの区間は、伸縮した区間の表示を左の文脈にして
-    /// 表示の変換をし直す。伸縮できなければ元のまま返す
+    /// 区間の終わりを越えて伸ばすときは次の 1 単位（`unitEnd`）ずつ取り込み、英語の文節は 1 打鍵ずつ伸縮して 1 打鍵より短くしない。
+    /// 区間の外へ伸ばすとき、英語の文節、伸縮で作った区間の中の伸縮は、伸縮した文節の打鍵を 1 区間として日英を判定し、
+    /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。手放した打鍵も判定し直すので、伸ばした後に縮めれば元に戻る。
+    /// 区切りの選択が決めた日本語の区間の中の伸縮と、文節の境目が 1 つの綴りの途中に当たって打鍵を切り出せないときは、
+    /// 区間の読みのかなの上で伸縮する（`resizeInsideSpan`）。区間の一部だけでは日英を正しく判定できないため（`ii` の `i` が後ろの英語に付く）。
+    /// 句読点と記号の文節は伸縮しない。伸縮できなければ元のまま返す
     public func resize(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading = .start) -> [Clause] {
         let clause = clauses[index]
-        guard clause.kind == .japanese else {
-            return resizeAcrossSpans(clauses, at: index, by: delta, leading: leading) ?? clauses
+        guard clause.kind != .punctuation else { return clauses }
+        let spans = keySpans(of: clauses)
+        let keys = Array(spans.map(\.span.source).joined())
+        guard let own = spans.first(where: { $0.span == clause.span }) else { return clauses }
+        guard let range = keyRange(of: clauses, at: index, from: own.start) else {
+            return resizeInsideSpan(clauses, at: index, by: delta) ?? clauses
         }
+        if clause.kind == .japanese {
+            let start = kanaStart(of: clauses, at: index)
+            let length = clause.reading.count + delta
+            guard length >= 1 else { return clauses }
+            if start + length <= clause.span.reading.count {
+                guard clause.span.resized, let head = splitSource(of: clause.span, atKana: start + length)?.head else {
+                    return resizeInsideSpan(clauses, at: index, by: delta) ?? clauses
+                }
+                return rebuild(clauses, at: index, keys: keys, spanStart: own.start, range: range, end: own.start + head.count, leading: leading)
+            }
+        }
+        var end = range.upperBound
+        for _ in 0..<abs(delta) {
+            guard let next = delta > 0 ? unitEnd(from: end, in: spans) : end - 1, next > range.lowerBound else { return clauses }
+            end = next
+        }
+        return rebuild(clauses, at: index, keys: keys, spanStart: own.start, range: range, end: end, leading: leading)
+    }
+
+    /// 日本語の文節を、区間の読みのかなの上で 1 かなずつ伸縮する。区間の外へは伸ばさず、1 かなより短くしない。
+    /// 伸縮した文節の後ろにある同じ区間の残りは、日本語のまま文節に分け直して変換する。後ろの区間は、伸縮した区間の表示を左の文脈にして
+    /// 表示の変換をし直す。伸縮できなければ nil
+    private func resizeInsideSpan(_ clauses: [Clause], at index: Int, by delta: Int) -> [Clause]? {
+        let clause = clauses[index]
+        guard clause.kind == .japanese else { return nil }
         let span = clause.span
         let spanIndices = clauses.indices.filter { clauses[$0].span == span }
         let start = kanaStart(of: clauses, at: index)
         let length = clause.reading.count + delta
-        guard length >= 1 else { return clauses }
-        guard start + length <= span.reading.count else {
-            return resizeAcrossSpans(clauses, at: index, by: delta, leading: leading) ?? clauses
-        }
+        guard length >= 1, start + length <= span.reading.count else { return nil }
 
         let reading = String(span.reading.dropFirst(start).prefix(length))
         let context = start == 0 ? span.context : .afterWord
@@ -98,30 +130,21 @@ extension Segmenter {
         return Array(clauses[..<index]) + [resized] + rest + later
     }
 
-    /// 未確定の打鍵列の上で、index の文節の終わりを動かす。伸ばすときは次の 1 単位（`unitEnd`）ずつ取り込み、
-    /// 縮めるときは 1 打鍵ずつ手放して 1 打鍵より短くしない。文節の打鍵は全体を 1 区間として日英を判定し、
-    /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。
-    /// 句読点と記号の文節、文節の始まりが 1 つの綴りの途中にあるとき、動かせないときは nil
-    private func resizeAcrossSpans(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading) -> [Clause]? {
+    /// index の文節を打鍵列の range.lowerBound..<end にして、その打鍵を 1 区間として日英を判定する。
+    /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。range は文節の今の打鍵、spanStart はその区間の始まり
+    private func rebuild(
+        _ clauses: [Clause], at index: Int, keys: [Character], spanStart: Int, range: Range<Int>, end: Int, leading: Leading
+    ) -> [Clause] {
         let clause = clauses[index]
-        guard clause.kind != .punctuation else { return nil }
-        let spans = keySpans(of: clauses)
-        let keys = Array(spans.map(\.span.source).joined())
-        guard let own = spans.first(where: { $0.span == clause.span }), let range = keyRange(of: clauses, at: index, from: own.start) else { return nil }
-        var end = range.upperBound
-        for _ in 0..<abs(delta) {
-            guard let next = delta > 0 ? unitEnd(from: end, in: spans) : end - 1, next > range.lowerBound else { return nil }
-            end = next
-        }
-
         // 同じ区間の前の文節は、文節の始まりまでを 1 つの区間として持ち直す
         var before = Array(clauses[..<index])
         if let first = before.firstIndex(where: { $0.span == clause.span }) {
             let head = ClauseSpan(
                 index: clause.span.index,
-                source: String(keys[own.start..<range.lowerBound]),
+                source: String(keys[spanStart..<range.lowerBound]),
                 reading: String(clause.span.reading.prefix(kanaStart(of: clauses, at: index))),
-                context: clause.span.context
+                context: clause.span.context,
+                resized: clause.span.resized
             )
             for i in first..<before.count {
                 before[i].span = head
@@ -129,7 +152,7 @@ extension Segmenter {
         }
         let left = before.map(\.output).joined()
         let fixed = singleSpan(String(keys[range.lowerBound..<end]), context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading))
-        let span = ClauseSpan(index: (before.last?.span.index ?? -1) + 1, source: fixed.source, reading: fixed.reading, context: fixed.context)
+        let span = ClauseSpan(index: (before.last?.span.index ?? -1) + 1, source: fixed.source, reading: fixed.reading, context: fixed.context, resized: true)
         let resized = fixed.kind == .japanese
             ? Clause(
                 kind: .japanese,
@@ -145,7 +168,11 @@ extension Segmenter {
             )
             : Clause(kind: fixed.kind, reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span)
         let rest = self.clauses(
-            of: segment(String(keys[end...]), leading: fixed.kind == .japanese ? .afterJapanese : .afterEnglish),
+            of: segment(
+                String(keys[end...]),
+                leading: fixed.kind == .japanese ? .afterJapanese : .afterEnglish,
+                context: context(after: resized, keys: keys[..<end], leading: leading)
+            ),
             left: left + resized.output,
             firstIndex: span.index + 1
         )
@@ -236,7 +263,7 @@ extension Segmenter {
             let span = next.span
             let done = kanaStart(of: clauses, at: index + 1)
             guard let (_, tail) = splitSource(of: span, atKana: done) else { return nil }
-            let remaining = ClauseSpan(index: span.index, source: tail, reading: String(span.reading.dropFirst(done)), context: .afterWord)
+            let remaining = ClauseSpan(index: span.index, source: tail, reading: String(span.reading.dropFirst(done)), context: .afterWord, resized: span.resized)
             for i in rest.indices where rest[i].span == span {
                 rest[i].span = remaining
             }
