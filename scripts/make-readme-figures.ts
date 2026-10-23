@@ -301,7 +301,7 @@ const html = `<!doctype html>
 <body>
 <div class="wrap">
   <h1>打鍵列から変換するまで</h1>
-  <p class="lead">打鍵のたびに、打鍵列のあらゆる範囲を日本語と英語の両方で読んで点を付け、点の合計が最も高い読み方の並びを採る。</p>
+  <p class="lead">打鍵のたびに、打鍵列の範囲を日本語や英語として読む候補を挙げて点を付け、点の合計が最も高い読み方の並びを採る。</p>
 
   <div class="sec goal"><span class="sec-lbl">打ちたい文</span>${expectedHtml}</div>
   <div class="sec keys"><span class="sec-lbl">打鍵列</span>${keysHtml}</div>
