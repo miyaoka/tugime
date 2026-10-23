@@ -181,7 +181,17 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(clauses.map(\.reading) == ["きょうはいい", "てんきです", "cwd", "で"])
         let restored = segmenter.resize(segmenter.resize(clauses, at: 1, by: 1), at: 1, by: -1)
         #expect(restored.map(\.output) == clauses.map(\.output))
+        #expect(restored[1].candidates == clauses[1].candidates)
         #expect(segmenter.resize(restored, at: 1, by: -1).map(\.output) == segmenter.resize(clauses, at: 1, by: -1).map(\.output))
+    }
+
+    /// 前の文節の境目を変えた後でも、伸ばして元に戻した文節は伸ばす前と同じに伸縮する
+    @Test func restoredClauseAfterAnotherResizeResizesAsBeforeExtending() throws {
+        let shrunk = segmenter.resize(segmenter.clauses("kyouhaiitenkidesucwdde"), at: 0, by: -1)
+        let index = try #require(shrunk.firstIndex { $0.reading == "てんきです" })
+        let restored = segmenter.resize(segmenter.resize(shrunk, at: index, by: 1), at: index, by: -1)
+        #expect(restored.map(\.output) == shrunk.map(\.output))
+        #expect(segmenter.resize(restored, at: index, by: -1).map(\.output) == segmenter.resize(shrunk, at: index, by: -1).map(\.output))
     }
 
     /// 拗音で終わる文節も、1 つの綴り（kyo）ずつ手放すので、かなの途中で切れずに元に戻る

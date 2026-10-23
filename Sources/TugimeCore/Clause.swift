@@ -91,20 +91,29 @@ extension Segmenter {
             }
             end = next
         }
-        let rebuilt = rebuild(clauses, at: index, keys: keys, spanStart: own.start, range: range, end: end, leading: leading)
-        return withSegmentedSpans(rebuilt, keys: keys, leading: leading)
+        return rebuild(clauses, at: index, keys: keys, spanStart: own.start, range: range, end: end, leading: leading)
     }
 
-    /// 文節の並びが、打鍵列の全体を区切りから作った文節の並びと読みと種類で一致すれば、各文節の区間を区切りから作った方に置き換える。
-    /// 伸ばして元に戻した文節は、伸ばす前と同じく区切りの選択が決めた区間の文節として伸縮する。選んだ候補は残す
-    private func withSegmentedSpans(_ clauses: [Clause], keys: [Character], leading: Leading) -> [Clause] {
-        let segmented = self.clauses(String(keys), leading: leading)
-        guard clauses.map(\.reading) == segmented.map(\.reading), clauses.map(\.kind) == segmented.map(\.kind) else { return clauses }
-        return zip(clauses, segmented).map { clause, original in
-            var clause = clause
-            clause.span = original.span
-            return clause
+    /// 文節の打鍵 range.lowerBound..<end と、その直前に並ぶ文節を合わせたものが、打鍵列の全体を区切りの選択にかけたときの
+    /// 1 区間にちょうど当たるか。当たれば、その区間と、区間に含まれる直前の文節の数を返す。
+    /// 直前の文節は日本語の区間の文節だけで、読みをつなぐと区間の読みになるものを数える
+    private func segmentedSpan(
+        _ fixed: Segment, before: [Clause], start: Int, end: Int, keys: [Character], leading: Leading
+    ) -> (segment: Segment, count: Int)? {
+        var position = 0
+        for segment in segment(String(keys), leading: leading) {
+            let next = position + segment.source.count
+            defer { position = next }
+            guard position <= start, next == end, segment.kind == fixed.kind else { continue }
+            var reading = fixed.reading
+            var count = 0
+            while reading.count < segment.reading.count, count < before.count, before[before.count - 1 - count].kind == .japanese {
+                reading = before[before.count - 1 - count].reading + reading
+                count += 1
+            }
+            return reading == segment.reading ? (segment, count) : nil
         }
+        return nil
     }
 
     /// 日本語の文節を、区間の読みのかなの上で 1 かなずつ伸縮する。区間の外へは伸ばさず、1 かなより短くしない。
@@ -140,42 +149,53 @@ extension Segmenter {
     }
 
     /// index の文節を打鍵列の range.lowerBound..<end にして、その打鍵を 1 区間として日英を判定する。
-    /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。range は文節の今の打鍵、spanStart はその区間の始まり
+    /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。range は文節の今の打鍵、spanStart はその区間の始まり。
+    /// 同じ区間の前の文節と合わせた打鍵が区切りの選択の 1 区間と一致すれば（伸ばして元に戻したとき）、それらの文節をその区間に戻す。
+    /// 一致しなければ、前の文節は文節の始まりまでを 1 つの区間として持ち直し、文節は伸縮で作った区間にする
     private func rebuild(
         _ clauses: [Clause], at index: Int, keys: [Character], spanStart: Int, range: Range<Int>, end: Int, leading: Leading
     ) -> [Clause] {
         let clause = clauses[index]
-        // 同じ区間の前の文節は、文節の始まりまでを 1 つの区間として持ち直す
         var before = Array(clauses[..<index])
-        if let first = before.firstIndex(where: { $0.span == clause.span }) {
+        let sameSpan = before.indices.filter { before[$0].span == clause.span }
+        let headReading = String(clause.span.reading.prefix(kanaStart(of: clauses, at: index)))
+        let left = before.map(\.output).joined()
+        let fixed = singleSpan(String(keys[range.lowerBound..<end]), context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading))
+        let span: ClauseSpan
+        if let (segmented, count) = segmentedSpan(fixed, before: before, start: range.lowerBound, end: end, keys: keys, leading: leading) {
+            let first = before.count - count
+            span = ClauseSpan(
+                index: first < before.count ? before[first].span.index : (before.last?.span.index ?? -1) + 1,
+                source: segmented.source,
+                reading: segmented.reading,
+                context: segmented.context
+            )
+            for i in first..<before.count {
+                before[i].span = span
+            }
+        } else {
             let head = ClauseSpan(
                 index: clause.span.index,
                 source: String(keys[spanStart..<range.lowerBound]),
-                reading: String(clause.span.reading.prefix(kanaStart(of: clauses, at: index))),
+                reading: headReading,
                 context: clause.span.context,
                 resized: clause.span.resized
             )
-            for i in first..<before.count {
+            for i in sameSpan {
                 before[i].span = head
             }
+            span = ClauseSpan(index: (before.last?.span.index ?? -1) + 1, source: fixed.source, reading: fixed.reading, context: fixed.context, resized: true)
         }
-        let left = before.map(\.output).joined()
-        let fixed = singleSpan(String(keys[range.lowerBound..<end]), context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading))
-        let span = ClauseSpan(
-            index: (before.last?.span.index ?? -1) + 1,
-            source: fixed.source,
-            reading: fixed.reading,
-            context: fixed.context,
-            resized: true
-        )
+        // 区間の 2 つ目以降の文節は、前の文節に続く形で変換する
+        let clauseContext = before.last?.span == span ? JapaneseContext.afterWord : span.context
         let resized = fixed.kind == .japanese
             ? Clause(
                 kind: .japanese,
                 reading: fixed.reading,
                 candidates: japaneseCandidates(
                     reading: fixed.reading,
-                    best: japaneseConverter.display(kana: fixed.reading, context: fixed.context, left: left)?.text,
-                    context: fixed.context,
+                    best: japaneseConverter.display(kana: fixed.reading, context: clauseContext, left: left)?.text,
+                    context: clauseContext,
                     span: span
                 ),
                 selected: 0,
