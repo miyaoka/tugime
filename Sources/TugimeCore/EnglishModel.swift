@@ -33,6 +33,10 @@ public struct EnglishModel: Sendable {
     private static let maxLength = 30
     /// 語の長さの分布を数えるときに、長さごとの語の数に足す値。語の一覧に無い長さにも確率を残す
     private static let lengthPseudoCount = 1.0
+    /// 長さごとの確率を数え終える、並びがまだ続く確率
+    private static let lengthMassTolerance = 1e-12
+    /// 長さごとの確率を数える最長の並び
+    private static let lengthMassIterations = 1000
 
     /// 英語の語として扱う語（小文字）
     private var vocabulary: Set<String> = []
@@ -81,7 +85,7 @@ public struct EnglishModel: Sendable {
         let lengthTotal = lengthCounts.reduce(0, +)
         let mass = lengthMass()
         lengthLogCorrection = (0...Self.maxLength).map { length in
-            guard length > 0, mass[length] > 0 else { return 0 }
+            guard length > 0 else { return 0 }
             return min(0, log(lengthCounts[length] / lengthTotal) - log(mass[length]))
         }
     }
@@ -92,7 +96,11 @@ public struct EnglishModel: Sendable {
         var mass = Array(repeating: 0.0, count: Self.maxLength + 1)
         var state = Array(repeating: 0.0, count: n * n)
         state[Int(Self.begin) * n + Int(Self.begin)] = 1
-        for length in 1..<Self.maxLength {
+        var length = 0
+        // 並びがまだ続く確率が十分小さくなるまで伸ばし、maxLength 以上の長さの分はまとめて足す
+        while state.reduce(0, +) > Self.lengthMassTolerance {
+            length += 1
+            precondition(length <= Self.lengthMassIterations, "綴りらしさの長さごとの確率が \(Self.lengthMassIterations) 文字までに収まらない")
             var next = Array(repeating: 0.0, count: n * n)
             for a in 0..<n {
                 for b in 0..<n where state[a * n + b] > 0 {
@@ -104,12 +112,10 @@ public struct EnglishModel: Sendable {
             state = next
             for a in 0..<n {
                 for b in 0..<n where state[a * n + b] > 0 {
-                    mass[length] += state[a * n + b] * probability(a, b, Int(Self.end))
+                    mass[min(length, Self.maxLength)] += state[a * n + b] * probability(a, b, Int(Self.end))
                 }
             }
         }
-        // 綴りらしさはすべての並びに割り振る確率の和が 1 なので、残りが maxLength 以上の長さの分になる
-        mass[Self.maxLength] = 1 - mass.reduce(0, +)
         return mass
     }
 
