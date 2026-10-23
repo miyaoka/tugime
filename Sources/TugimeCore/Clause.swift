@@ -32,7 +32,7 @@ public struct ClauseSpan: Sendable, Equatable {
     public var reading: String
     /// 区間の先頭の文節を変換するときの文脈
     public var context: JapaneseContext
-    /// 区切りの選択ではなく、文節の伸縮で利用者が打鍵の範囲を決めた区間か
+    /// 区切りの選択が決める区間と一致しない打鍵の範囲を、文節の伸縮で利用者が決めた区間か
     public var resized: Bool
 
     public init(index: Int, source: String, reading: String, context: JapaneseContext, resized: Bool = false) {
@@ -148,7 +148,13 @@ extension Segmenter {
         }
         let left = before.map(\.output).joined()
         let fixed = singleSpan(String(keys[range.lowerBound..<end]), context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading))
-        let span = ClauseSpan(index: (before.last?.span.index ?? -1) + 1, source: fixed.source, reading: fixed.reading, context: fixed.context, resized: true)
+        let span = ClauseSpan(
+            index: (before.last?.span.index ?? -1) + 1,
+            source: fixed.source,
+            reading: fixed.reading,
+            context: fixed.context,
+            resized: !isSegment(range.lowerBound..<end, of: keys, kind: fixed.kind, leading: leading)
+        )
         let resized = fixed.kind == .japanese
             ? Clause(
                 kind: .japanese,
@@ -173,6 +179,17 @@ extension Segmenter {
             firstIndex: span.index + 1
         )
         return before + [resized] + rest
+    }
+
+    /// 打鍵列の range が、打鍵列の全体を区切りの選択にかけたときの kind の 1 区間と一致するか。伸ばして元に戻した文節は一致する
+    private func isSegment(_ range: Range<Int>, of keys: [Character], kind: Segment.Kind, leading: Leading) -> Bool {
+        var position = 0
+        for segment in segment(String(keys), leading: leading) {
+            let next = position + segment.source.count
+            if position == range.lowerBound, next == range.upperBound { return segment.kind == kind }
+            position = next
+        }
+        return false
     }
 
     /// 未確定の打鍵列の中での区間の位置
