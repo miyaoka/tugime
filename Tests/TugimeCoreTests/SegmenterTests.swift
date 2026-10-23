@@ -76,6 +76,12 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.kind) == [.japanese])
     }
 
+    /// 採点する読みの長さを超える、読めて英語の語でない綴りも、日本語区間の連なりとして採れるので英語にしない
+    @Test(arguments: ["yototesahapogatogonugo", "sobazuhihegehewado", "rimigezagumanorodaboho"])
+    func readsLongReadableSpellingsAsJapanese(input: String) {
+        #expect(segmenter.segment(input).allSatisfy { $0.kind == .japanese })
+    }
+
     /// 長音を省いた綴りは利用者の綴りでその語の読みにならないので、英語の語として残る
     @Test func keepsSpellingsWithoutTheLongVowelAsEnglish() {
         #expect(segmenter.segment("tokyo").map(\.kind) == [.english])

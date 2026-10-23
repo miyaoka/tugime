@@ -116,9 +116,38 @@ public final class AzooKeyConverter: JapaneseConverting {
         var left: String
     }
 
+    /// 採点に使うセッションの数。区切りは打鍵のたびに、同じ開始位置の読みを 1 かなずつ伸ばして採点するので、
+    /// 開始位置と文脈の組ごとにセッションがあれば、変換エンジンが前の読みの途中の計算を使い回せる
+    private static let scoringSessionCount = 32
+
+    /// 採点に使うセッションと、それぞれに前に渡した読み
+    private var scoringSessions: [(id: KanaKanjiConverter.ConversionSessionID, last: String, used: Int)] = []
+    private var scoringClock = 0
+
     public init(zenzaiWeight: URL?) {
         converter = KanaKanjiConverter.withDefaultDictionary()
         self.zenzaiWeight = zenzaiWeight
+    }
+
+    /// 採点のセッションを選ぶ。前に渡した読みが text の先頭と一致するセッションがあればそれを使い、
+    /// 無ければ一番長く使っていないセッションを作り直して使う
+    private func scoringSession(for text: String) -> KanaKanjiConverter.ConversionSessionID {
+        scoringClock += 1
+        let continuing = scoringSessions.indices.filter { text.hasPrefix(scoringSessions[$0].last) }
+        let index: Int
+        if let longest = continuing.max(by: { scoringSessions[$0].last.count < scoringSessions[$1].last.count }) {
+            index = longest
+        } else if scoringSessions.count < Self.scoringSessionCount {
+            scoringSessions.append((converter.createSession(), text, scoringClock))
+            index = scoringSessions.count - 1
+        } else {
+            index = scoringSessions.indices.min { scoringSessions[$0].used < scoringSessions[$1].used }!
+            converter.removeSession(scoringSessions[index].id)
+            scoringSessions[index].id = converter.createSession()
+        }
+        scoringSessions[index].last = text
+        scoringSessions[index].used = scoringClock
+        return scoringSessions[index].id
     }
 
     private static func options(nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode) -> ConvertRequestOptions {
@@ -162,7 +191,7 @@ public final class AzooKeyConverter: JapaneseConverting {
     }
 
     private func convertAtStart(_ kana: String) -> JapaneseReading? {
-        candidates(kana, nBest: Self.scoringBest).first.map {
+        candidates(kana, nBest: Self.scoringBest, scoring: true).first.map {
             JapaneseReading(text: $0.text, value: Double($0.value), clauses: Self.clauses(of: $0.data[...], kana: kana, text: $0.text), context: .start)
         }
     }
@@ -242,14 +271,24 @@ public final class AzooKeyConverter: JapaneseConverting {
         displayCache = [:]
     }
 
-    private func candidates(_ kana: String, nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode = .off) -> [Candidate] {
+    /// 変換エンジンは直前の入力との差分で計算する。採点は前に渡した読みの続きを同じセッションに渡して途中の計算を使い回す。
+    /// 表示と候補の窓は前の状態を捨てて、要求ごとに独立した結果にする。Zenzai は前の変換で選んだ表記を次の探索の制約に引き継ぎ、
+    /// 候補の窓は採点と上位の数が違うので、採点の途中の計算を共有できない
+    private func candidates(_ kana: String, nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode = .off, scoring: Bool = false) -> [Candidate] {
         var composing = ComposingText()
         composing.insertAtCursorPosition(kana, inputStyle: .direct)
         let kanaCount = kana.count
-        // 変換エンジンは直前の入力との差分で計算するので、前の要求の状態を捨て、要求ごとに独立した結果にする
-        converter.stopComposition()
+        let request = { self.converter.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)) }
+        let result: ConversionResult
+        if scoring {
+            // セッションは採点が作ったものだけなので、見つからないことは無い
+            result = try! converter.withSession(scoringSession(for: kana), operation: request)
+        } else {
+            converter.stopComposition()
+            result = request()
+        }
         // 入力全体を覆い、言語モデルで評価された候補だけを採る
-        let results = converter.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)).mainResults.filter {
+        let results = result.mainResults.filter {
             $0.rubyCount == kanaCount && !Self.isUnscoredWhole($0)
         }
         // 変換エンジンはモデルを読めないと黙って Zenzai なしで変換する。読めたときだけ zenzStatus が "load <URL>" になる
@@ -309,7 +348,7 @@ public final class AzooKeyConverter: JapaneseConverting {
     /// 前に置くものだけの評価値。差し引きたいのは前に置いたものがある確からしさなので、表記（3 と 三）は問わず最良の候補で測る
     private func value(of prefix: Prefix) -> Double? {
         if let cached = prefixValues[prefix.input] { return cached }
-        let value = candidates(prefix.input, nBest: Self.scoringBest).first.map { Double($0.value) }
+        let value = candidates(prefix.input, nBest: Self.scoringBest, scoring: true).first.map { Double($0.value) }
         prefixValues[prefix.input] = value
         return value
     }
@@ -317,7 +356,7 @@ public final class AzooKeyConverter: JapaneseConverting {
     /// 前に置いたものに続けて変換し、前に置いたものだけの評価値を差し引く
     private func convert(_ kana: String, after prefix: Prefix, context: JapaneseContext) -> JapaneseReading? {
         guard let prefixOnly = value(of: prefix),
-              let combined = candidates(prefix.input + kana, nBest: Self.scoringBest).first(where: { Self.drop(prefix, from: $0) != nil }),
+              let combined = candidates(prefix.input + kana, nBest: Self.scoringBest, scoring: true).first(where: { Self.drop(prefix, from: $0) != nil }),
               let text = Self.drop(prefix, from: combined)
         else { return nil }
         let clauses = Self.clauses(of: Self.words(after: prefix, in: combined), kana: kana, text: text)

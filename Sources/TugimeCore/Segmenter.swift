@@ -133,6 +133,14 @@ public final class Segmenter {
 
     /// この長さ以下の読める綴りは、英語の語であっても日本語として読む
     static let maxJapaneseFirstLength = 2
+    /// 区切りの採点で変換する日本語区間の読みの長さの上限。長い日本語は短い日本語区間の連なりとして採点し、
+    /// 区切りが決まってからまとめて変換し直す
+    static let maxScoredKana = 8
+
+    /// 日本語区間の候補として採点する読み。長音だけの区間は日本語として成り立たない（binge-watch の - など）
+    static func isScoredJapanese(_ kana: String) -> Bool {
+        kana.count <= maxScoredKana && !kana.allSatisfy { $0 == "ー" }
+    }
 
     /// 前の語の後ろに付く記号と、日本語の文で使う形
     static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！", "~": "〜"]
@@ -210,6 +218,19 @@ public final class Segmenter {
             best[end][segment.kind] = Cell(score: total, segment: segment, from: start, previousKind: previous)
         }
 
+        // 位置ごとの、綴りの表で最後まで読める終端とかな
+        let readingsAt = (0..<n).map { table.readings(from: $0, in: chars) }
+        // 位置ごとの、日本語区間に続く日本語区間の連なりで届く終端。採点する読みの長さを超える区間も、
+        // 日本語区間の連なりとして採れるなら日本語として採れるものとして英語区間を締め出す
+        var chained: [Set<Int>] = Array(repeating: [], count: n + 1)
+        for start in stride(from: n - 1, through: 1, by: -1) {
+            for (end, kana) in readingsAt[start] where Self.isScoredJapanese(kana) {
+                guard japaneseConverter.convert(kana: kana, context: .start) != nil else { continue }
+                chained[start].insert(end)
+                chained[start].formUnion(chained[end])
+            }
+        }
+
         for start in 0..<n {
             let reachable = start == 0 || !best[start].isEmpty
             guard reachable else { continue }
@@ -221,9 +242,10 @@ public final class Segmenter {
             let predecessors: [(kind: Segment.Kind?, context: JapaneseContext)] = start == 0
                 ? [(nil, leading)]
                 : [(.english, context), (.japanese, .start)]
-            for (end, kana) in table.readings(from: start, in: chars) {
-                // 長音だけの区間は日本語として成り立たない（binge-watch の - など）
-                if kana.allSatisfy({ $0 == "ー" }) { continue }
+            let readings = readingsAt[start]
+            // この位置から綴りの表で最後まで読める終端。英語区間の候補が読める綴りかを引くのに使う
+            let readableEnds = Set(readings.map(\.end))
+            for (end, kana) in readings where Self.isScoredJapanese(kana) {
                 for predecessor in predecessors {
                     guard score(at: start, after: predecessor.kind) != nil,
                           let reading = japaneseConverter.convert(kana: kana, context: predecessor.context) else { continue }
@@ -233,16 +255,17 @@ public final class Segmenter {
                     relax(end, start, segment, after: predecessor.kind)
                 }
             }
+            let japaneseReach = japaneseEnds.reduce(into: japaneseEnds) { $0.formUnion(chained[$1]) }
             // 句読点は前の語の後ろに付くので、英語区間を句読点から始めない。入力の先頭は、入力欄の前の英語に付いている
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
                 // 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
                 // 日本語として採れるなら英語にしない
-                let readable = table.reading(of: source) != nil
+                let readable = readableEnds.contains(end)
                 let preferJapanese = table.isSingleKana(source)
                     || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
-                if preferJapanese, japaneseEnds.contains(end) { continue }
+                if preferJapanese, japaneseReach.contains(end) { continue }
                 let s = weights.english * english.logProbability(source) - weights.englishSpanPenalty
                 relax(end, start, Segment(kind: .english, source: source, reading: source, output: source, score: s, context: context), after: start == 0 ? nil : .japanese)
             }
