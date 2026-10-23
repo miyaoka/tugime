@@ -139,21 +139,126 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(readings(segmenter.resize(clauses, at: 1, by: -1)) == ["きょうはいい", "てんきで", "す"])
     }
 
-    @Test func resizingStaysInsideTheSpan() {
-        let clauses = segmenter.clauses("kyouhagoogle")
-        #expect(clauses.map(\.kind) == [.japanese, .english])
-        // 区間の外へは伸ばさない
-        #expect(segmenter.resize(clauses, at: 0, by: 1) == clauses)
-        // 1 かなより短くしない
+    @Test func japaneseClausesKeepOneKana() {
         let single = segmenter.resize(segmenter.clauses("kyouhaiitenkidesu"), at: 1, by: -4)
         #expect(readings(single) == ["きょうはいい", "て", "んきです"])
         #expect(segmenter.resize(single, at: 1, by: -1) == single)
     }
 
-    @Test func englishClausesDoNotResize() {
+    /// 日本語の文節は、区間の終わりを越えて英語の打鍵を取り込める。読めない打鍵を含めば英語の文節になり、縮めれば戻る
+    @Test func resizingCrossesIntoTheEnglishSpan() throws {
+        let clauses = segmenter.clauses("main,dev")
+        #expect(clauses.map(\.output) == ["main,", "で", "v"])
+        let extended = segmenter.resize(clauses, at: 1, by: 1)
+        #expect(extended.map(\.output) == ["main,", "dev"])
+        #expect(extended.map(\.kind) == [.english, .english])
+        #expect(try #require(segmenter.commit(extended, through: 0)).keys == "dev")
+        #expect(segmenter.resize(extended, at: 1, by: -1).map(\.output) == ["main,", "で", "v"])
+    }
+
+    /// 英語の打鍵を取り込んで日本語になった文節も、縮めれば手放した打鍵を判定し直すので元に戻る。
+    /// g と o を 1 打鍵ずつ取り込んだ 今日はご は、1 かな（go）を手放して 今日は に戻る
+    @Test func shrinkingAfterExtendingRestoresTheEnglishSpan() {
+        let clauses = segmenter.clauses("kyouhagoogle")
+        let extended = segmenter.resize(segmenter.resize(clauses, at: 0, by: 1), at: 0, by: 1)
+        #expect(extended.first?.reading == "きょうはご")
+        let restored = segmenter.resize(extended, at: 0, by: -1)
+        #expect(restored.map(\.output) == clauses.map(\.output))
+        #expect(restored.map(\.kind) == [.japanese, .english])
+    }
+
+    /// 伸ばして元に戻した文節は、区切りの選択が決めた区間に戻るので、その後の伸縮は伸ばす前と同じになる
+    @Test func restoredClausesResizeAsBeforeExtending() {
+        let clauses = segmenter.clauses("kyouhaiicwdde")
+        let restored = segmenter.resize(segmenter.resize(clauses, at: 0, by: 1), at: 0, by: -1)
+        #expect(restored.map(\.output) == clauses.map(\.output))
+        #expect(segmenter.resize(restored, at: 0, by: -1).map(\.output) == segmenter.resize(clauses, at: 0, by: -1).map(\.output))
+    }
+
+    /// 区間がいくつかの文節に分かれていても、最後の文節を伸ばして元に戻せば、伸ばす前と同じに伸縮する
+    @Test func restoredLastClauseOfASpanResizesAsBeforeExtending() {
+        let clauses = segmenter.clauses("kyouhaiitenkidesucwdde")
+        #expect(clauses.map(\.reading) == ["きょうはいい", "てんきです", "cwd", "で"])
+        let restored = segmenter.resize(segmenter.resize(clauses, at: 1, by: 1), at: 1, by: -1)
+        #expect(restored.map(\.output) == clauses.map(\.output))
+        #expect(restored[1].candidates == clauses[1].candidates)
+        #expect(segmenter.resize(restored, at: 1, by: -1).map(\.output) == segmenter.resize(clauses, at: 1, by: -1).map(\.output))
+    }
+
+    /// 前の文節の境目を変えた後でも、伸ばして元に戻した文節は伸ばす前と同じに伸縮する
+    @Test func restoredClauseAfterAnotherResizeResizesAsBeforeExtending() throws {
+        let shrunk = segmenter.resize(segmenter.clauses("kyouhaiitenkidesucwdde"), at: 0, by: -1)
+        let index = try #require(shrunk.firstIndex { $0.reading == "てんきです" })
+        let restored = segmenter.resize(segmenter.resize(shrunk, at: index, by: 1), at: index, by: -1)
+        #expect(restored.map(\.output) == shrunk.map(\.output))
+        #expect(segmenter.resize(restored, at: index, by: -1).map(\.output) == segmenter.resize(shrunk, at: index, by: -1).map(\.output))
+    }
+
+    /// 伸縮を続けても、文節の区間の打鍵をつなぐと元の打鍵列になる。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す
+    @Test(arguments: [
+        ("kyouhaiitenkidesucwdde", "->>+--<+->+++---"),
+        ("kyouhagoogledekensaku", "+++--->-+->++--"),
+        ("main,dev", ">+-<-+>+--"),
+        ("kyouhatokyo", "+++++----->+-"),
+        ("watasihagooglewotukau", ">>+-<+++---->>-+"),
+    ])
+    func resizingKeepsEveryKeystroke(input: String, operations: String) {
+        var clauses = segmenter.clauses(input)
+        var focus = 0
+        for operation in operations {
+            switch operation {
+            case "+": clauses = segmenter.resize(clauses, at: focus, by: 1)
+            case "-": clauses = segmenter.resize(clauses, at: focus, by: -1)
+            case ">": focus = min(focus + 1, clauses.count - 1)
+            default: focus = max(focus - 1, 0)
+            }
+            var keys = ""
+            var lastSpan: ClauseSpan?
+            for clause in clauses where clause.span != lastSpan {
+                keys += clause.span.source
+                lastSpan = clause.span
+            }
+            #expect(keys == input, "\(operation) \(clauses.map(\.output))")
+        }
+    }
+
+    /// 拗音で終わる文節も、1 つの綴り（kyo）ずつ手放すので、かなの途中で切れずに元に戻る
+    @Test func shrinkingAClauseEndingInAContractedSoundRestoresTheEnglishSpan() {
+        let clauses = segmenter.clauses("kyouhatokyo")
+        #expect(clauses.map(\.output) == ["今日は", "tokyo"])
+        let extended = segmenter.resize(clauses, at: 0, by: 5)
+        #expect(extended.map(\.reading) == ["きょうはときょ"])
+        let restored = segmenter.resize(segmenter.resize(extended, at: 0, by: -1), at: 0, by: -1)
+        #expect(restored.map(\.output) == clauses.map(\.output))
+    }
+
+    /// 英語の文節は 1 打鍵ずつ伸縮し、日本語の区間からは 1 つの綴りずつ取り込む
+    @Test func englishClausesResizeByKeystrokes() {
         let clauses = segmenter.clauses("cwdde")
         #expect(clauses.map(\.kind) == [.english, .japanese])
+        #expect(segmenter.resize(clauses, at: 0, by: 1).map(\.output) == ["cwdde"])
+        #expect(segmenter.resize(clauses, at: 0, by: -1).first?.output == "cw")
+        #expect(segmenter.resize(segmenter.clauses("c"), at: 0, by: -1) == segmenter.clauses("c"))
+    }
+
+    /// 全体を 1 つの文字種にした文節は、区切りから文節を作り直して最初の文節を伸縮する。記号を打ったまま文節に入れない
+    @Test func resizingAWholeConversionResizesTheSegmentedClauses() {
+        let whole = [segmenter.wholeClause("kyouhagoogle", to: .katakana)]
+        #expect(whole.map(\.kind) == [.whole])
+        let segmented = segmenter.clauses("kyouhagoogle")
+        #expect(segmenter.resize(whole, at: 0, by: -1) == segmenter.resize(segmented, at: 0, by: -1))
+        // 最初の文節が記号で伸縮できなければ、全体の変換のまま残す
+        let bracketed = [segmenter.wholeClause("[kore", to: .katakana)]
+        #expect(segmenter.resize(bracketed, at: 0, by: -1) == bracketed)
+        #expect(segmenter.resize(bracketed, at: 0, by: 1) == bracketed)
+    }
+
+    /// 句読点と記号は取り込まない
+    @Test func resizingStopsAtPunctuation() {
+        let clauses = segmenter.clauses("kore,sore")
+        #expect(clauses.map(\.kind) == [.japanese, .punctuation, .japanese])
         #expect(segmenter.resize(clauses, at: 0, by: 1) == clauses)
+        #expect(segmenter.resize(clauses, at: 1, by: 1) == clauses)
     }
 
     @Test func convertsOnlyTheFocusedJapaneseClause() {

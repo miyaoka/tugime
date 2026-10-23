@@ -319,7 +319,7 @@ final class TugimeInputController: IMKInputController {
             if event.modifierFlags.contains(.shift) {
                 focus = min(max(focus + step, 0), (clauses?.count ?? 1) - 1)
             } else if let clauses {
-                self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step)
+                self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step, leading: leading)
             }
             candidatePanel.hide()
             showMarkedText(client)
@@ -349,9 +349,7 @@ final class TugimeInputController: IMKInputController {
 
     /// 未確定の文字列全体を 1 つの文節にして、指定の文字種で表示する。Enter で確定する
     private func convertWhole(to form: CharacterForm, client: IMKTextInput) {
-        let text = sharedSegmenter.convertWhole(keys, to: form, leading: leading)
-        let span = ClauseSpan(index: 0, source: keys, reading: keys, context: .start)
-        clauses = [Clause(kind: .english, reading: keys, candidates: [text], selected: 0, span: span)]
+        clauses = [sharedSegmenter.wholeClause(keys, to: form, leading: leading)]
         focus = 0
         candidatePanel.hide()
         showMarkedText(client)

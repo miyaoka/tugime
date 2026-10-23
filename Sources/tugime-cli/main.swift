@@ -21,6 +21,7 @@ func makeSegmenter(zenz: URL?) throws -> Segmenter {
 }
 
 let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P"]
+let clauseTag: [Clause.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .whole: "W"]
 
 func describe(_ segments: [Segment]) -> String {
     segments.map { s in
@@ -180,7 +181,7 @@ do {
         for input in args.dropFirst() {
             print("== \(input)")
             for clause in segmenter.clauses(input, leading: leading) {
-                print("\(tag[clause.kind]!) \(clause.reading)\t\(clause.candidates.joined(separator: " / "))")
+                print("\(clauseTag[clause.kind]!) \(clause.reading)\t\(clause.candidates.joined(separator: " / "))")
             }
         }
     case "--resize":
@@ -198,8 +199,8 @@ do {
         show("変換")
         for op in args[2] {
             switch op {
-            case "+": clauses = segmenter.resize(clauses, at: focus, by: 1)
-            case "-": clauses = segmenter.resize(clauses, at: focus, by: -1)
+            case "+": clauses = segmenter.resize(clauses, at: focus, by: 1, leading: leading)
+            case "-": clauses = segmenter.resize(clauses, at: focus, by: -1, leading: leading)
             case ">": focus = min(focus + 1, clauses.count - 1)
             case "<": focus = max(focus - 1, 0)
             default:

@@ -28,6 +28,14 @@ extension Segmenter {
         Self.text(form.usesKeystrokes ? input : wholeReading(input, leading: leading), form)
     }
 
+    /// 未確定の文字列全体を指定の文字種にした 1 文節。読みは `wholeReading`。
+    /// 伸縮するときは区切りから文節を作り直す（`resize`）
+    public func wholeClause(_ input: String, to form: CharacterForm, leading: Leading = .start) -> Clause {
+        let reading = wholeReading(input, leading: leading)
+        let span = ClauseSpan(index: 0, source: input, reading: reading, context: leading.japaneseContext)
+        return Clause(kind: .whole, reading: reading, candidates: [convertWhole(input, to: form, leading: leading)], selected: 0, span: span)
+    }
+
     /// index の文節だけを指定の文字種にした文字列。英字にするには文節に当たる打鍵が要り、
     /// 文節の境目が 1 つの綴りの途中にあって打鍵を切り出せなければ nil
     public func convertClause(_ clauses: [Clause], at index: Int, to form: CharacterForm) -> String? {
