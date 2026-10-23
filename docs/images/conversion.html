@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>tugime conversion</title>
-<!-- tugime-cli --lattice の出力から生成した -->
+<!-- scripts/make-readme-figures.ts が tugime-cli の出力から生成する。直接編集しない -->
 <style>
   :root { --bg0: #0b1020; --ink: #eef2ff; --sub: #9aa4c4; --ja: #8fb8ff; --en: #ffa564; --green: #5fe0a4; --gray: #c3cae3; }
-  html, body { margin: 0; width: 1100px; height: 1168px; overflow: hidden; background: var(--bg0); color: var(--ink); font-family: -apple-system, "Hiragino Sans", sans-serif; }
+  html, body { margin: 0; width: 1100px; height: 1208px; overflow: hidden; background: var(--bg0); color: var(--ink); font-family: -apple-system, "Hiragino Sans", sans-serif; }
   .wrap { padding: 32px 0 0 0; position: relative; }
   h1 { margin: 0 0 6px 36px; font-size: 22px; }
   .lead { margin: 0 0 18px 36px; font-size: 13px; color: var(--sub); }
@@ -16,7 +16,13 @@
   .c { position: absolute; top: 0; width: 33px; text-align: center; font-family: Menlo, monospace; font-size: 20px; color: #dfe6ff; }
   .head { margin: 0 36px 10px 196px; font-size: 13px; color: var(--sub); }
   .head b { color: var(--ink); font-size: 14px; margin-right: 10px; }
-  .keys + .head { margin-top: 14px; }
+  .goal { height: 30px; margin-bottom: 8px; }
+  .goal .sec-lbl { line-height: 30px; }
+  .goal-text { position: absolute; top: 0; line-height: 30px; text-align: center; font-size: 22px; font-weight: 600; white-space: nowrap; }
+  .goal-text.J { color: var(--ja); }
+  .goal-text.E { color: var(--en); }
+  .goal-text.P { color: var(--green); }
+  .keys + .head { margin-top: 18px; }
   .lattice { height: 318px; }
   .ln { position: absolute; height: 2px; border-radius: 1px; }
   .ln.J { background: rgba(143,184,255,0.55); }
@@ -32,6 +38,7 @@
   .bar { position: absolute; height: 30px; line-height: 30px; border-radius: 3px; font-size: 15px; font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; }
   .bar.J { background: rgba(143,184,255,0.22); color: var(--ja); }
   .bar.E { background: rgba(255,165,100,0.22); color: var(--en); }
+  .bar.P { background: rgba(95,224,164,0.16); color: var(--green); }
   .vs { margin: 0 0 0 196px; border-collapse: collapse; font-size: 14px; }
   .vs th { text-align: left; font-weight: 400; color: var(--sub); font-size: 13px; padding: 0 28px 8px 0; }
   .vs td { padding: 6px 28px 6px 0; color: var(--gray); font-family: Menlo, monospace; }
@@ -45,6 +52,7 @@
   <h1>打鍵列から変換するまで</h1>
   <p class="lead">打鍵のたびに、打鍵列のあらゆる範囲を日本語と英語の両方で読んで点を付け、点の合計が最も高い読み方の並びを採る。</p>
 
+  <div class="sec goal"><span class="sec-lbl">打ちたい文</span><span class="goal-text J" style="left:196px;width:264px">設定を</span><span class="goal-text E" style="left:460px;width:132px">hide</span><span class="goal-text J" style="left:592px;width:462px">したままにする</span></div>
   <div class="sec keys"><span class="sec-lbl">打鍵列</span><span class="c" style="left:196px">s</span><span class="c" style="left:229px">e</span><span class="c" style="left:262px">t</span><span class="c" style="left:295px">t</span><span class="c" style="left:328px">e</span><span class="c" style="left:361px">i</span><span class="c" style="left:394px">w</span><span class="c" style="left:427px">o</span><span class="c" style="left:460px">h</span><span class="c" style="left:493px">i</span><span class="c" style="left:526px">d</span><span class="c" style="left:559px">e</span><span class="c" style="left:592px">s</span><span class="c" style="left:625px">i</span><span class="c" style="left:658px">t</span><span class="c" style="left:691px">a</span><span class="c" style="left:724px">m</span><span class="c" style="left:757px">a</span><span class="c" style="left:790px">m</span><span class="c" style="left:823px">a</span><span class="c" style="left:856px">n</span><span class="c" style="left:889px">i</span><span class="c" style="left:922px">s</span><span class="c" style="left:955px">u</span><span class="c" style="left:988px">r</span><span class="c" style="left:1021px">u</span></div>
 
   <div class="head"><b>比べた読み方</b>線 1 本が、その真上の打鍵を 1 つの区間として読む候補。全 242 本。白く縁取った線が、最後まで打ったときに採った区間</div>
@@ -58,12 +66,10 @@
 
   <div class="sep"></div>
 
-  <div class="head"><b>最後の u で入れ替わる理由</b>それぞれの読み方で、最も高い並びの点の合計（高いほうを採る）</div>
-  
+  <div class="head"><b>最後に入れ替わる理由</b>それぞれの読み方で、最も高い並びの点の合計（高いほうを採る）。表記は点を付けるときの変換</div>
   <table class="vs">
     <tr><th></th><th>全部を日本語として読む</th><th>hide を英語として読む</th></tr>
-    <tr><td class="k">…nisu まで</td><td class="win">-62.8 <span>設定を + 火でしたままにす</span></td><td>-63.6 <span>設定を + hide + したままにす</span></td></tr>
-    <tr><td class="k">…nisuru まで</td><td>-62.7 <span>設定を非 + でしたままにする</span></td><td class="win">-60.4 <span>設定を + hide + したままにする</span></td></tr>
+    <tr><td class="k">…manisu まで</td><td class="win">-62.8 <span>設定を + 火でしたままにす</span></td><td>-63.6 <span>設定を + hide + したままにす</span></td></tr><tr><td class="k">…nisuru まで</td><td>-62.7 <span>設定を非 + でしたままにする</span></td><td class="win">-60.4 <span>設定を + hide + したままにする</span></td></tr>
   </table>
 </div>
 </body>

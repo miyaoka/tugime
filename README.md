@@ -108,6 +108,7 @@ zenz=$(scripts/fetch-zenz.sh)                                             # Zenz
 .build/debug/tugime-cli --explain sitewokoukaisuru                        # 区間と評価値（採点の変換）
 .build/debug/tugime-cli --zenz "$zenz" --corpus corpus/examples.tsv       # 例文集の一致件数（CI と同じ組み立て）
 swift test
+bun scripts/make-readme-figures.ts                                        # README の図を tugime-cli の出力から作り直す（Chrome が要る）
 ```
 
 `tugime-cli` の他の引数は `tugime-cli --help` で出る。
