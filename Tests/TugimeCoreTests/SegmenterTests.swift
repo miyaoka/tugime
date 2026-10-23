@@ -172,6 +172,25 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.convertClause(clauses, at: english, to: .fullwidthRoman) == "ｇｏｏｇｌｅ")
     }
 
+    @Test func readsAnEnglishClauseWithSpacesWordByWord() throws {
+        let clauses = segmenter.clauses("make wojikkousuru")
+        let english = try #require(clauses.firstIndex { $0.kind == .english })
+        #expect(clauses[english].span.source == "make ")
+        #expect(segmenter.convertClause(clauses, at: english, to: .hiragana) == "まけ ")
+        #expect(clauses[english].candidates.contains("まけ "))
+        #expect(clauses[english].candidates.contains("負け "))
+        #expect(segmenter.convertWhole("make ", to: .katakana) == "マケ ")
+    }
+
+    @Test func keepsUnreadableWordsOfAnEnglishClauseAsTyped() throws {
+        let clauses = segmenter.clauses("ai agentwotukau")
+        let english = try #require(clauses.firstIndex { $0.kind == .english })
+        #expect(clauses[english].span.source == "ai agent")
+        #expect(segmenter.convertClause(clauses, at: english, to: .hiragana) == "あい agent")
+        #expect(segmenter.convertWhole("dark mode", to: .hiragana) == "dark もで")
+        #expect(segmenter.convertWhole("tsrs content", to: .hiragana) == "tsrs content")
+    }
+
     // MARK: 途中の確定
 
     @Test func committingThroughAClauseKeepsTheRestConverted() throws {

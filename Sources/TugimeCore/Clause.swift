@@ -184,11 +184,15 @@ extension Segmenter {
         case .japanese:
             preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
         case .english:
-            // 英語と判定した区間も、綴りの表で読めればかなを選べるようにする
-            if let kana = table.reading(of: segment.source) {
+            // 英語と判定した区間も、`englishReading` で読めればかなを選べるようにする
+            if let kana = englishReading(of: segment.source) {
                 list += [kana, Self.katakana(kana)]
-                if let resolved = japaneseConverter.convert(kana: kana, context: segment.context)?.context {
-                    list += japaneseConverter.alternatives(kana: kana, context: resolved)
+                // 変換エンジンには前後の空白を除いた 1 語の読みを渡し、候補に空白を付け直す
+                let head = String(kana.prefix { $0 == " " })
+                let tail = String(kana.reversed().prefix { $0 == " " })
+                let word = kana.trimmingCharacters(in: .init(charactersIn: " "))
+                if !word.contains(" "), let resolved = japaneseConverter.convert(kana: word, context: segment.context)?.context {
+                    list += japaneseConverter.alternatives(kana: word, context: resolved).map { head + $0 + tail }
                 }
             }
         }

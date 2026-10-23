@@ -3,11 +3,12 @@
 macOS の日本語入力。ローマ字のまま打つと、日本語の区間と英語の区間を見分け、日本語はかな漢字変換し、英語は英字のまま残す。
 
 ```
-kyouhagoogledekensaku → 今日はgoogleで検索
+nodewosakujosite,sitewokoukaisuru → nodeを削除して、siteを公開する
 ```
 
 - 日英の判定は学習しない。同じ入力には常に同じ結果を返す
 - 判定は利用者のローマ字の綴りに合わせる。その綴りで読めない並び（`gl` `pr` `c` `l` など）を含む区間は英語になる
+- ローマ字として読める綴りでも、日本語の文に英字のまま書かれることの多い英単語（`node` `site` など）は、日本語と英語のうち前後から自然な方になる
 - かな漢字変換は [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter) を使う。表示する変換は、Zenzai（小さな言語モデル）で前の文脈を見て選ぶ
 
 ## 動作環境
@@ -54,7 +55,8 @@ main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PAT
 | キー | 動き |
 |---|---|
 | 英字・記号 | 未確定の文字列に足す。打っている途中も変換して表示する。かなが 4 文字以上の日本語の区間は漢字にし、それより短い区間はかなのまま、英語の区間は英字で表示する |
-| Space | 文節に区切って最初の文節を選ぶ。もう一度押すと候補の窓を出し、その後は次の候補へ進む |
+| Space | 打っている途中は空白を入れる。空白は英語の区間に入り、打ったまま残る。文節を選んでいる間は Shift+Space と同じ |
+| Shift+Space | 文節に区切って最初の文節を選ぶ。もう一度押すと候補の窓を出し、その後は次の候補へ進む |
 | ↓ / ↑ | 次の候補 / 前の候補 |
 | ← / → | 選んでいる文節を 1 かな縮める / 伸ばす。日本語の区間の外へは伸ばさない |
 | Shift+← / Shift+→ | 選ぶ文節を左 / 右へ移す |
@@ -64,7 +66,7 @@ main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PAT
 | F6 / F7 / F8 / F9 / F10 | 文節を選んでいる間は選んでいる文節を、打っている途中は未確定の文字列全体を、ひらがな / カタカナ / 半角カタカナ / 全角英数 / 打ったままにする |
 | 英数 / かな | 英数モード / 日本語モードに切り替える |
 
-- 打っている途中に矢印キーを押すと、Space を押さなくても最初の文節を選び、そのキーの動きをする
+- 打っている途中に矢印キーを押すと、Shift+Space を押さなくても最初の文節を選び、そのキーの動きをする
 - `,` `.` `?` `!` `~` は、直前が日本語なら `、` `。` `？` `！` `〜` になり、直前が英語なら打ったまま残る
 - `[` `]` `/` は常に `「` `」` `・` になる。`zh` `zj` `zk` `zl` は `←` `↓` `↑` `→`、`z.` `z/` `z-` `z[` `z]` は `…` `・` `〜` `『` `』` になる。英字のまま打つときは英数モードにする
 - 綴りの表で最後まで読め、日本語の文の中に英字のまま書かれることの少ない綴り（`matte` など）と、読める 2 文字以下の綴り（`ie` など）は日本語になる。英字で残すときは F10 を押す
@@ -78,10 +80,10 @@ main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PAT
 
 ```bash
 swift build --product tugime-cli
-zenz=$(scripts/fetch-zenz.sh)                                         # Zenzai のモデルを取得してパスを出す
-.build/debug/tugime-cli --zenz "$zenz" kyouhagoogledekensaku          # 変換結果
-.build/debug/tugime-cli --explain kyouhagoogle                        # 区間と評価値（採点の変換）
-.build/debug/tugime-cli --zenz "$zenz" --corpus corpus/examples.tsv   # 例文集の一致件数（CI と同じ組み立て）
+zenz=$(scripts/fetch-zenz.sh)                                             # Zenzai のモデルを取得してパスを出す
+.build/debug/tugime-cli --zenz "$zenz" nodewosakujosite,sitewokoukaisuru  # 変換結果
+.build/debug/tugime-cli --explain sitewokoukaisuru                        # 区間と評価値（採点の変換）
+.build/debug/tugime-cli --zenz "$zenz" --corpus corpus/examples.tsv       # 例文集の一致件数（CI と同じ組み立て）
 swift test
 ```
 

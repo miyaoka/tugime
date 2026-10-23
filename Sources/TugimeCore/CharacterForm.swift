@@ -13,12 +13,12 @@ public enum CharacterForm: Sendable, CaseIterable {
 }
 
 extension Segmenter {
-    /// 日本語区間はかな、英語区間は綴りの表で読めればかな、読めなければ打ったまま、を並べたもの
+    /// 日本語区間はかな、英語区間は `englishReading` で読めたもの、読めなければ打ったまま、を並べたもの
     public func wholeReading(_ input: String, leading: Leading = .start) -> String {
         segment(input, leading: leading).map { segment in
             switch segment.kind {
             case .japanese, .punctuation: segment.reading
-            case .english: table.reading(of: segment.source) ?? segment.source
+            case .english: englishReading(of: segment.source) ?? segment.source
             }
         }.joined()
     }
@@ -33,7 +33,7 @@ extension Segmenter {
     public func convertClause(_ clauses: [Clause], at index: Int, to form: CharacterForm) -> String? {
         let clause = clauses[index]
         guard form.usesKeystrokes else {
-            let kana = clause.kind == .english ? table.reading(of: clause.span.source) ?? clause.span.source : clause.reading
+            let kana = clause.kind == .english ? englishReading(of: clause.span.source) ?? clause.span.source : clause.reading
             return Self.text(kana, form)
         }
         return typedSource(of: clauses, at: index).map { Self.text($0, form) }
