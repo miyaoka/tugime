@@ -25,7 +25,7 @@ public struct Segment: Sendable, Equatable {
 public struct ScoredSpan: Sendable, Equatable {
     public var start: Int
     public var end: Int
-    /// 直前の区間の種類。入力か句読点の後の先頭なら nil
+    /// 直前の区間の種類。入力の先頭か、日本語の記号の後なら nil
     public var after: Segment.Kind?
     public var segment: Segment
 }
@@ -190,7 +190,7 @@ public final class Segmenter {
         segment(input, leading: leading, context: leading.japaneseContext)
     }
 
-    /// 区切りの採点で比べた区間の候補をすべて返す。診断用
+    /// 区切りを決めた部分の採点で比べた区間の候補を返す。句読点の前で英語に続くと分かって採点し直す部分の候補は含めない。診断用
     public func candidates(_ input: String, leading: Leading = .start) -> [ScoredSpan] {
         var spans: [ScoredSpan] = []
         _ = segment(input, leading: leading, context: leading.japaneseContext) { spans.append($0) }
