@@ -137,9 +137,14 @@ public final class Segmenter {
     /// 区切りが決まってからまとめて変換し直す
     static let maxScoredKana = 8
 
-    /// 日本語区間の候補として採点する読み。長音だけの区間は日本語として成り立たない（binge-watch の - など）
+    /// 日本語区間の候補として採点する読み
     static func isScoredJapanese(_ kana: String) -> Bool {
-        kana.count <= maxScoredKana && !kana.allSatisfy { $0 == "ー" }
+        kana.count <= maxScoredKana && canBeJapanese(kana)
+    }
+
+    /// 長音だけの区間は日本語として成り立たない（binge-watch の - など）
+    static func canBeJapanese(_ kana: String) -> Bool {
+        !kana.allSatisfy { $0 == "ー" }
     }
 
     /// 英語区間を、空白で区切った語ごとに綴りの表で読んだもの。読めない語は打ったまま、空白はそのまま残す。1 語も読めなければ nil
@@ -164,6 +169,11 @@ public final class Segmenter {
     ]
     static let maxSymbolLength = symbols.keys.map(\.count).max()!
 
+    /// 日本語の記号にした句読点・記号の打鍵 key の後ろの入力の評価のしかた。句読点の後は文頭、記号の打鍵の後は文の途中かもしれないものとする
+    static func leading(after key: String) -> Leading {
+        symbols[key] == nil ? .start : .afterJapanese
+    }
+
     /// 句読点は前の語の後ろに付くので、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
     /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
     /// 日本語の記号の位置で入力を切る。句読点の後は文頭として、記号の打鍵の後は文の途中かもしれないものとして次の部分を評価する
@@ -186,7 +196,7 @@ public final class Segmenter {
             segments += before
             segments.append(Segment(kind: .punctuation, source: key, reading: mark, output: mark, score: 0, context: .start))
             runStart = end
-            runLeading = symbol == nil ? .start : .afterJapanese
+            runLeading = Self.leading(after: key)
         }
         return segments + segmentRun(String(chars[runStart...]), leading: runLeading.japaneseContext)
     }
@@ -291,7 +301,7 @@ public final class Segmenter {
     /// 読めない箇所を含めば英語、日本語として採れて英語にしない綴りなら日本語にする
     func singleSpan(_ source: String, context: JapaneseContext) -> Segment {
         let english = englishSegment(source, context: context)
-        guard let kana = table.reading(of: source), !kana.allSatisfy({ $0 == "ー" }),
+        guard let kana = table.reading(of: source), Self.canBeJapanese(kana),
               let japanese = japaneseSegment(source, kana: kana, context: context)
         else { return english }
         return prefersJapanese(source, readable: true) || japanese.score >= english.score ? japanese : english

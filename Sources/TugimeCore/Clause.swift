@@ -178,7 +178,8 @@ extension Segmenter {
         return start..<(start + typed.count)
     }
 
-    /// 打鍵列の position から始まる、文節が取り込む 1 単位の終わり。日本語の区間では 1 つの綴り、英語の区間では 1 打鍵。
+    /// 打鍵列の position から始まる、文節が取り込む 1 単位の終わり。日本語の区間では読み切れる最短の綴り（っ と単独の ん は
+    /// 次のかなと合わせる）、英語の区間では 1 打鍵（打ったままの句読点を含む）。
     /// 句読点と記号の区間と、打鍵列の終わりでは nil
     private func unitEnd(from position: Int, in spans: [KeySpan]) -> Int? {
         guard let next = spans.first(where: { $0.start <= position && position < $0.end }) else { return nil }
@@ -192,7 +193,8 @@ extension Segmenter {
         }
     }
 
-    /// 文節を変換する文脈。英語の後は前の語に続く形（数字の後は助数詞）、日本語の後は前の文節に続く形、句読点と記号の後は文頭の形
+    /// 文節を変換する文脈。英語の後は前の語に続く形（数字の後は助数詞）、日本語の後は前の文節に続く形、
+    /// 句読点と記号の後は区切りの選択と同じ形
     private func context(after previous: Clause?, keys: ArraySlice<Character>, leading: Leading) -> JapaneseContext {
         guard let previous else { return leading.japaneseContext }
         switch previous.kind {
@@ -201,7 +203,7 @@ extension Segmenter {
         case .japanese:
             return .afterWord
         case .punctuation:
-            return .start
+            return Self.leading(after: previous.span.source).japaneseContext
         }
     }
 

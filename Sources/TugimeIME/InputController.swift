@@ -60,7 +60,13 @@ final class TugimeInputController: IMKInputController {
     /// 未確定の打鍵列
     private var keys = ""
     /// 文節の選択に入った後の文節（Shift+Space・矢印キー・F6〜F10 で入る）。nil なら打っている途中の変換を表示している
-    private var clauses: [Clause]?
+    private var clauses: [Clause]? {
+        didSet {
+            if clauses == nil { wholeConverted = false }
+        }
+    }
+    /// clauses が、F6〜F10 で未確定の文字列全体を 1 つの文字種にした 1 文節か。区切りから作った文節ではないので伸縮しない
+    private var wholeConverted = false
     /// 候補を選ぶ対象の文節
     private var focus = 0
     private var mode: InputMode = .japanese
@@ -314,12 +320,15 @@ final class TugimeInputController: IMKInputController {
                 moveCandidate(by: -1, client: client)
             }
         case KeyCode.left, KeyCode.right:
-            // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する
+            // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する。
+            // 全体を 1 つの文字種にした後は、区切りから文節を作り直して最初の文節を伸縮する
             let step = event.keyCode == KeyCode.left ? -1 : 1
             if event.modifierFlags.contains(.shift) {
                 focus = min(max(focus + step, 0), (clauses?.count ?? 1) - 1)
             } else if let clauses {
-                self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step, leading: leading)
+                let base = wholeConverted ? sharedSegmenter.clauses(keys, leading: leading) : clauses
+                wholeConverted = false
+                self.clauses = sharedSegmenter.resize(base, at: focus, by: step, leading: leading)
             }
             candidatePanel.hide()
             showMarkedText(client)
@@ -352,6 +361,7 @@ final class TugimeInputController: IMKInputController {
         let text = sharedSegmenter.convertWhole(keys, to: form, leading: leading)
         let span = ClauseSpan(index: 0, source: keys, reading: keys, context: .start)
         clauses = [Clause(kind: .english, reading: keys, candidates: [text], selected: 0, span: span)]
+        wholeConverted = true
         focus = 0
         candidatePanel.hide()
         showMarkedText(client)
