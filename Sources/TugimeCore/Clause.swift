@@ -63,12 +63,10 @@ extension Segmenter {
         }
     }
 
-    /// 文節を伸ばす（delta が正）・縮める（負）。日本語の文節は区間の中では 1 かなずつ伸縮し、1 かなより短くしない。
-    /// 区間の終わりを越えて伸ばすときは次の 1 単位（`unitEnd`）ずつ取り込み、英語の文節は 1 打鍵ずつ伸縮して 1 打鍵より短くしない。
-    /// 区間の外へ伸ばすとき、英語の文節、伸縮で作った区間の中の伸縮は、伸縮した文節の打鍵を 1 区間として日英を判定し、
-    /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。手放した打鍵も判定し直すので、伸ばした後に縮めれば元に戻る。
-    /// 区切りの選択が決めた日本語の区間の中の伸縮と、文節の境目が 1 つの綴りの途中に当たって打鍵を切り出せないときは、
-    /// 区間の読みのかなの上で伸縮する（`resizeInsideSpan`）。区間の一部だけでは日英を正しく判定できないため（`ii` の `i` が後ろの英語に付く）。
+    /// 文節を伸ばす（delta が正）・縮める（負）。区切りの選択が決めた日本語の区間の中では、区間の読みのかなの上で 1 かなずつ伸縮し、
+    /// 1 かなより短くしない（`resizeInsideSpan`）。文節の始まりが 1 つの綴りの途中にあって打鍵を切り出せないときも同じにする。
+    /// それ以外（区間の終わりを越えて伸ばすとき、英語の文節、伸縮で作った区間の文節）は、打鍵列の上で文節の終わりを 1 単位ずつ動かし
+    /// （`unitEnd`、`unitStart`）、文節の打鍵を 1 区間として日英を判定して、後ろの打鍵は日英判定と変換をやり直す（`rebuild`）。
     /// 句読点と記号の文節は伸縮しない。伸縮できなければ元のまま返す
     public func resize(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading = .start) -> [Clause] {
         let clause = clauses[index]
@@ -79,20 +77,18 @@ extension Segmenter {
         guard let range = keyRange(of: clauses, at: index, from: own.start) else {
             return resizeInsideSpan(clauses, at: index, by: delta) ?? clauses
         }
-        if clause.kind == .japanese {
-            let start = kanaStart(of: clauses, at: index)
+        if clause.kind == .japanese, !clause.span.resized {
             let length = clause.reading.count + delta
             guard length >= 1 else { return clauses }
-            if start + length <= clause.span.reading.count {
-                guard clause.span.resized, let head = splitSource(of: clause.span, atKana: start + length)?.head else {
-                    return resizeInsideSpan(clauses, at: index, by: delta) ?? clauses
-                }
-                return rebuild(clauses, at: index, keys: keys, spanStart: own.start, range: range, end: own.start + head.count, leading: leading)
+            if kanaStart(of: clauses, at: index) + length <= clause.span.reading.count {
+                return resizeInsideSpan(clauses, at: index, by: delta) ?? clauses
             }
         }
         var end = range.upperBound
         for _ in 0..<abs(delta) {
-            guard let next = delta > 0 ? unitEnd(from: end, in: spans) : end - 1, next > range.lowerBound else { return clauses }
+            guard let next = delta > 0 ? unitEnd(from: end, in: spans) : unitStart(before: end, in: spans), next > range.lowerBound else {
+                return clauses
+            }
             end = next
         }
         return rebuild(clauses, at: index, keys: keys, spanStart: own.start, range: range, end: end, leading: leading)
@@ -217,6 +213,20 @@ extension Segmenter {
             return position + 1
         case .japanese:
             return table.readings(from: position - next.start, in: Array(next.span.source)).first.map { next.start + $0.end }
+        }
+    }
+
+    /// 打鍵列の position で終わる、文節が手放す 1 単位の始まり。日本語の区間では区間の始まりから読み切れる綴りの境目のうち
+    /// position より前で最も後ろのもの、英語の区間では 1 打鍵前。句読点と記号の区間と、打鍵列の始まりでは nil
+    private func unitStart(before position: Int, in spans: [KeySpan]) -> Int? {
+        guard let span = spans.first(where: { $0.start < position && position <= $0.end }) else { return nil }
+        switch span.kind {
+        case .punctuation:
+            return nil
+        case .english:
+            return position - 1
+        case .japanese:
+            return table.readings(from: 0, in: Array(span.span.source)).map { span.start + $0.end }.filter { $0 < position }.max() ?? span.start
         }
     }
 
