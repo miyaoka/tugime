@@ -65,7 +65,7 @@ final class TugimeInputController: IMKInputController {
             if clauses == nil { wholeConverted = false }
         }
     }
-    /// clauses が、F6〜F10 で未確定の文字列全体を 1 つの文字種にした 1 文節か。区切りから作った文節ではないので伸縮しない
+    /// clauses が、F6〜F10 で未確定の文字列全体を 1 つの文字種にした 1 文節か。区切りから作った文節ではないので、この文節そのものは伸縮せず、区切りから作り直す
     private var wholeConverted = false
     /// 候補を選ぶ対象の文節
     private var focus = 0
