@@ -59,7 +59,7 @@ let sharedSegmenter: Segmenter = {
 final class TugimeInputController: IMKInputController {
     /// 未確定の打鍵列
     private var keys = ""
-    /// 文節の選択に入った後の文節（Space・矢印キー・F6〜F10 で入る）。nil なら打っている途中の変換を表示している
+    /// 文節の選択に入った後の文節（Shift+Space・矢印キー・F6〜F10 で入る）。nil なら打っている途中の変換を表示している
     private var clauses: [Clause]?
     /// 候補を選ぶ対象の文節
     private var focus = 0
@@ -256,13 +256,20 @@ final class TugimeInputController: IMKInputController {
             return true
         case KeyCode.space:
             guard !keys.isEmpty else { return false }
+            // 打っている途中も変換して見せているので、Space は日本語の文に英語の語句を空白で区切って混ぜるのに使い、
+            // 文節の選択には Shift+Space で入る。空白は綴りの表で読めないので、空白を含む区間は英語になる
+            if !event.modifierFlags.contains(.shift) {
+                keys.append(" ")
+                showMarkedText(client)
+                return true
+            }
             clauses = sharedSegmenter.clauses(keys, leading: leading)
             focus = 0
             showMarkedText(client)
             return true
         case KeyCode.left, KeyCode.right, KeyCode.up, KeyCode.down:
-            // 打っている途中も変換して見せているので、矢印キーで Space を押さずに文節の選択に入る。
-            // Space と同じく最初の文節を選び、選んだ後の操作としてそのキーを扱う
+            // 打っている途中も変換して見せているので、矢印キーで Shift+Space を押さずに文節の選択に入る。
+            // Shift+Space と同じく最初の文節を選び、選んだ後の操作としてそのキーを扱う
             guard !keys.isEmpty else { return false }
             clauses = sharedSegmenter.clauses(keys, leading: leading)
             focus = 0
@@ -383,7 +390,7 @@ final class TugimeInputController: IMKInputController {
 
     // MARK: 表示と確定
 
-    /// Space の前は打っている途中の変換を 1 つの未確定の文字列として表示する。Space の後は文節ごとの選択を表示し、選んでいる文節を強調する
+    /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示する。入った後は文節ごとの選択を表示し、選んでいる文節を強調する
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
         if let clauses {
