@@ -1,15 +1,38 @@
 # tugime
 
-macOS の日本語入力。ローマ字のまま打つと、日本語の区間と英語の区間を見分け、日本語はかな漢字変換し、英語は英字のまま残す。
+/tsɯɡime/ 継ぎ目
+
+![同じ文 dark mode の配色を変えて、pull request を出しました。を打つとき、ふつうの日本語入力では文字のほかに英数・かな・変換・Enter を 8 回押す。tugime では Space がそのまま空白になり、文字のほかに押すのは最後の Enter だけ](docs/images/intro.png)
+
+macOS の日本語入力。英語が混じった日本語の文を、IME を切らずに一息に変換する。ローマ字の打鍵列から日本語の区間と英語の区間を見分け、日本語はかな漢字に変換し、英語は英字のまま残す。
 
 ```
-nodewosakujosite,sitewokoukaisuru → nodeを削除して、siteを公開する
+github actionsdetestwohasirasetemergesuru.              →  github actionsでtestを走らせてmergeする。
+dark mode nohaisyokuwokaete,pull request wodasimasita.  →  dark mode の配色を変えて、pull request を出しました。
+nodewosakujosite,sitewokoukaisuru                       →  nodeを削除して、siteを公開する
 ```
 
-- 日英の判定は学習しない。同じ入力には常に同じ結果を返す
-- 判定は利用者のローマ字の綴りに合わせる。その綴りで読めない並び（`gl` `pr` `c` `l` など）を含む区間は英語になる
-- ローマ字として読める綴りでも、日本語の文に英字のまま書かれることの多い英単語（`node` `site` など）は、日本語と英語のうち前後から自然な方になる
-- かな漢字変換は [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter) を使う。表示する変換は、Zenzai（小さな言語モデル）で前の文脈を見て選ぶ
+英語だけの文は、英数に切り替えて打つ。
+
+## 特色
+
+### Space
+
+打っている途中の Space は空白を入れる。ふつうの日本語入力では Space が変換に使われるので、英語の語句の間に空白を入れるには、確定して英数に切り替える必要がある。tugime は打つそばから変換して表示するので、変換の操作は候補を選び直すときの Shift+Space だけになる。
+
+### 日英の判定
+
+![setteiwohidesitamamanisuru を打ち進めるごとの表示。打鍵列のあらゆる範囲を日本語と英語で読む候補（242 本）を比べ、点の合計が最も高い並びを採る。hide まで打つと 設定をhide になるが、続く sita で 設定を非でした に変わり、最後の u で 設定を + hide + したままにする（-60.4）が 全部を日本語（-62.7）を上回って 設定をhideしたままにする になる](docs/images/conversion.png)
+
+利用者のローマ字の綴りで読めない並び（`gl` `pr` `c` `l` など）を含む区間は英語になる。ローマ字として読める英単語（`node` `mode` など）は、文の前後から日本語か英語かを決める。`,` `.` は、日本語の後なら `、` `。` になり、英語の後なら打ったまま残る。
+
+### 学習
+
+打ち方を学習しない。同じ入力と同じ前後の文脈には、常に同じ結果を返す。
+
+### かな漢字変換
+
+[AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter) を使い、表示する変換は Zenzai（小さな言語モデル）が前の文脈を見て選ぶ。
 
 ## 動作環境
 
