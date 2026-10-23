@@ -272,7 +272,8 @@ public final class AzooKeyConverter: JapaneseConverting {
     }
 
     /// 変換エンジンは直前の入力との差分で計算する。採点は前に渡した読みの続きを同じセッションに渡して途中の計算を使い回す。
-    /// Zenzai は前の変換で選んだ表記も次の変換に引き継ぐので、表示と候補の窓は前の状態を捨てて、要求ごとに独立した結果にする
+    /// 表示と候補の窓は前の状態を捨てて、要求ごとに独立した結果にする。Zenzai は前の変換で選んだ表記を次の探索の制約に引き継ぎ、
+    /// 候補の窓は採点と上位の数が違うので、採点の途中の計算を共有できない
     private func candidates(_ kana: String, nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode = .off, scoring: Bool = false) -> [Candidate] {
         var composing = ComposingText()
         composing.insertAtCursorPosition(kana, inputStyle: .direct)
