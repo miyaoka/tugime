@@ -9,7 +9,6 @@ const cli = join(root, ".build/debug/tugime-cli");
 const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const COMMAND_TIMEOUT_MS = 300_000;
 const WIDTH = 1100;
-const INTRO_HEIGHT = 540;
 
 /// 変換の図に載せる例文。hide が英語、日本語、英語と入れ替わる
 const input = "setteiwohidesitamamanisuru";
@@ -20,6 +19,12 @@ const stepEnds = [6, 8, 12, 16, 20, 22, 24, 25, 26];
 /// 最後に入れ替わる語と、入れ替わりの前後で比べる時点（打鍵の数）
 const flippedWord = "hide";
 const versusEnds = [24, 26];
+/// 図の筋書き。この時点（打鍵の数）で flippedWord を含む区間がこの種類になる
+const flippedKinds: [number, Kind][] = [
+  [12, "E"],
+  [16, "J"],
+  [26, "E"],
+];
 
 const CELL = 33;
 const AXIS_LEFT = 196;
@@ -107,8 +112,11 @@ async function readLattices(inputs: string[]): Promise<Map<string, Span[]>> {
       lattices.set(head[1], current);
       continue;
     }
-    const m = line.match(/^(\d+)\.\.<(\d+)\t(\S)\t([JE])\[.*?→(.*?) (-?[\d.]+)\]$/);
-    if (m && current) current.push({ s: +m[1], e: +m[2], after: m[3], kind: m[4] as "J" | "E", output: m[5], score: +m[6] });
+    // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点
+    const cols = line.split("\t");
+    if (cols.length !== 7 || !/^\d+$/.test(cols[0])) continue;
+    if (!current) throw new Error(`== の行より前に候補がある: ${line}`);
+    current.push({ s: +cols[0], e: +cols[1], after: cols[2], kind: cols[3] as "J" | "E", output: cols[5], score: +cols[6] });
   }
   for (const i of inputs) if (!lattices.get(i)?.length) throw new Error(`--lattice の候補が無い: ${i}`);
   return lattices;
@@ -177,6 +185,17 @@ const versus = versusPrefixes.map((prefix) => {
   if (!japanese || !english) throw new Error(`比べる並びが見つからない: ${prefix}`);
   return { prefix, japanese, english };
 });
+
+// 図の筋書きが出力と合うかを確かめる。合わなければ見出しと説明が偽になる
+const [before, after] = versus;
+if (!(before.japanese.total > before.english.total)) throw new Error(`${before.prefix} で全部を日本語として読む並びが勝っていない`);
+if (!(after.english.total > after.japanese.total)) throw new Error(`${after.prefix} で ${flippedWord} を英語として読む並びが勝っていない`);
+for (const [end, kind] of flippedKinds) {
+  const step = steps.find((s) => s.prefix.length === end);
+  if (!step) throw new Error(`${end} 打鍵の時点が stepEnds に無い`);
+  const covering = step.segments.find((s) => s.s <= flippedStart && flippedStart < s.e);
+  if (covering?.kind !== kind) throw new Error(`${step.prefix} で ${flippedWord} が ${kind} でなく ${covering?.kind} になっている`);
+}
 
 // 区間の候補を、始まりの早い順、長い順に、重ならない段へ詰める
 const unique = new Map<string, Span>();
@@ -254,7 +273,7 @@ const html = `<!doctype html>
   .goal-text.P { color: var(--green); }
   .keys + .head { margin-top: 18px; }
   .lattice { height: ${latticeHeight}px; }
-  .ln { position: absolute; height: ${LINE}px; border-radius: 1px; }
+  .ln { position: absolute; height: ${LINE}px; }
   .ln.J { background: rgba(143,184,255,0.55); }
   .ln.E { background: rgba(255,165,100,0.55); }
   .ln.on { height: ${LINE + 2}px; margin-top: -1px; box-shadow: 0 0 0 1px #fff; z-index: 1; }
@@ -285,7 +304,7 @@ const html = `<!doctype html>
   <div class="sec goal"><span class="sec-lbl">打ちたい文</span>${expectedHtml}</div>
   <div class="sec keys"><span class="sec-lbl">打鍵列</span>${keysHtml}</div>
 
-  <div class="head"><b>比べた読み方</b>線 1 本が、その真上の打鍵を 1 つの区間として読む候補。全 ${placed.length} 本。白く縁取った線が、最後まで打ったときに採った区間</div>
+  <div class="head"><b>比べた読み方</b>線 1 本が真上の打鍵を 1 区間として読む候補（範囲と読み方の組で ${placed.length} 通り）。白い縁取りは最後に採った区間</div>
   <div class="sec lattice">${latticeHtml}</div>
   <div class="legend"><span><i style="background:var(--ja)"></i>日本語として読む候補（かな漢字変換の評価値が点）</span><span><i style="background:var(--en)"></i>英語として読む候補（英語の語としてのありそうさが点）</span></div>
 
@@ -315,4 +334,7 @@ async function capture(name: string, pageHeight: number) {
   );
 }
 await capture("conversion", height);
-await capture("intro", INTRO_HEIGHT);
+// 紹介画像は HTML を手で書くので、高さは HTML の html, body の指定を正本にする
+const introHeight = (await Bun.file(join(images, "intro.html")).text()).match(/html, body \{[^}]*?height: (\d+)px/)?.[1];
+if (!introHeight) throw new Error("intro.html の html, body に height が無い");
+await capture("intro", +introHeight);
