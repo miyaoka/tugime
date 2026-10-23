@@ -194,6 +194,34 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.resize(restored, at: index, by: -1).map(\.output) == segmenter.resize(shrunk, at: index, by: -1).map(\.output))
     }
 
+    /// 伸縮を続けても、文節の区間の打鍵をつなぐと元の打鍵列になる。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す
+    @Test(arguments: [
+        ("kyouhaiitenkidesucwdde", "->>+--<+->+++---"),
+        ("kyouhagoogledekensaku", "+++--->-+->++--"),
+        ("main,dev", ">+-<-+>+--"),
+        ("kyouhatokyo", "+++++----->+-"),
+        ("watasihagooglewotukau", ">>+-<+++---->>-+"),
+    ])
+    func resizingKeepsEveryKeystroke(input: String, operations: String) {
+        var clauses = segmenter.clauses(input)
+        var focus = 0
+        for operation in operations {
+            switch operation {
+            case "+": clauses = segmenter.resize(clauses, at: focus, by: 1)
+            case "-": clauses = segmenter.resize(clauses, at: focus, by: -1)
+            case ">": focus = min(focus + 1, clauses.count - 1)
+            default: focus = max(focus - 1, 0)
+            }
+            var keys = ""
+            var lastSpan: ClauseSpan?
+            for clause in clauses where clause.span != lastSpan {
+                keys += clause.span.source
+                lastSpan = clause.span
+            }
+            #expect(keys == input, "\(operation) \(clauses.map(\.output))")
+        }
+    }
+
     /// 拗音で終わる文節も、1 つの綴り（kyo）ずつ手放すので、かなの途中で切れずに元に戻る
     @Test func shrinkingAClauseEndingInAContractedSoundRestoresTheEnglishSpan() {
         let clauses = segmenter.clauses("kyouhatokyo")

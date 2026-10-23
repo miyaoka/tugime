@@ -96,10 +96,12 @@ extension Segmenter {
 
     /// 文節の打鍵 range.lowerBound..<end と、その直前に並ぶ文節を合わせたものが、打鍵列の全体を区切りの選択にかけたときの
     /// 1 区間にちょうど当たるか。当たれば、その区間と、区間に含まれる直前の文節の数を返す。
-    /// 直前の文節は日本語の区間の文節だけで、読みをつなぐと区間の読みになるものを数える
+    /// 直前の文節は日本語の区間の文節だけで、読みをつなぐと区間の読みになるものを数える。
+    /// 数えた文節の区間は丸ごと含まれ、その始まりが区切りの選択の区間の始まりと打鍵の位置で一致するときだけ当たったとする
     private func segmentedSpan(
         _ fixed: Segment, before: [Clause], start: Int, end: Int, keys: [Character], leading: Leading
     ) -> (segment: Segment, count: Int)? {
+        let spans = keySpans(of: before)
         var position = 0
         for segment in segment(String(keys), leading: leading) {
             let next = position + segment.source.count
@@ -111,7 +113,12 @@ extension Segmenter {
                 reading = before[before.count - 1 - count].reading + reading
                 count += 1
             }
-            return reading == segment.reading ? (segment, count) : nil
+            guard reading == segment.reading else { return nil }
+            let first = before.count - count
+            guard first < before.count else { return position == start ? (segment, 0) : nil }
+            let wholeSpan = first == 0 || before[first - 1].span != before[first].span
+            guard wholeSpan, spans.first(where: { $0.span == before[first].span })?.start == position else { return nil }
+            return (segment, count)
         }
         return nil
     }
@@ -150,15 +157,23 @@ extension Segmenter {
 
     /// index の文節を打鍵列の range.lowerBound..<end にして、その打鍵を 1 区間として日英を判定する。
     /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。range は文節の今の打鍵、spanStart はその区間の始まり。
-    /// 同じ区間の前の文節と合わせた打鍵が区切りの選択の 1 区間と一致すれば（伸ばして元に戻したとき）、それらの文節をその区間に戻す。
-    /// 一致しなければ、前の文節は文節の始まりまでを 1 つの区間として持ち直し、文節は伸縮で作った区間にする
+    /// 同じ区間の前の文節は、文節の始まりまでを 1 つの区間として持ち直す。そのうえで、直前の文節と合わせた打鍵が区切りの選択の
+    /// 1 区間と一致すれば（伸ばして元に戻したとき）、それらの文節をその区間に戻す。一致しなければ、文節は伸縮で作った区間にする
     private func rebuild(
         _ clauses: [Clause], at index: Int, keys: [Character], spanStart: Int, range: Range<Int>, end: Int, leading: Leading
     ) -> [Clause] {
         let clause = clauses[index]
         var before = Array(clauses[..<index])
-        let sameSpan = before.indices.filter { before[$0].span == clause.span }
-        let headReading = String(clause.span.reading.prefix(kanaStart(of: clauses, at: index)))
+        let head = ClauseSpan(
+            index: clause.span.index,
+            source: String(keys[spanStart..<range.lowerBound]),
+            reading: String(clause.span.reading.prefix(kanaStart(of: clauses, at: index))),
+            context: clause.span.context,
+            resized: clause.span.resized
+        )
+        for i in before.indices where before[i].span == clause.span {
+            before[i].span = head
+        }
         let left = before.map(\.output).joined()
         let fixed = singleSpan(String(keys[range.lowerBound..<end]), context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading))
         let span: ClauseSpan
@@ -174,16 +189,6 @@ extension Segmenter {
                 before[i].span = span
             }
         } else {
-            let head = ClauseSpan(
-                index: clause.span.index,
-                source: String(keys[spanStart..<range.lowerBound]),
-                reading: headReading,
-                context: clause.span.context,
-                resized: clause.span.resized
-            )
-            for i in sameSpan {
-                before[i].span = head
-            }
             span = ClauseSpan(index: (before.last?.span.index ?? -1) + 1, source: fixed.source, reading: fixed.reading, context: fixed.context, resized: true)
         }
         // 区間の 2 つ目以降の文節は、前の文節に続く形で変換する
