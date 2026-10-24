@@ -124,6 +124,21 @@ private final class FixedGenerator: DirectDisplayGenerating {
     }
 }
 
+/// 手元のモデル（scripts/fetch-zenz.sh などが .zenz に置く）。無ければこのテストは飛ばす
+nonisolated private let localGenmai = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    .appendingPathComponent(".zenz/genmai-310M-c348c10-q8_0.gguf")
+
+@Suite struct ZenzGeneratorTests {
+    /// 1 字が複数のトークンになる字だけの読みは、文脈が空でも位置に収まらない。区切りを分けて最後まで変換し、落ちない
+    @Test(.enabled(if: FileManager.default.fileExists(atPath: localGenmai.path)))
+    func splitsAReadingThatDoesNotFitEvenWithoutContext() {
+        let generator = ZenzGenerator(weight: localGenmai)
+        let output = generator.generate(left: "", kana: String(repeating: "𠮷", count: 300))
+        #expect(!output.isEmpty)
+    }
+}
+
 @Suite struct ZenzPromptTests {
     @Test func buildsTheZenzFormat() {
         #expect(ZenzPrompt.text(left: "", kana: "きょうは") == "\u{EE00}キョウハ\u{EE01}")

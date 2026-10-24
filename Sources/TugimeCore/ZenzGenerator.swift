@@ -77,11 +77,21 @@ final class ZenzGenerator: DirectDisplayGenerating {
 
     func generate(left: String, kana: String) -> String {
         var output = ""
-        for part in ZenzPrompt.chunks(kana, maxLength: ZenzPrompt.maxChunkLength(positions: maxPositions)) {
+        var parts = ZenzPrompt.chunks(kana, maxLength: ZenzPrompt.maxChunkLength(positions: maxPositions))[...]
+        while let part = parts.popFirst() {
             let contextText = left + output
             // 出力に位置の半分までを使い、残りに入力を収める
             let limit = min(ZenzPrompt.outputLimit(part), maxPositions / 2)
-            let prompt = fittedPrompt(context: contextText, kana: part, limit: limit)
+            guard let prompt = fittedPrompt(context: contextText, kana: part, limit: limit) else {
+                // 文脈を空にしても収まらない（読みの字が複数のトークンになる）区切りは、半分に分けて続ける。読みは削らない
+                precondition(part.unicodeScalars.count > 1, "1 字の読みがモデルの位置の上限 \(maxPositions) に収まらない: \(part)")
+                let half = part.unicodeScalars.count / 2
+                parts.insert(contentsOf: [
+                    String(String.UnicodeScalarView(part.unicodeScalars.prefix(half))),
+                    String(String.UnicodeScalarView(part.unicodeScalars.dropFirst(half))),
+                ], at: parts.startIndex)
+                continue
+            }
             let tokens = greedy(prompt, limit: limit, draft: drafts[contextText] ?? [])
             drafts[contextText] = tokens
             output += ZenzPrompt.cutAtNewline(detokenize(tokens))
@@ -95,14 +105,14 @@ final class ZenzGenerator: DirectDisplayGenerating {
     }
 
     /// 入力と limit 個の出力が位置の上限に収まるよう、左の文脈を前から削った入力。文脈の目印は残す。
-    /// 文脈を空にしても収まらないとき（区切りの読みの字がそれぞれ複数のトークンになるとき）は、作者の実装と同じく BOS と入力の末尾を残す
-    private func fittedPrompt(context: String, kana: String, limit: Int) -> [llama_token] {
+    /// 文脈を空にしても収まらなければ nil
+    private func fittedPrompt(context: String, kana: String, limit: Int) -> [llama_token]? {
         var scalars = Array(context.unicodeScalars.suffix(ZenzPrompt.maxContextLength))
         while true {
             let prompt = tokenize(ZenzPrompt.text(left: String(String.UnicodeScalarView(scalars)), kana: kana))
             let over = prompt.count + limit - maxPositions
             if over <= 0 { return prompt }
-            if scalars.isEmpty { return [bos] + prompt.suffix(maxPositions - limit - 1) }
+            if scalars.isEmpty { return nil }
             // 1 字は 1 トークン以上なので、超えたトークンの数だけ字を削れば、少なくともその数のトークンが減る
             scalars.removeFirst(min(over, scalars.count))
         }
