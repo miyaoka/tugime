@@ -3,7 +3,7 @@ import Testing
 @testable import TugimeCore
 
 @Suite struct ReadingAlignmentTests {
-    /// 文節の読みと表記は、出力の側で位置が確定した境目で組になる。組がずれると、途中の確定で残る打鍵が打った読みと食い違う
+    /// 文節の読みと表記は、出力の側で位置が確定した境目で組になる
     @Test func cutsWhereKanaFixesThePosition() throws {
         let alignment = try #require(ReadingAlignment(text: "今日は", reading: "きょうは"))
         #expect(alignment.clauses(cutAt: [3]) == [JapaneseClause(reading: "きょう", text: "今日"), JapaneseClause(reading: "は", text: "は")])
