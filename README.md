@@ -38,40 +38,57 @@ nodewosakujosite,sitewokoukaisuru                       →  nodeを削除して
 
 Apple Silicon の macOS。動作は macOS 27 でだけ確かめている。
 
+## 安全性
+
+入力メソッドは、どのアプリで打った文字も受け取る。tugime は、偽物を入れないためと、打った内容を外へ出さないために、次のことをしている。
+
+- **導入**: 配布物が tugime のリポジトリで組み立てられたものかを確かめてから入れる。手順は「導入」にある
+- **通信しない**: tugime は通信しない。さらに macOS の Sandbox で通信とファイルの読み書きを制限し、tugime に穴があって攻撃されたときの被害を減らす
+- **記録しない**: 打ち方を学習せず、打った内容を保存しない
+- **パスワード欄**: 安全入力が有効な間は、キーを変換せずにそのままアプリへ渡す
+
 ## 導入
 
-[mise](https://mise.jdx.dev/) でインストールする。`postinstall` がインストール直後に GitHub Releases の版を `~/Library/Input Methods` に配置して登録する。更新は `mise up` で反映する。
+改竄されていない tugime を安全に入れるために、以下では、配布物が tugime の release workflow で組み立てられたものかを確かめてから入れる方法を案内する。tugime は Apple の有料の公証を受けていないため、代わりに GitHub 上での署名と[出自の証明](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)を用いる。
+
+入れ方は次の A〜C のどれか 1 つを選ぶ。どれで入れても、初めて入れたときだけ、最後に入力ソースを追加する。
+
+### A. mise で入れる
+
+[mise](https://mise.jdx.dev/) を使うと、mise が配布物を確かめてから入れる。tugime の release workflow が署名していない配布物や、署名のあとで書き換えられた配布物は、mise が入れずに止める。確かめには [packslip](https://packslip.dev/) という仕組みを使う。更新は `mise up` だけでよい。
+
+mise は 2026.10.5 以降を使う。それより前の版は、下のコマンドの `workflow` の指定に対応していない。
 
 ```bash
-mise use -g 'github:miyaoka/tugime[postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
+mise use -g 'packslip:github.com/miyaoka/tugime[workflow="release.yml@refs/heads/main",postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
 ```
 
-mise を使わない場合は、最新版を取得して配置する。更新は同じコマンドで上書きする。
+### B. GitHub CLI で入れる
+
+mise を使わないときは、[GitHub CLI](https://cli.github.com/) で、同じく改竄されていないことを確かめてから入れる。次のコマンドは、一時ディレクトリに最新版を取得し、tugime の release workflow が組み立てたものかを確かめ、確かめられたときだけ展開して入れる。更新するときも同じコマンドでよい。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | bash
+dir=$(mktemp -d) &&
+gh release download --repo miyaoka/tugime --pattern tugime-macos-arm64.tar.gz --dir "$dir" &&
+gh attestation verify "$dir/tugime-macos-arm64.tar.gz" --repo miyaoka/tugime --cert-identity https://github.com/miyaoka/tugime/.github/workflows/release.yml@refs/heads/main &&
+tar -xzf "$dir/tugime-macos-arm64.tar.gz" -C "$dir" &&
+bash "$dir/install.sh"
 ```
 
-Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開したフォルダーで `bash install.sh` を実行する。
+### C. ソースから組み立てて入れる
 
-初めて配置したときだけ、ログアウトしてログインし直す。システム設定はログインし直すまで新しい入力ソースを一覧に出さない。その後、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。
-
-配布物は ad-hoc 署名で、Apple の公証を受けていない。
-
-### ソースから
-
-Xcode（Swift 6.2 以降）が要る。組み立てのときに genmai-310M の GGUF（約 340MB）を Hugging Face から `.zenz/` に取得する。
+Xcode（Swift 6.2 以降）が要る。組み立てのときに genmai-310M の GGUF（約 340MB）を Hugging Face から `.zenz/` に取得する。自分で組み立てるので、出自の確かめは要らない。
 
 ```bash
 scripts/build-app.sh                    # dist/tugime Dev.app を組み立てて ad-hoc 署名する
 ./install.sh "dist/tugime Dev.app"      # 配置して登録する
 ```
 
-ソースから組み立てたものは `tugime Dev` という別の入力ソースになり、配布版の tugime と並べて入れられる。入力ソースの追加では `tugime Dev (日本語)` を選ぶ。
+組み立てたものは `tugime Dev` という別の入力ソースになり、配布版の tugime と並べて入れられる。
 
-## リリース
+### 入力ソースを追加する
 
-main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PATCH`）を採番し、macOS で組み立てた `tugime-macos-arm64.tar.gz` を出自の証明付きでリリースする。
+初めて入れたときだけ、ログアウトしてログインし直す。システム設定はログインし直すまで新しい入力ソースを一覧に出さない。その後、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から、配布版なら `tugime (日本語)`、ソースから組み立てたものなら `tugime Dev (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。
 
 ## 使い方
 

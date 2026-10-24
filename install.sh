@@ -4,13 +4,10 @@
 #
 # 使い方:
 #   bash install.sh [<.app>]
-#   curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | bash
 #
-# 導入する .app は、引数、このファイルの隣の tugime.app、GitHub の最新のリリース、の順で決める。
+# 導入する .app は、引数、無ければこのファイルの隣の tugime.app
 set -euo pipefail
 
-repo="miyaoka/tugime"
-asset="tugime-macos-arm64.tar.gz"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
@@ -18,27 +15,9 @@ if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
     exit 1
 fi
 
-script_dir=""
-if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-fi
-
-download_latest() {
-    local work
-    work="$(mktemp -d)"
-    local url="https://github.com/$repo/releases/latest/download/$asset"
-    echo "== 取得 $url" >&2
-    curl -fsSL "$url" | tar -xzf - -C "$work"
-    echo "$work/tugime.app"
-}
-
-if [[ $# -ge 1 ]]; then
-    src="$1"
-elif [[ -n "$script_dir" && -d "$script_dir/tugime.app" ]]; then
-    src="$script_dir/tugime.app"
-else
-    src="$(download_latest)"
-fi
+# 標準入力から実行すると隣の場所が決まらない。コマンド置換の中で失敗しても外は止まらないので、ここで止める
+script="${BASH_SOURCE[0]:?install.sh はファイルとして実行する（bash install.sh）}"
+src="${1:-$(cd "$(dirname "$script")" && pwd)/tugime.app}"
 [[ -d "$src/Contents" ]] || { echo "$src は .app ではない" >&2; exit 1; }
 # 置く名前は .app のディレクトリ名にする。渡し方（相対パス・末尾の /.）で変わらないよう、実体の絶対パスに直してから取る
 src=$(CDPATH='' cd -- "$src" && pwd -P)
@@ -49,8 +28,6 @@ exe="$dest/Contents/MacOS/tugime"
 # バンドルを消さずに中身を上書きする。バンドルが無い瞬間に macOS が入力源の一覧を作り直すと登録が消えるため
 mkdir -p "$dest"
 rsync -a --delete "$src/" "$dest/"
-# ブラウザで取得した配布物から入れたときの隔離属性を外す。ad-hoc 署名なので、付いたままだと起動できない
-xattr -dr com.apple.quarantine "$dest"
 "$lsregister" -f "$dest"
 "$exe" --register
 # 動いている古い版を止める。次に入力源が選ばれたときに新しい版が起動する

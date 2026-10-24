@@ -61,6 +61,10 @@ swift "$root/scripts/collect-notices.swift" "$root" "$app/Contents/Resources" "$
 echo "== ad-hoc 署名"
 # 入れ子のフレームワークは外側の署名では署名されない。arm64 だけにして中身が変わったので署名し直す
 codesign --force --timestamp=none --sign - "$app/Contents/Frameworks/llama.framework"
-codesign --force --timestamp=none --sign - "$app"
+entitlements=$(mktemp)
+trap 'rm -f "$entitlements"' EXIT
+sed -e "s/__BUNDLE_ID__/$bundle_id/g" "$root/App/tugime.entitlements" > "$entitlements"
+plutil -lint "$entitlements"
+codesign --force --timestamp=none --sign - --entitlements "$entitlements" "$app"
 codesign --verify --strict "$app"
 echo "== 完了 $app"

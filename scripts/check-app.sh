@@ -1,6 +1,6 @@
 #!/bin/bash
 # 引数の組み立てた .app について、組み立てたディレクトリ（.build）に頼らずに綴りの表・語表・辞書・表示の変換のモデル・llama.framework を
-# 読めることと、実行ファイルと llama.framework が Apple Silicon 向け（arm64）だけを含むことを確かめる。
+# 読めることと、署名の entitlements が想定どおりであることと、実行ファイルと llama.framework が Apple Silicon 向け（arm64）だけを含むことを確かめる。
 # SwiftPM の生成するリソースの探し方はビルドの仕組みで違い、組み立てたマシンの絶対パスを探すものがあるので、.build を退避して実行する
 set -euo pipefail
 
@@ -11,6 +11,13 @@ aside=$(mktemp -d)
 mv "$root/.build" "$aside/"
 trap 'mv "$aside/.build" "$root/" && rmdir "$aside"' EXIT
 "$app/Contents/MacOS/tugime" --check
+
+# App Sandbox で動き、権限は入力メソッドの接続の名前の登録だけ。通信の権限が付いていれば止める
+expected=$(jq -cn --arg name "$(plutil -extract InputMethodConnectionName raw "$app/Contents/Info.plist")" \
+    '{"com.apple.security.app-sandbox": true, "com.apple.security.temporary-exception.mach-register.global-name": $name}')
+actual=$(codesign -d --entitlements - --xml "$app" | plutil -convert json -o - - | jq -cS .)
+[[ "$actual" == "$(jq -cS . <<< "$expected")" ]] || { echo "entitlements が想定と違う: $actual" >&2; exit 1; }
+echo "entitlements $actual"
 
 # 対象は Apple Silicon だけなので、実行ファイルと同梱のフレームワークは arm64 だけを含む
 for binary in "$app/Contents/MacOS/tugime" "$app/Contents/Frameworks/llama.framework/llama"; do
