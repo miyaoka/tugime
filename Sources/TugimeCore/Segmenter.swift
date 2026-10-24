@@ -45,7 +45,6 @@ public struct SegmentWeights: Sendable {
         self.englishSpanPenalty = englishSpanPenalty
     }
 
-    /// corpus/examples.tsv に対して tugime-cli --tune で選ぶ値
     public static let standard = SegmentWeights(
         japanese: 1.0,
         english: 1.4,

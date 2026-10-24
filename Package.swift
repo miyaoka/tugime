@@ -31,11 +31,9 @@ let package = Package(
             resources: [.copy("Resources")],
             swiftSettings: [cxx]
         ),
-        // 例文集の読み込み。CLI とテストだけが使い、入力メソッドには入れない
-        .target(name: "TugimeCorpus"),
         .executableTarget(
             name: "tugime-cli",
-            dependencies: ["TugimeCore", "TugimeCorpus"],
+            dependencies: ["TugimeCore"],
             swiftSettings: [cxx]
         ),
         // 変換の方式とモデルを比べる検証の道具。配布物には入れない。測定は手元で実行する
@@ -58,7 +56,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TugimeCoreTests",
-            dependencies: ["TugimeCore", "TugimeCorpus"],
+            dependencies: ["TugimeCore"],
             // テストは 1 つの本物の変換器を共有するので、同時に使わないようメインアクターで動かす
             swiftSettings: [.defaultIsolation(MainActor.self), cxx]
         ),

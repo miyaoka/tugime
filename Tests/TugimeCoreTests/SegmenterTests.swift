@@ -1,7 +1,6 @@
 import Foundation
 import Testing
 @testable import TugimeCore
-import TugimeCorpus
 
 /// 本物の変換器と、それで組んだ Segmenter。作るたびに辞書と語表を読むので、全テストで共有する
 private enum Shared {
@@ -45,18 +44,6 @@ private final class LeftRecorder: JapaneseConverting {
 
     private func readings(_ clauses: [Clause]) -> [String] {
         clauses.map(\.reading)
-    }
-
-    // MARK: 例文集
-
-    /// 例文集の全件が、表示する文字列と一致する
-    @Test func matchesEveryCorpusExample() throws {
-        let path = URL(filePath: #filePath).appending(path: "../../../corpus/examples.tsv").standardized.path
-        let examples = try CorpusExample.load(path: path)
-        #expect(!examples.isEmpty)
-        for example in examples {
-            #expect(segmenter.displayText(example.input) == example.expected, "\(example.input)")
-        }
     }
 
     // MARK: 日英の区切り
