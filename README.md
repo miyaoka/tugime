@@ -38,6 +38,15 @@ nodewosakujosite,sitewokoukaisuru                       →  nodeを削除して
 
 Apple Silicon の macOS。動作は macOS 27 でだけ確かめている。
 
+## 安全性
+
+入力メソッドは、どのアプリで打った文字も受け取る。tugime は、偽物を入れないことと、打った内容を外へ出さないことを、次のように守る。
+
+- **導入**: 配布物が tugime のリポジトリで組み立てられたものかを確かめてから入れる。手順は「導入」にある
+- **通信しない**: tugime は macOS の App Sandbox の中で動き、通信の権限を持たない。tugime や使っているライブラリに穴があっても、打った内容を外へ送れない
+- **記録しない**: 打ち方を学習せず、打った内容を保存しない
+- **パスワード欄**: 安全入力が有効な間は、キーを変換せずにそのままアプリへ渡す
+
 ## 導入
 
 改竄されていない tugime を安全に入れるために、以下では、配布物が tugime の release workflow で組み立てられたものかを確かめてから入れる方法を案内する。tugime は Apple の有料の公証を受けていないため、代わりに GitHub 上での署名と[出自の証明](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)を用いる。
