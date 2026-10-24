@@ -21,26 +21,33 @@ public struct Comparison: Sendable {
         case unmatched(String)
         /// 同じ id で読み・左の文脈・判定が違う。問題ファイルは同じでも、読み込みの規則が違う道具で取った記録である
         case differentProblem(left: Problem, right: Problem)
+        /// 1 つの記録に同じ id が 2 つある。道具が書く記録では起きないので、手で書き換えた記録である
+        case duplicateID(String)
         public var description: String {
             switch self {
             case .differentProblems(let left, let right): "2 つの記録の問題ファイルが違う版である: \(left) / \(right)"
             case .unmatched(let id): "片方の記録にしか無い問題: \(id)"
             case .differentProblem(let left, let right): "\(left.id) の問題が 2 つの記録で違う: \(left) / \(right)"
+            case .duplicateID(let id): "記録に同じ問題が 2 つある: \(id)"
             }
         }
+    }
+
+    private static func byID(_ results: [AccuracyRecord.Result]) throws -> [String: AccuracyRecord.Result] {
+        try Dictionary(results.map { ($0.problem.id, $0) }) { first, _ in throw Failure.duplicateID(first.problem.id) }
     }
 
     public var left: AccuracyRecord.Header
     public var right: AccuracyRecord.Header
     public var differences: [Difference]
 
-    /// 不変条件: header.problemDigests が一致し、id の集合が一致し、同じ id の問題が一致する。並びは左の記録の順
+    /// 不変条件: header.problemDigests が一致し、どちらの記録も id が重複せず、id の集合が一致し、同じ id の問題が一致する。並びは左の記録の順
     public init(left: AccuracyRecord, right: AccuracyRecord) throws {
         guard left.header.problemDigests == right.header.problemDigests else {
             throw Failure.differentProblems(left: left.header.problemDigests, right: right.header.problemDigests)
         }
-        let rightByID = Dictionary(uniqueKeysWithValues: right.results.map { ($0.problem.id, $0) })
-        let leftIDs = Set(left.results.map(\.problem.id))
+        let rightByID = try Self.byID(right.results)
+        let leftIDs = Set(try Self.byID(left.results).keys)
         if let extra = right.results.first(where: { !leftIDs.contains($0.problem.id) }) {
             throw Failure.unmatched(extra.problem.id)
         }

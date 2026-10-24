@@ -134,7 +134,7 @@ enum MozcRegression {
             if line.isEmpty || line.hasPrefix("#") { continue }
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             guard fields.count >= 4 else { throw ProblemLoadError.malformed(file: file, line: index + 1, String(line)) }
-            // Mozc は空の列を飛ばして読むので、5 列目が無い行も空の行も順位 0 になる
+            // 5 列目が無いか空なら順位 0
             let rank = fields.count < 5 || fields[4].isEmpty ? topRank : fields[4]
             guard let check = checks[fields[3]], rank == topRank else {
                 dropped += 1

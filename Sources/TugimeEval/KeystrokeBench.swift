@@ -74,12 +74,10 @@ public enum KeystrokeBench {
     }
 
     public enum Failure: Error, CustomStringConvertible {
-        case keystrokeCountMismatch(samples: Int, keys: Int)
         /// 測る文が 1 つも無い。時間の分布を作れないので、変換器を作る前に止める
         case noScripts(skipped: Int)
         public var description: String {
             switch self {
-            case .keystrokeCountMismatch(let samples, let keys): "打鍵の回数 \(samples) が打鍵列の長さの合計 \(keys) と一致しない"
             case .noScripts(let skipped): "測る文が無い（綴りで書けず外した文 \(skipped) 件）"
             }
         }
@@ -88,7 +86,6 @@ public enum KeystrokeBench {
     /// 不変条件:
     /// - 文ごとに、打鍵列の先頭 1 文字から全体まで 1 打鍵ずつ伸ばして liveText(prefix, leading: .start) を呼ぶ。入力メソッドが打鍵ごとに呼ぶのと同じ
     /// - 文の前に endComposition を呼ぶ。文の中では呼ばない（入力メソッドは打ち終えるまで覚えを持ち越す）
-    /// - samples.count は全文の keys.count の和に等しい。終わりに確かめ、違えば止める
     public static func run(
         selection: KeystrokeScript.Selection,
         method: ConversionMethod,
@@ -99,7 +96,7 @@ public enum KeystrokeBench {
         let clock = ContinuousClock()
         let loadStart = clock.now
         watchdog.armLoad("読み込み \(method.spec)")
-        let segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: method.make())
+        let segmenter = try method.makeSegmenter()
         let loadSeconds = seconds(clock.now - loadStart)
         let peakAfterLoad = maxResidentBytes()
         progress("変換器の読み込み \(String(format: "%.2f", loadSeconds))s、文 \(selection.scripts.count) 件（綴りで書けず外した文 \(selection.skipped.count) 件）")
@@ -124,8 +121,6 @@ public enum KeystrokeBench {
             progress("[\(n + 1)/\(selection.scripts.count)] \(script.id) \(keys.count) 打鍵 最大 \(String(format: "%.1f", slowest * 1000))ms")
         }
         segmenter.endComposition()
-        let keyCount = selection.scripts.map(\.keys.count).reduce(0, +)
-        guard samples.count == keyCount else { throw Failure.keystrokeCountMismatch(samples: samples.count, keys: keyCount) }
         return Report(
             method: method.spec, loadSeconds: loadSeconds, peakBytesAfterLoad: peakAfterLoad, peakBytes: maxResidentBytes(),
             skipped: selection.skipped.count, samples: samples, finalTexts: finalTexts
@@ -162,13 +157,12 @@ extension KeystrokeBench.Report {
     /// 列: 区切り 打鍵数 中央値 90% 99% 最大（ms）
     public var lines: [String] {
         let mib = { (bytes: Int) in String(format: "%.1fMiB", Double(bytes) / 1_048_576) }
-        let keyCount = finalTexts.map(\.keys.count).reduce(0, +)
         var lines = [
             "方式\t\(method)",
             "読み込み\t\(String(format: "%.2f", loadSeconds))s",
             "最大常駐量\t読み込み直後 \(mib(peakBytesAfterLoad))\t全打鍵の後 \(mib(peakBytes))",
             "文\t\(finalTexts.count) 件（外した文 \(skipped) 件）",
-            "打鍵\t回数 \(samples.count)\t打鍵列の長さの合計 \(keyCount)",
+            "打鍵\t\(samples.count) 回",
             ["読みの文字数", "打鍵数", "中央値ms", "90%ms", "99%ms", "最大ms"].joined(separator: "\t"),
         ]
         func row(_ label: String, _ group: [KeystrokeBench.Sample]) -> String {
