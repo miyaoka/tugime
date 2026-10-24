@@ -60,7 +60,7 @@ Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開し
 
 ### ソースから
 
-Xcode（Swift 6.2 以降）と [uv](https://docs.astral.sh/uv/) が要る。組み立てのときに genmai-310M の重み（約 1.2GB）を Hugging Face から取得し、GGUF（約 340MB）に変換して `.zenz/` に置く。
+Xcode（Swift 6.2 以降）が要る。組み立てのときに genmai-310M の GGUF（約 340MB）を Hugging Face から `.zenz/` に取得する。
 
 ```bash
 scripts/build-app.sh                    # dist/tugime Dev.app を組み立てて ad-hoc 署名する

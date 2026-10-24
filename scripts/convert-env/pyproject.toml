@@ -17,5 +17,5 @@ dependencies = [
 
 [tool.uv]
 package = false
-# 手元と CI の uv の版。CI の setup-uv はこのファイルからこの値を読む
+# 変換に使う uv の版
 required-version = "==0.13.5"
