@@ -74,7 +74,7 @@ jobs:
         run: |
           swift build --product tugime-cli
           zenz=$(scripts/fetch-zenz.sh)
-          .build/debug/tugime-cli --zenz "$zenz" --corpus corpus/examples.tsv
+          .build/debug/tugime-cli --method "zenzai:$zenz" --corpus corpus/examples.tsv
 
   # ==============================================================
   # 配布物の組み立て（リソースの同梱・Info.plist・署名）が壊れていないかを、release より前に検知する

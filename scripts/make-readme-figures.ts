@@ -75,7 +75,7 @@ async function readSteps(prefixes: string[], zenz: string) {
   const explainOut = await run([cli, "--explain", ...prefixes]);
   const explainLines = explainOut.split("\n").filter((l) => /\t[EJP]\[/.test(l));
   if (explainLines.length !== prefixes.length) throw new Error(`--explain の行数 ${explainLines.length} が ${prefixes.length} と合わない`);
-  const liveOut = await run([cli, "--zenz", zenz, "--live", ...prefixes]);
+  const liveOut = await run([cli, "--method", `zenzai:${zenz}`, "--live", ...prefixes]);
   return prefixes.map((prefix, i) => {
     const line = liveOut.split("\n").find((l) => l.startsWith(`${prefix}\t`));
     if (!line) throw new Error(`--live の結果が無い: ${prefix}`);

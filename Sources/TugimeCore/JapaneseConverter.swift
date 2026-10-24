@@ -70,7 +70,7 @@ public protocol JapaneseConverting: AnyObject {
 
 /// AzooKeyKanaKanjiConverter による変換。学習は使わないので、同じかなには常に同じ結果を返す。
 /// 採点は辞書と n-gram だけで行い、表示は Zenzai（ニューラルの言語モデル）で左の文脈を見て選び直す
-public final class AzooKeyConverter: JapaneseConverting {
+final class AzooKeyConverter: JapaneseConverting {
     /// 英語区間の代わりに前へ置く名詞。辞書で 1 語に定まり、後ろの語と融合しにくいもの
     private static let nounStandIn = (kana: "てすと", word: "テスト")
     /// 変換エンジンに求める上位の数。採点は区間ごとに何百回も呼ぶので少なくする。
@@ -124,7 +124,7 @@ public final class AzooKeyConverter: JapaneseConverting {
     private var scoringSessions: [(id: KanaKanjiConverter.ConversionSessionID, last: String, used: Int)] = []
     private var scoringClock = 0
 
-    public init(zenzaiWeight: URL?) {
+    init(zenzaiWeight: URL?) {
         converter = KanaKanjiConverter.withDefaultDictionary()
         self.zenzaiWeight = zenzaiWeight
     }
@@ -255,8 +255,8 @@ public final class AzooKeyConverter: JapaneseConverting {
     private static let preloadKana = "にほんご"
 
     /// Zenzai のモデルを読み込む。変換エンジンはモデルを最初の Zenzai の要求で読むので、固定のかなで 1 回要求する。
-    /// モデルを読めなければ止まる
-    public func preloadZenzai() {
+    /// モデルを読めなければ止まる。変換器は ConversionMethod.make() が作り、そこで呼ぶ
+    func preloadZenzai() {
         guard let zenzaiWeight else { preconditionFailure("Zenzai のモデルを渡していない変換器で先読みした") }
         _ = candidates(Self.preloadKana, nBest: 1, zenzai: Self.zenzai(weight: zenzaiWeight, left: ""))
     }
