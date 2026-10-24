@@ -193,7 +193,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
         var bytes: [UInt8] = []
         var buffer = [CChar](repeating: 0, count: 64)
         for token in tokens {
-            let count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+            var count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+            // 領域が足りないと、要る大きさを負の数で返す
+            if count < 0 {
+                buffer = [CChar](repeating: 0, count: Int(-count))
+                count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+            }
             guard count >= 0 else { fatalError("トークンを文字にする領域が足りない: \(token)") }
             bytes += buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
         }
