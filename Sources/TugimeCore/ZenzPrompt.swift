@@ -79,6 +79,17 @@ enum ZenzPrompt {
         return parts.map { String(String.UnicodeScalarView($0)) }
     }
 
+    /// fits が偽を返す区切りを、真を返すまで半分ずつに分ける。読みは削らないので、繋ぐと元の区切りの並びになる
+    static func halving(_ parts: [String], until fits: (String) -> Bool) -> [String] {
+        parts.flatMap { part -> [String] in
+            if fits(part) { return [part] }
+            let scalars = part.unicodeScalars
+            precondition(scalars.count > 1, "1 字の読みが収まらない: \(part)")
+            let half = scalars.count / 2
+            return halving([String(String.UnicodeScalarView(scalars.prefix(half))), String(String.UnicodeScalarView(scalars.dropFirst(half)))], until: fits)
+        }
+    }
+
     private static func katakana(_ s: String) -> String {
         String(String.UnicodeScalarView(s.unicodeScalars.map {
             (0x3041...0x3096).contains($0.value) ? Unicode.Scalar($0.value + 0x60)! : $0

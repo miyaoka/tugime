@@ -80,16 +80,11 @@ final class ZenzGenerator: DirectDisplayGenerating {
         var parts = ZenzPrompt.chunks(kana, maxLength: ZenzPrompt.maxChunkLength(positions: maxPositions))[...]
         while let part = parts.popFirst() {
             let contextText = left + output
-            // 出力に位置の半分までを使い、残りに入力を収める
-            let limit = min(ZenzPrompt.outputLimit(part), maxPositions / 2)
+            let limit = outputLimit(part)
             guard let prompt = fittedPrompt(context: contextText, kana: part, limit: limit) else {
-                // 文脈を空にしても収まらない（読みの字が複数のトークンになる）区切りは、半分に分けて続ける。読みは削らない
-                precondition(part.unicodeScalars.count > 1, "1 字の読みがモデルの位置の上限 \(maxPositions) に収まらない: \(part)")
-                let half = part.unicodeScalars.count / 2
-                parts.insert(contentsOf: [
-                    String(String.UnicodeScalarView(part.unicodeScalars.prefix(half))),
-                    String(String.UnicodeScalarView(part.unicodeScalars.dropFirst(half))),
-                ], at: parts.startIndex)
+                // 文脈を空にしても収まらない区切り（読みの字が複数のトークンになるとき）は、収まるまで半分に分ける。読みは削らない
+                let halves = ZenzPrompt.halving([part]) { fittedPrompt(context: "", kana: $0, limit: outputLimit($0)) != nil }
+                parts.insert(contentsOf: halves, at: parts.startIndex)
                 continue
             }
             let tokens = greedy(prompt, limit: limit, draft: drafts[contextText] ?? [])
@@ -102,6 +97,11 @@ final class ZenzGenerator: DirectDisplayGenerating {
     func reset() {
         truncate(0)
         drafts = [:]
+    }
+
+    /// 1 つの区切りで生成するトークン数の上限。出力に位置の半分までを使い、残りに入力を収める
+    private func outputLimit(_ part: String) -> Int {
+        min(ZenzPrompt.outputLimit(part), maxPositions / 2)
     }
 
     /// 入力と limit 個の出力が位置の上限に収まるよう、左の文脈を前から削った入力。文脈の目印は残す。

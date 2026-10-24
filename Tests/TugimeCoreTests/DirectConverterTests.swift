@@ -124,22 +124,14 @@ private final class FixedGenerator: DirectDisplayGenerating {
     }
 }
 
-/// 手元のモデル（scripts/fetch-zenz.sh などが .zenz に置く）。無ければこのテストは飛ばす
-nonisolated private let localGenmai = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    .appendingPathComponent(".zenz/genmai-310M-c348c10-q8_0.gguf")
-
-@Suite struct ZenzGeneratorTests {
-    /// 1 字が複数のトークンになる字だけの読みは、文脈が空でも位置に収まらない。区切りを分けて最後まで変換し、落ちない
-    @Test(.enabled(if: FileManager.default.fileExists(atPath: localGenmai.path)))
-    func splitsAReadingThatDoesNotFitEvenWithoutContext() {
-        let generator = ZenzGenerator(weight: localGenmai)
-        let output = generator.generate(left: "", kana: String(repeating: "𠮷", count: 300))
-        #expect(!output.isEmpty)
-    }
-}
-
 @Suite struct ZenzPromptTests {
+    /// 収まらない区切りは、読みを削らずに収まるまで半分に分ける。収まる区切りは分けない
+    @Test func halvesOnlyTheChunksThatDoNotFit() {
+        let parts = ZenzPrompt.halving(["あいうえおかきくけ", "さし"]) { $0.count <= 3 }
+        #expect(parts == ["あい", "うえ", "おか", "きくけ", "さし"])
+        #expect(parts.joined() == "あいうえおかきくけさし")
+    }
+
     @Test func buildsTheZenzFormat() {
         #expect(ZenzPrompt.text(left: "", kana: "きょうは") == "\u{EE00}キョウハ\u{EE01}")
         #expect(ZenzPrompt.text(left: "a b\nc", kana: "ゔぁ") == "\u{EE02}a\u{3000}bc\u{EE00}ヴァ\u{EE01}")
