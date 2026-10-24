@@ -8,8 +8,8 @@ name=tugime
 case "${TUGIME_BUILD_CHANNEL:-}" in
     stable) ;;
     "")
-        bundle_id="$bundle_id.local"
-        name="tugime Local"
+        bundle_id="$bundle_id.dev"
+        name="tugime Dev"
         ;;
     *)
         echo "TUGIME_BUILD_CHANNEL は stable か無指定: $TUGIME_BUILD_CHANNEL" >&2
