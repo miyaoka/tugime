@@ -1,0 +1,13 @@
+model/genmai-310M-q8_0.gguf
+
+表示の変換のモデル genmai-310M（v0.1.1）。
+出典: https://huggingface.co/subdiox/genmai-310M（コミット c348c1018f3b02c15399c02f58a379add4cc1408）
+利用条件: Creative Commons Attribution-ShareAlike 4.0 International（CC BY-SA 4.0）
+https://creativecommons.org/licenses/by-sa/4.0/
+変更: 出典の model.safetensors を、llama.cpp の convert_hf_to_gguf.py で GGUF の q8_0 に変換した（scripts/convert-hf-to-gguf.sh）。
+
+genmai-310M は zenz-v2.5-medium を元に学習したモデルで、zenz-v2.5-medium は ku-nlp の gpt2-medium-japanese-char を元にしている。
+出典: https://huggingface.co/Miwa-Keita/zenz-v2.5-medium
+利用条件: Creative Commons Attribution-ShareAlike 4.0 International（CC BY-SA 4.0）
+出典: https://huggingface.co/ku-nlp/gpt2-medium-japanese-char
+利用条件: Creative Commons Attribution-ShareAlike 4.0 International（CC BY-SA 4.0）

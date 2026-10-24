@@ -24,8 +24,8 @@ app="$root/dist/$name.app"
 # 対象は Apple Silicon だけなので arm64 だけを組み立てる。swiftbuild は指定しないと Intel 向けも含めた universal にする
 build=(swift build --package-path "$root" -c release --build-system swiftbuild --arch arm64)
 
-echo "== Zenzai のモデル"
-zenz=$("$root/scripts/fetch-zenz.sh")
+echo "== 表示の変換のモデル"
+model=$("$root/scripts/fetch-genmai.sh")
 
 echo "== swift build"
 "${build[@]}" --product tugime
@@ -33,9 +33,9 @@ bin=$("${build[@]}" --show-bin-path)
 
 echo "== 組み立て $app"
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/zenz" "$app/Contents/Frameworks"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/model" "$app/Contents/Frameworks"
 cp "$bin/tugime" "$app/Contents/MacOS/tugime"
-# Zenzai の推論に使う llama.cpp。実行ファイルは @rpath/llama.framework を探すので、Frameworks を探し場所に足す
+# モデルの推論に使う llama.cpp。実行ファイルは @rpath/llama.framework を探すので、Frameworks を探し場所に足す
 cp -R "$bin/llama.framework" "$app/Contents/Frameworks/"
 # 配られている llama.framework は Intel 向けも含む。対象は Apple Silicon だけなので arm64 だけを残す
 llama=$(readlink -f "$app/Contents/Frameworks/llama.framework/llama")
@@ -43,7 +43,7 @@ if [[ "$(lipo -archs "$llama")" != "arm64" ]]; then
     lipo -thin arm64 "$llama" -output "$llama"
 fi
 install_name_tool -add_rpath @executable_path/../Frameworks "$app/Contents/MacOS/tugime"
-cp "$zenz" "$app/Contents/Resources/zenz/"
+cp "$model" "$app/Contents/Resources/model/"
 for bundle in "$bin"/*.bundle; do
     cp -R "$bundle" "$app/Contents/Resources/"
 done
