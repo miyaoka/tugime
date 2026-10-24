@@ -17,7 +17,7 @@ let usage = """
     方式: \(ConversionMethod.forms)
     問題の dir は scripts/fetch-eval.sh が出す。モデルは scripts/fetch-zenz.sh か scripts/convert-hf-to-gguf.sh が出す
     終了コード: 0 成功 / 1 モデルが効いていない / 2 使い方の誤り / 3 時間の上限を超えた / 4 それ以外のエラー。
-    在っても読めないモデルは、変換エンジンがプロセスごと止める（終了コードはこの表に無い）
+    在っても読めないモデルは、tugime の変換器が fatalError でプロセスごと止める（終了コードはこの表に無い）
     """
 
 struct UsageError: Error, CustomStringConvertible {

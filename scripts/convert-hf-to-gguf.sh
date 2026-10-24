@@ -41,6 +41,8 @@ if [[ ! -f "$listing" ]]; then
     curl -fL --retry 3 --max-time 60 -o "$listing.part" "https://huggingface.co/api/models/$repo/tree/$commit"
     mv "$listing.part" "$listing"
 fi
+# ファイル一覧を読む Python。macOS の /usr/bin/python3 は Command Line Tools が無いと動かないので、変換と同じ uv の Python を使う
+py=(uv run --no-project --python 3.11 python -I)
 fetch() {
     for file in "$@"; do
         [[ -f "$source_dir/$file" ]] && continue
@@ -51,20 +53,20 @@ fetch() {
     done
 }
 meta=()
-while IFS= read -r line; do meta+=("$line"); done < <(/usr/bin/python3 -c '
+while IFS= read -r line; do meta+=("$line"); done < <("${py[@]}" -c '
 import json, re, sys
 for entry in json.load(open(sys.argv[1])):
     if entry.get("type") == "file" and re.match(sys.argv[2], entry["path"]):
         print(entry["path"])
 ' "$listing" "$hf_pattern")
-if ! printf '%s\n' "${meta[@]}" | grep -qx config.json; then
+if [[ ${#meta[@]} -eq 0 ]] || ! printf '%s\n' "${meta[@]}" | grep -qx config.json; then
     echo "$repo $commit に config.json が無い" >&2
     exit 1
 fi
 fetch "${meta[@]}"
 
 weights=()
-while IFS= read -r line; do weights+=("$line"); done < <(/usr/bin/python3 -c '
+while IFS= read -r line; do weights+=("$line"); done < <("${py[@]}" -c '
 import json, os, sys
 listing, index = sys.argv[1], sys.argv[2]
 if os.path.exists(index):
