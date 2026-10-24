@@ -13,8 +13,11 @@ llama_repo=https://github.com/azooKey/llama.cpp
 llama_commit=10131b23ee0dbd9d03dfc618cec9fe3402919277 # タグ b4846
 # Zenzai が読む前処理の名前。convert_hf_to_gguf.py がトークナイザーから判別した結果がこれでなければ止める
 pre_tokenizer=gpt2-small-japanese-char
-# 変換に読むファイル
-hf_files=(config.json tokenizer.json tokenizer_config.json model.safetensors)
+# 設定とトークナイザーのファイルの名前（リポジトリの直下のもの）。トークナイザーの形（tokenizer.json か vocab.json と merges.txt か）は
+# モデルごとに違うので、そのコミットのファイル一覧からこの形に合うものを全部取る
+hf_pattern='^(config\.json|generation_config\.json|tokenizer\.json|tokenizer_config\.json|special_tokens_map\.json|vocab\.json|merges\.txt|model\.safetensors\.index\.json)$'
+# 重みは transformers と同じく、分割の目録があればそこに書かれたファイル、無ければ model.safetensors だけを取る。
+# 変換はディレクトリの safetensors をすべて読むので、IME 用の量子化版など別の重みを並べて置かない
 
 if [[ $# -ne 4 ]]; then
     sed -n '2,6p' "$0" >&2
@@ -33,12 +36,54 @@ fi
 # 変換はディレクトリの名前から general.name などを作るので、最後をリポジトリの名前にする
 source_dir="$root/.eval/hf/$commit/$repo"
 mkdir -p "$source_dir"
-for file in "${hf_files[@]}"; do
-    [[ -f "$source_dir/$file" ]] && continue
-    url="https://huggingface.co/$repo/resolve/$commit/$file"
-    echo "== 取得 $url" >&2
-    curl -fL --retry 3 --max-time 1800 -o "$source_dir/$file.part" "$url"
-    mv "$source_dir/$file.part" "$source_dir/$file"
+listing="$source_dir/.files.json"
+if [[ ! -f "$listing" ]]; then
+    curl -fL --retry 3 --max-time 60 -o "$listing.part" "https://huggingface.co/api/models/$repo/tree/$commit"
+    mv "$listing.part" "$listing"
+fi
+fetch() {
+    for file in "$@"; do
+        [[ -f "$source_dir/$file" ]] && continue
+        url="https://huggingface.co/$repo/resolve/$commit/$file"
+        echo "== 取得 $url" >&2
+        curl -fL --retry 3 --max-time 1800 -o "$source_dir/$file.part" "$url"
+        mv "$source_dir/$file.part" "$source_dir/$file"
+    done
+}
+meta=()
+while IFS= read -r line; do meta+=("$line"); done < <(/usr/bin/python3 -c '
+import json, re, sys
+for entry in json.load(open(sys.argv[1])):
+    if entry.get("type") == "file" and re.match(sys.argv[2], entry["path"]):
+        print(entry["path"])
+' "$listing" "$hf_pattern")
+if ! printf '%s\n' "${meta[@]}" | grep -qx config.json; then
+    echo "$repo $commit に config.json が無い" >&2
+    exit 1
+fi
+fetch "${meta[@]}"
+
+weights=()
+while IFS= read -r line; do weights+=("$line"); done < <(/usr/bin/python3 -c '
+import json, os, sys
+listing, index = sys.argv[1], sys.argv[2]
+if os.path.exists(index):
+    for name in sorted(set(json.load(open(index))["weight_map"].values())):
+        print(name)
+elif any(e.get("path") == "model.safetensors" for e in json.load(open(listing))):
+    print("model.safetensors")
+' "$listing" "$source_dir/model.safetensors.index.json")
+if [[ ${#weights[@]} -eq 0 ]]; then
+    echo "$repo $commit に model.safetensors も分割の目録も無い" >&2
+    exit 1
+fi
+fetch "${weights[@]}"
+# 重みの組に入らない safetensors が置かれていれば止める（変換がそれも読むため）
+for file in "$source_dir"/*.safetensors; do
+    if ! printf '%s\n' "${weights[@]}" | grep -qx "$(basename "$file")"; then
+        echo "重みの組に入らない $file がある。消してからやり直す" >&2
+        exit 1
+    fi
 done
 
 llama="$root/.eval/llama.cpp"
