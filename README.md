@@ -40,34 +40,31 @@ Apple Silicon の macOS。動作は macOS 27 でだけ確かめている。
 
 ## 導入
 
-以下では、取得した配布物が本物であることを確かめてから入れる方法を案内する。tugime は Apple の有料の公証を受けていないため、代わりに GitHub が配布物に付ける「[出自の証明](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)」を用いる。
+改竄されていない tugime を安全に入れるために、以下では、配布物が tugime の release workflow で組み立てられたものかを確かめてから入れる方法を案内する。tugime は Apple の有料の公証を受けていないため、代わりに GitHub 上での署名と[出自の証明](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)を用いる。
 
-入れ方は次の 3 つで、初めて入れたときだけ、最後に入力ソースを追加する。
+入れ方は次の A〜C のどれか 1 つを選ぶ。どれで入れても、初めて入れたときだけ、最後に入力ソースを追加する。
 
-### mise で入れる
+### A. mise で入れる
 
-[mise](https://mise.jdx.dev/) は、出自の証明を自動で確かめてから入れる。コマンドは 1 つで、更新は `mise up` だけでよい。
-
-```bash
-mise use -g 'github:miyaoka/tugime[postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
-```
-
-### GitHub CLI で入れる
-
-mise を使わないときは、[GitHub CLI](https://cli.github.com/) で同じ確かめを手で行う。更新するときも同じ手順でよい。
+[mise](https://mise.jdx.dev/) を使うと、mise が配布物を確かめてから入れる。tugime の release workflow が署名していない配布物や、署名のあとで書き換えられた配布物は、mise が入れずに止める。確かめには [packslip](https://packslip.dev/) という仕組みを使う。更新は `mise up` だけでよい。
 
 ```bash
-# 1. 最新版を取得する
-gh release download --repo miyaoka/tugime --pattern tugime-macos-arm64.tar.gz
-# 2. tugime のリポジトリで組み立てられたものかを確かめる。失敗と表示されたら、ここで止めて先に進まない
-gh attestation verify tugime-macos-arm64.tar.gz --repo miyaoka/tugime --signer-workflow miyaoka/tugime/.github/workflows/release.yml
-# 3. 展開して入れる
-mkdir tugime
-tar -xzf tugime-macos-arm64.tar.gz -C tugime
-bash tugime/install.sh
+mise use -g 'packslip:github.com/miyaoka/tugime[postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
 ```
 
-### ソースから組み立てて入れる
+### B. GitHub CLI で入れる
+
+mise を使わないときは、[GitHub CLI](https://cli.github.com/) で、同じく改竄されていないことを確かめてから入れる。次のコマンドは、一時ディレクトリに最新版を取得し、tugime の release workflow が組み立てたものかを確かめ、確かめられたときだけ展開して入れる。更新するときも同じコマンドでよい。
+
+```bash
+dir=$(mktemp -d) &&
+gh release download --repo miyaoka/tugime --pattern tugime-macos-arm64.tar.gz --dir "$dir" &&
+gh attestation verify "$dir/tugime-macos-arm64.tar.gz" --repo miyaoka/tugime --cert-identity https://github.com/miyaoka/tugime/.github/workflows/release.yml@refs/heads/main &&
+tar -xzf "$dir/tugime-macos-arm64.tar.gz" -C "$dir" &&
+bash "$dir/install.sh"
+```
+
+### C. ソースから組み立てて入れる
 
 Xcode（Swift 6.2 以降）が要る。組み立てのときに genmai-310M の GGUF（約 340MB）を Hugging Face から `.zenz/` に取得する。自分で組み立てるので、出自の確かめは要らない。
 

@@ -130,16 +130,32 @@ jobs:
           name: tugime-macos-arm64
           path: dist
 
-      # 署名の代わりの改竄検知。利用者は gh attestation verify で確かめ、mise は証明が付いていれば確かめる
+      # 署名の代わりの改竄検知。gh attestation verify で入れる利用者が確かめる
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/tugime-macos-arm64.tar.gz
 
-      # mise と gh release download は Latest の版を最新として取るため、Latest を明示する
-      - name: Create release
+      # Releases は immutable なので、署名した目録を上げ終えるまで下書きにしておく
+      - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" --generate-notes --latest --target "${GITHUB_SHA}" dist/tugime-macos-arm64.tar.gz
+          gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" --draft --generate-notes --target "${GITHUB_SHA}" dist/tugime-macos-arm64.tar.gz
+
+      # mise の packslip の入れ方が確かめる、この workflow で署名した目録を上げる
+      - name: Sign and upload packslip
+        uses: jdx/packslip@ddcddd9c8c33977d2d08d5db91caec579da59aab # v1.11.0
+        with:
+          artifacts: dist/tugime-macos-arm64.tar.gz
+          tag: ${{ env.TAG }}
+          attest: link
+
+      # mise と gh release download は Latest の版を最新として取るため、Latest を明示する
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest

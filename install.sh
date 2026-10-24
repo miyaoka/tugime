@@ -5,8 +5,7 @@
 # 使い方:
 #   bash install.sh [<.app>]
 #
-# 導入する .app は、引数、無ければこのファイルの隣の tugime.app。取得はしない。
-# 配布物の出自は、展開する前に利用者か mise が確かめる
+# 導入する .app は、引数、無ければこのファイルの隣の tugime.app
 set -euo pipefail
 
 lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -16,7 +15,9 @@ if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
     exit 1
 fi
 
-src="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tugime.app}"
+# 標準入力から実行すると隣の場所が決まらない。コマンド置換の中で失敗しても外は止まらないので、ここで止める
+script="${BASH_SOURCE[0]:?install.sh はファイルとして実行する（bash install.sh）}"
+src="${1:-$(cd "$(dirname "$script")" && pwd)/tugime.app}"
 [[ -d "$src/Contents" ]] || { echo "$src は .app ではない" >&2; exit 1; }
 # 置く名前は .app のディレクトリ名にする。渡し方（相対パス・末尾の /.）で変わらないよう、実体の絶対パスに直してから取る
 src=$(CDPATH='' cd -- "$src" && pwd -P)
@@ -27,8 +28,6 @@ exe="$dest/Contents/MacOS/tugime"
 # バンドルを消さずに中身を上書きする。バンドルが無い瞬間に macOS が入力源の一覧を作り直すと登録が消えるため
 mkdir -p "$dest"
 rsync -a --delete "$src/" "$dest/"
-# ブラウザで取得した配布物から入れたときの隔離属性を外す。ad-hoc 署名なので、付いたままだと起動できない
-xattr -dr com.apple.quarantine "$dest"
 "$lsregister" -f "$dest"
 "$exe" --register
 # 動いている古い版を止める。次に入力源が選ばれたときに新しい版が起動する
