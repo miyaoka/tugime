@@ -26,7 +26,7 @@ public struct KeystrokeScript: Sendable {
     /// 綴りで書けない文字を含む問題は外して返す。外した数は呼び出し元が出す
     public static func select(from problems: [Problem], table: RomajiTable) -> Selection {
         var selection = Selection(scripts: [], skipped: [])
-        for problem in problems where problem.set == "ajimee" && problem.left.isEmpty {
+        for problem in problems where problem.set == AJIMEE.set && problem.left.isEmpty {
             guard let spelled = Segmenter.spelling(of: problem.kana, table: table) else {
                 selection.skipped.append(problem)
                 continue
@@ -50,7 +50,7 @@ public struct KeystrokeScript: Sendable {
 }
 
 /// 打鍵の性能の実行。1 つの方式を 1 プロセスで測る。
-/// ピークのメモリはプロセスの最大常駐量で測るので、同じプロセスで別の方式（基準も含む）の変換器を作らない。精度の実行とは逆の判断である
+/// ピークのメモリはプロセスの最大常駐量で測るので、同じプロセスで別の方式（基準も含む）の変換器を作らない
 public enum KeystrokeBench {
     public struct Sample: Sendable {
         public var scriptID: String

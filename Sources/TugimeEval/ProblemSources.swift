@@ -18,11 +18,11 @@ public struct ProblemFiles: Sendable {
     /// 1 ファイルを読んだ問題と、捨てた行の数
     typealias Parsed = (problems: [Problem], dropped: Int)
 
-    /// fetch-eval.sh が置くファイル名と、それを読む関数の表。集まりを足すときはスクリプトとこの表に 1 行ずつ足す
-    static let sources: [(file: String, load: @Sendable (Data) throws -> Parsed)] = [
-        ("ajimee-evaluation_items.json", { (try AJIMEE.problems(from: $0), 0) }),
-        ("mozc-oss.tsv", { try MozcRegression.problems(from: $0, file: "mozc-oss.tsv", set: "mozc-oss") }),
-        ("mozc-regression.tsv", { try MozcRegression.problems(from: $0, file: "mozc-regression.tsv", set: "mozc-regression") }),
+    /// fetch-eval.sh が置くファイル名・集まりの名前・読む関数の表。集まりを足すときはスクリプトとこの表に 1 行ずつ足す
+    static let sources: [(file: String, set: String, load: @Sendable (Data, String, String) throws -> Parsed)] = [
+        ("ajimee-evaluation_items.json", AJIMEE.set, { (try AJIMEE.problems(from: $0, file: $1, set: $2), 0) }),
+        ("mozc-oss.tsv", "mozc-oss", MozcRegression.problems(from:file:set:)),
+        ("mozc-regression.tsv", "mozc-regression", MozcRegression.problems(from:file:set:)),
     ]
 
     public init(directory: URL) {
@@ -38,7 +38,7 @@ public struct ProblemFiles: Sendable {
             let url = directory.appendingPathComponent(source.file)
             guard FileManager.default.fileExists(atPath: url.path) else { throw ProblemLoadError.missingFile(url) }
             let data = try Data(contentsOf: url)
-            let parsed = try source.load(data)
+            let parsed = try source.load(data, source.file, source.set)
             for problem in parsed.problems where !seen.insert(problem.id).inserted {
                 throw ProblemLoadError.duplicateID(problem.id)
             }
@@ -70,7 +70,8 @@ public enum ProblemLoadError: Error, CustomStringConvertible {
 
 /// AJIMEE-Bench の JWTD_v2/v1/evaluation_items.json
 enum AJIMEE {
-    static let file = "ajimee-evaluation_items.json"
+    /// 集まりの名前。打鍵の計測もこの集まりから文を選ぶ
+    static let set = "ajimee"
 
     /// JSON の 1 項目。使わない欄は読まない。index が無い項目は位置で代用せず止めるので、ここでは任意にして読む
     struct Item: Decodable {
@@ -80,14 +81,14 @@ enum AJIMEE {
         var expected_output: [String]
     }
 
-    /// id は `ajimee:<index の欄の値>`。input はカタカナなのでひらがなにする。left は context_text
-    static func problems(from data: Data) throws -> [Problem] {
+    /// id は `<set>:<index の欄の値>`。input はカタカナなのでひらがなにする。left は context_text
+    static func problems(from data: Data, file: String, set: String) throws -> [Problem] {
         let items = try JSONDecoder().decode([Item].self, from: data)
         return try items.enumerated().map { position, item in
             guard let index = item.index else {
                 throw ProblemLoadError.malformed(file: file, line: position + 1, "index が無い")
             }
-            return Problem(id: "ajimee:\(index)", set: "ajimee", kana: hiragana(item.input), left: item.context_text, check: .oneOf(item.expected_output))
+            return Problem(id: "\(set):\(index)", set: set, kana: hiragana(item.input), left: item.context_text, check: .oneOf(item.expected_output))
         }
     }
 
@@ -117,7 +118,11 @@ enum MozcRegression {
         "Conversion Not Match": { .excludes($0) },
     ]
 
-    /// 列: label・かなの key・value・command（5 列目があっても読まない）。id は `<set>:<ファイルの行番号>`。left は空。
+    /// 5 列目は許す順位。0（先頭の候補）だけが表示の変換 1 つで判定できる
+    static let topRank = "0"
+
+    /// 列: label・かなの key・value・command・順位（5 列目は無くてもよい）。id は `<set>:<ファイルの行番号>`。left は空。
+    /// 順位が先頭の候補でない行は、command が表にあっても捨てて数える。
     /// # で始まる行と空行は飛ばし、捨てた数に入れない。列が 4 つ未満の行は malformed で止める
     static func problems(from data: Data, file: String, set: String) throws -> ProblemFiles.Parsed {
         guard let text = String(data: data, encoding: .utf8) else {
@@ -129,7 +134,7 @@ enum MozcRegression {
             if line.isEmpty || line.hasPrefix("#") { continue }
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             guard fields.count >= 4 else { throw ProblemLoadError.malformed(file: file, line: index + 1, String(line)) }
-            guard let check = checks[fields[3]] else {
+            guard let check = checks[fields[3]], fields.count < 5 || fields[4] == topRank else {
                 dropped += 1
                 continue
             }
