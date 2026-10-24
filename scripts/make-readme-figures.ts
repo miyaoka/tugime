@@ -71,11 +71,11 @@ function parseSegments(described: string): Segment[] {
 }
 
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）
-async function readSteps(prefixes: string[], zenz: string) {
+async function readSteps(prefixes: string[], model: string) {
   const explainOut = await run([cli, "--explain", ...prefixes]);
   const explainLines = explainOut.split("\n").filter((l) => /\t[EJP]\[/.test(l));
   if (explainLines.length !== prefixes.length) throw new Error(`--explain の行数 ${explainLines.length} が ${prefixes.length} と合わない`);
-  const liveOut = await run([cli, "--method", `zenzai:${zenz}`, "--live", ...prefixes]);
+  const liveOut = await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]);
   return prefixes.map((prefix, i) => {
     const line = liveOut.split("\n").find((l) => l.startsWith(`${prefix}\t`));
     if (!line) throw new Error(`--live の結果が無い: ${prefix}`);
@@ -157,11 +157,11 @@ function mergedBounds(spans: { kind: string; s: number; e: number }[]): string {
   return merged.map((m) => `${m.kind}${m.s}-${m.e}`).join(" ");
 }
 
-const zenz = await step("Zenzai のモデルの取得", async () => (await run([join(root, "scripts/fetch-zenz.sh")])).trim().split("\n").pop()!);
+const model = await step("表示の変換のモデルの用意", async () => (await run([join(root, "scripts/fetch-genmai.sh")])).trim().split("\n").pop()!);
 await step("tugime-cli の組み立て", () => run(["swift", "build", "--product", "tugime-cli"]));
 
 const stepPrefixes = stepEnds.map((end) => input.slice(0, end));
-const steps = await step("各時点の区切りと表示", () => readSteps(stepPrefixes, zenz));
+const steps = await step("各時点の区切りと表示", () => readSteps(stepPrefixes, model));
 const versusPrefixes = versusEnds.map((end) => input.slice(0, end));
 const lattices = await step("区間の候補", () => readLattices([...new Set([input, ...versusPrefixes])]));
 

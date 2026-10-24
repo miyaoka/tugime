@@ -38,7 +38,7 @@ func printStatus() -> Int32 {
     return 0
 }
 
-/// 組み立てたバンドルから綴りの表・語表・辞書・Zenzai のモデルを読み、1 文を表示の変換で変換して出す。読めなければ初期化の時点で止まる
+/// 組み立てたバンドルから綴りの表・語表・辞書・表示の変換のモデルを読み、1 文を表示の変換で変換して出す。読めなければ初期化の時点で止まる
 func check() -> Int32 {
     let input = "kyouhagoogledekensaku"
     print("\(input)\t\(sharedSegmenter.displayText(input))")
@@ -67,6 +67,6 @@ let candidatePanel: IMKCandidates = {
     panel.setAttributes([IMKCandidatesSendServerKeyEventFirst: true])
     return panel
 }()
-// 綴りの表・語表・辞書と Zenzai のモデルの読み込みを、最初の打鍵より前に済ませる
+// 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる
 _ = sharedSegmenter
 NSApplication.shared.run()

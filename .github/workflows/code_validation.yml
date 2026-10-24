@@ -68,13 +68,19 @@ jobs:
       - name: Test
         run: swift test
 
+      # 表示の変換のモデルを Hugging Face の重みから変換するのに使う
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version-file: scripts/convert-env/pyproject.toml
+          enable-cache: false
+
       # 日英判定と変換結果の一致件数を記録に残す。件数では落とさず、CLI が実行に失敗したときだけ落とす。
-      # 変換結果は配布物と同じく、表示の変換に Zenzai を使って数える
+      # 変換結果は配布物と同じ方式とモデルで数える
       - name: Corpus
         run: |
           swift build --product tugime-cli
-          zenz=$(scripts/fetch-zenz.sh)
-          .build/debug/tugime-cli --method "zenzai:$zenz" --corpus corpus/examples.tsv
+          model=$(scripts/fetch-genmai.sh)
+          .build/debug/tugime-cli --method "direct:$model" --corpus corpus/examples.tsv
 
   # ==============================================================
   # 配布物の組み立て（リソースの同梱・Info.plist・署名）が壊れていないかを、release より前に検知する
@@ -90,10 +96,16 @@ jobs:
           persist-credentials: false
           show-progress: false
 
+      # 表示の変換のモデルを Hugging Face の重みから変換するのに使う
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version-file: scripts/convert-env/pyproject.toml
+          enable-cache: false
+
       - name: Build .app
         run: TUGIME_BUILD_CHANNEL=stable scripts/build-app.sh
 
-      # 利用者の Mac と同じく、組み立てたディレクトリが無い状態で辞書・Zenzai のモデル・llama.framework を読めるか。
+      # 利用者の Mac と同じく、組み立てたディレクトリが無い状態で辞書・表示の変換のモデル・llama.framework を読めるか。
       # 実行ファイルと llama.framework が arm64 だけか
       - name: Check .app
         run: scripts/check-app.sh dist/tugime.app

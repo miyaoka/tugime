@@ -15,7 +15,7 @@ let usage = """
           AJIMEE-Bench の文脈の無い文を 1 打鍵ずつ打ち、1 打鍵の時間・読み込み時間・最大常駐量を出す。
           --out には 打鍵列 と最後の表示 をタブ区切りで書く（tugime-cli --live の出力と同じ形）
     方式: \(ConversionMethod.forms)
-    問題の dir は scripts/fetch-eval.sh が出す。モデルは scripts/fetch-zenz.sh か scripts/convert-hf-to-gguf.sh が出す
+    問題の dir は scripts/fetch-eval.sh が出す。入力メソッドと同じモデルは scripts/fetch-genmai.sh が、ほかのモデルは scripts/convert-hf-to-gguf.sh が出す
     終了コード: 0 成功 / 1 モデルが効いていない / 2 使い方の誤り / 3 時間の上限を超えた / 4 それ以外のエラー。
     在っても読めないモデルは、tugime の変換器が fatalError でプロセスごと止める（終了コードはこの表に無い）
     """
