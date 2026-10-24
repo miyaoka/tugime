@@ -230,8 +230,8 @@ final class TugimeInputController: IMKInputController {
             }
             return true
         }
-        if clauses != nil {
-            return handleConverted(event, client: client)
+        if let clauses {
+            return handleConverted(event, clauses: clauses, client: client)
         }
         return handleComposing(event, client: client)
     }
@@ -267,11 +267,12 @@ final class TugimeInputController: IMKInputController {
             // 打っている途中も変換して見せているので、矢印キーで Shift+Space を押さずに文節の選択に入る。
             // Shift+Space と同じく最初の文節を選び、選んだ後の操作としてそのキーを扱う
             guard !keys.isEmpty else { return false }
-            clauses = sharedSegmenter.clauses(keys, leading: leading)
+            let clauses = sharedSegmenter.clauses(keys, leading: leading)
+            self.clauses = clauses
             focus = 0
             // ↑ ↓ は文節の表示を描き直さないので、先に文節の選択の表示にしておく
             showMarkedText(client)
-            return handleConverted(event, client: client)
+            return handleConverted(event, clauses: clauses, client: client)
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
             keys.removeLast()
@@ -290,7 +291,7 @@ final class TugimeInputController: IMKInputController {
     }
 
     /// 文節の選択に入った後
-    private func handleConverted(_ event: NSEvent, client: IMKTextInput) -> Bool {
+    private func handleConverted(_ event: NSEvent, clauses: [Clause], client: IMKTextInput) -> Bool {
         let panelVisible = candidatePanel.isVisible()
         switch event.keyCode {
         case KeyCode.returnKey, KeyCode.enter:
@@ -310,13 +311,11 @@ final class TugimeInputController: IMKInputController {
                 moveCandidate(by: -1, client: client)
             }
         case KeyCode.left, KeyCode.right:
-            // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する。
-            // 文節の移動は両端で反対の端へ回る（Mozc と同じ）
+            // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する
             let step = event.keyCode == KeyCode.left ? -1 : 1
             if event.modifierFlags.contains(.shift) {
-                let count = clauses?.count ?? 1
-                focus = (focus + step + count) % count
-            } else if let clauses {
+                focus = (focus + step + clauses.count) % clauses.count
+            } else {
                 self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step, leading: leading)
             }
             candidatePanel.hide()
@@ -326,7 +325,7 @@ final class TugimeInputController: IMKInputController {
             if panelVisible {
                 candidatePanel.hide()
             } else {
-                clauses = nil
+                self.clauses = nil
                 showMarkedText(client)
             }
         default:
