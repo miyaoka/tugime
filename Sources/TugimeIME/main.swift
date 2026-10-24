@@ -69,5 +69,4 @@ let candidatePanel: IMKCandidates = {
 }()
 // 綴りの表・語表・辞書と Zenzai のモデルの読み込みを、最初の打鍵より前に済ませる
 _ = sharedSegmenter
-sharedConverter.preloadZenzai()
 NSApplication.shared.run()

@@ -38,18 +38,14 @@ private enum KeyCode {
     ]
 }
 
-/// 変換器はプロセスに 1 つだけ持つ。辞書・語表・Zenzai のモデルの読み込みが重いので、入力源ごとに作らない
-let sharedConverter: AzooKeyConverter = {
+/// 区切りと変換はプロセスに 1 つだけ持つ。辞書・語表・Zenzai のモデルの読み込みが重いので、入力源ごとに作らない
+let sharedSegmenter: Segmenter = {
     // Zenzai のモデルはバンドルの Contents/Resources/zenz に同梱する
     guard let zenz = Bundle.main.url(forResource: "ggml-model-Q5_K_M", withExtension: "gguf", subdirectory: "zenz") else {
         fatalError("tugime を初期化できない: Zenzai のモデルが Contents/Resources/zenz に無い")
     }
-    return AzooKeyConverter(zenzaiWeight: zenz)
-}()
-
-let sharedSegmenter: Segmenter = {
     do {
-        return try Segmenter(table: .bundled(), english: .bundled(), japanese: sharedConverter)
+        return try ConversionMethod.azooKeyZenzai(weight: zenz).makeSegmenter()
     } catch {
         fatalError("tugime を初期化できない: \(error)")
     }

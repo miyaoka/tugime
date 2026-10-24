@@ -5,7 +5,7 @@ import TugimeCorpus
 
 /// 本物の変換器と、それで組んだ Segmenter。作るたびに辞書と語表を読むので、全テストで共有する
 private enum Shared {
-    static let converter = AzooKeyConverter(zenzaiWeight: nil)
+    static let converter = ConversionMethod.baseline.make()
     static let table = Result { try RomajiTable.bundled() }
     static let english = Result { try EnglishModel.bundled() }
     static let segmenter = Result { try make(converter) }

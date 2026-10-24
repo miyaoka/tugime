@@ -103,15 +103,29 @@ main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PAT
 
 ```bash
 swift build --product tugime-cli
-zenz=$(scripts/fetch-zenz.sh)                                             # Zenzai のモデルを取得してパスを出す
-.build/debug/tugime-cli --zenz "$zenz" nodewosakujosite,sitewokoukaisuru  # 変換結果
-.build/debug/tugime-cli --explain sitewokoukaisuru                        # 区間と評価値（採点の変換）
-.build/debug/tugime-cli --zenz "$zenz" --corpus corpus/examples.tsv       # 例文集の一致件数（CI と同じ組み立て）
+zenz=$(scripts/fetch-zenz.sh)                                                     # Zenzai のモデルを取得してパスを出す
+.build/debug/tugime-cli --method "zenzai:$zenz" nodewosakujosite,sitewokoukaisuru  # 変換結果
+.build/debug/tugime-cli --explain sitewokoukaisuru                                # 区間と評価値（採点の変換）
+.build/debug/tugime-cli --method "zenzai:$zenz" --corpus corpus/examples.tsv       # 例文集の一致件数（CI と同じ組み立て）
 swift test
-bun scripts/make-readme-figures.ts                                        # README の図を tugime-cli の出力から作り直す（Chrome が要る）
+bun scripts/make-readme-figures.ts                                                # README の図を tugime-cli の出力から作り直す（Chrome が要る）
 ```
 
 `tugime-cli` の他の引数は `tugime-cli --help` で出る。
+
+変換の方式とモデルは `tugime-eval` で比べる。問題（AJIMEE-Bench と Mozc の回帰テスト）は版を固定して `.eval/` に取得する。CI では動かさない。
+
+```bash
+swift build -c release --product tugime-eval
+problems=$(scripts/fetch-eval.sh)                                                  # 問題を取得してディレクトリを出す
+.build/release/tugime-eval accuracy --method azookey --problems "$problems" --out .eval/azookey.jsonl
+.build/release/tugime-eval accuracy --method "zenzai:$zenz" --problems "$problems" --out .eval/zenz.jsonl
+.build/release/tugime-eval compare .eval/azookey.jsonl .eval/zenz.jsonl           # 片方だけが正解した問題
+.build/release/tugime-eval keystrokes --method "zenzai:$zenz" --problems "$problems" --out .eval/keys.tsv
+model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出力名>)      # Hugging Face の safetensors を GGUF にする
+```
+
+引数と終了コードは `tugime-eval` を引数なしで実行すると出る。
 
 ## 使っているもの
 
