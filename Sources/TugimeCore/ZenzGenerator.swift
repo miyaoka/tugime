@@ -12,8 +12,7 @@ import llama
 /// - 下書きは、同じ左の文脈で前に生成した出力。入力の後ろに置いて一度に decode し、各位置の argmax と一致する先頭だけを採る
 /// まとめて decode した位置と 1 つずつ decode した位置では浮動小数の丸めが違い、argmax が並ぶ所では打鍵の途中の出力が変わりうる
 final class ZenzGenerator: DirectDisplayGenerating {
-    /// KV キャッシュの型。単精度より軽い型で出力が変わらないことを tugime-eval で確かめたモデルだけを、GGUF の general.name で書く。
-    /// genmai-310M は半精度だと内積があふれて出力が壊れる。bf16 は単精度と全 592 問で同じ出力だった
+    /// KV キャッシュの型。単精度より軽い型で出力が変わらないことを tugime-eval で確かめたモデルだけを、GGUF の general.name で書く
     private static let kvTypes: [String: ggml_type] = ["Genmai 310M": GGML_TYPE_BF16]
     private static let defaultKVType = GGML_TYPE_F32
     /// GPT-2 の位置の上限。入力と出力はこの中に収める
@@ -53,6 +52,8 @@ final class ZenzGenerator: DirectDisplayGenerating {
         contextParams.type_k = kvType
         contextParams.type_v = kvType
         contextParams.no_perf = true
+        // genmai-310M は半精度の KV キャッシュで flash attention を使うと logits が有限でなくなる。使わなければ半精度でも壊れない
+        contextParams.flash_attn = false
         guard let context = llama_init_from_model(model, contextParams) else { fatalError("llama.cpp のコンテキストを作れない: \(weight.path)") }
         self.context = context
         batch = llama_batch_init(Int32(Self.maxPositions), 0, 1)
@@ -110,7 +111,8 @@ final class ZenzGenerator: DirectDisplayGenerating {
         next.removeLast(next.count - count)
     }
 
-    /// tokens を resident の後ろに decode し、各位置の argmax を next に足す。decode が失敗したら止める
+    /// tokens を resident の後ろに decode し、各位置の argmax を next に足す。decode が失敗したら止める。
+    /// 計算があふれると logits が有限でなくなる。そのまま argmax を取ると、エラーにならずに壊れた出力を返すので、止める
     private func append(_ tokens: [llama_token]) {
         guard !tokens.isEmpty else { return }
         guard resident.count + tokens.count <= Self.maxPositions else { fatalError("入力と出力がモデルの位置の上限 \(Self.maxPositions) を超えた") }
@@ -127,7 +129,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
         for i in 0..<tokens.count {
             let logits = llama_get_logits_ith(context, Int32(i))!
             var best = 0
-            for v in 1..<vocabularySize where logits[v] > logits[best] { best = v }
+            var finite = logits[0].isFinite
+            for v in 1..<vocabularySize {
+                finite = finite && logits[v].isFinite
+                if logits[v] > logits[best] { best = v }
+            }
+            guard finite else { fatalError("モデルの計算が壊れた（logits が有限でない）。KV キャッシュの型と flash attention を見直す") }
             next.append(llama_token(best))
         }
         resident += tokens
