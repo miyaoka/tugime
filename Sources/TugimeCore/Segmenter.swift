@@ -30,29 +30,6 @@ public struct ScoredSpan: Sendable, Equatable {
     public var segment: Segment
 }
 
-/// 日本語区間と英語区間の評価値を同じ尺度に揃える重み
-public struct SegmentWeights: Sendable {
-    public var japanese: Double
-    public var english: Double
-    /// 区間を 1 つ増やすごとに引く値
-    public var japaneseSpanPenalty: Double
-    public var englishSpanPenalty: Double
-
-    public init(japanese: Double, english: Double, japaneseSpanPenalty: Double, englishSpanPenalty: Double) {
-        self.japanese = japanese
-        self.english = english
-        self.japaneseSpanPenalty = japaneseSpanPenalty
-        self.englishSpanPenalty = englishSpanPenalty
-    }
-
-    public static let standard = SegmentWeights(
-        japanese: 1.0,
-        english: 1.4,
-        japaneseSpanPenalty: 3,
-        englishSpanPenalty: -2
-    )
-}
-
 /// 打鍵列の全体を、日本語区間と英語区間の並びとして最も自然に読める区切りに分ける。
 /// 綴りの表で読めない箇所は日本語区間に入れられないので、そこは必ず英語になる。
 /// 読める箇所は、日本語として変換した評価値と英語の綴りとしての評価値を比べて決める。
@@ -60,13 +37,17 @@ public final class Segmenter {
     let table: RomajiTable
     private let english: EnglishModel
     let japaneseConverter: any JapaneseConverting
-    public var weights: SegmentWeights
+    /// 英語の綴りの評価値を、日本語の変換の評価値と同じ尺度に揃える倍率
+    static let englishWeight = 1.4
+    /// 日本語の区間を 1 つ増やすごとに引く値
+    static let japaneseSpanPenalty = 3.0
+    /// 英語の区間を 1 つ増やすごとに引く値。負なので、英語の区間は増やすほど点が上がる
+    static let englishSpanPenalty = -2.0
 
-    public init(table: RomajiTable, english: EnglishModel, japanese: any JapaneseConverting, weights: SegmentWeights = .standard) {
+    public init(table: RomajiTable, english: EnglishModel, japanese: any JapaneseConverting) {
         self.table = table
         self.english = english
         self.japaneseConverter = japanese
-        self.weights = weights
     }
 
     /// 入力の前に何があるか
@@ -364,12 +345,12 @@ public final class Segmenter {
 
     private func japaneseSegment(_ source: String, kana: String, context: JapaneseContext) -> Segment? {
         guard let reading = japaneseConverter.convert(kana: kana, context: context) else { return nil }
-        let score = weights.japanese * reading.value - weights.japaneseSpanPenalty
+        let score = reading.value - Self.japaneseSpanPenalty
         return Segment(kind: .japanese, source: source, reading: kana, output: reading.text, score: score, context: reading.context)
     }
 
     private func englishSegment(_ source: String, context: JapaneseContext) -> Segment {
-        let score = weights.english * english.logProbability(source) - weights.englishSpanPenalty
+        let score = Self.englishWeight * english.logProbability(source) - Self.englishSpanPenalty
         return Segment(kind: .english, source: source, reading: source, output: source, score: score, context: context)
     }
 
