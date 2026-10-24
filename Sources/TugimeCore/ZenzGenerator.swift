@@ -7,7 +7,8 @@ import llama
 /// direct の方式は azooKey に Zenzai を渡さないので、プロセスで llama.cpp にモデルを載せるのはこの型だけになる。
 ///
 /// 区切りごとに「BOS + ZenzPrompt.text をトークンにし、EOS か上限まで argmax を 1 つずつ足した列」を作り、文字にして繋ぐ。
-/// 入力と出力がモデルの位置の上限に収まらないときは、作者の実装と同じく BOS と入力の末尾を残して入力を切り詰める。
+/// 入力と出力がモデルの位置の上限に収まらないときは、左の文脈を前から削る。
+/// 1 つの区切りの読みは出力と合わせて収まる長さに分けてあるので、読みは落ちない。
 /// 打鍵ごとの再計算は、2 つの仕組みで少ない decode にする:
 /// - KV キャッシュには、前に計算した入力と下書きが残る。新しい入力と先頭が一致する範囲は計算し直さない
 /// - 下書きは、同じ左の文脈で前に生成した出力。入力の後ろに置いて一度に decode し、各位置の argmax と一致する先頭だけを採る
@@ -76,10 +77,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
 
     func generate(left: String, kana: String) -> String {
         var output = ""
-        for part in ZenzPrompt.chunks(kana) {
+        for part in ZenzPrompt.chunks(kana, maxLength: ZenzPrompt.maxChunkLength(positions: maxPositions)) {
             let contextText = left + output
-            let prompt = tokenize(ZenzPrompt.text(left: contextText, kana: part))
-            let tokens = greedy(prompt, limit: ZenzPrompt.outputLimit(part), draft: drafts[contextText] ?? [])
+            // 出力に位置の半分までを使い、残りに入力を収める
+            let limit = min(ZenzPrompt.outputLimit(part), maxPositions / 2)
+            let prompt = fittedPrompt(context: contextText, kana: part, limit: limit)
+            let tokens = greedy(prompt, limit: limit, draft: drafts[contextText] ?? [])
             drafts[contextText] = tokens
             output += ZenzPrompt.cutAtNewline(detokenize(tokens))
         }
@@ -91,10 +94,21 @@ final class ZenzGenerator: DirectDisplayGenerating {
         drafts = [:]
     }
 
-    private func greedy(_ fullPrompt: [llama_token], limit requested: Int, draft: [llama_token]) -> [llama_token] {
-        // 出力に位置の半分までを使い、残りに入力を収める
-        let limit = min(requested, maxPositions / 2)
-        let prompt = fullPrompt.count + limit <= maxPositions ? fullPrompt : [bos] + fullPrompt.suffix(maxPositions - limit - 1)
+    /// 入力と limit 個の出力が位置の上限に収まるよう、左の文脈を前から削った入力。文脈の目印は残す。
+    /// 文脈を空にしても収まらないとき（区切りの読みの字がそれぞれ複数のトークンになるとき）は、作者の実装と同じく BOS と入力の末尾を残す
+    private func fittedPrompt(context: String, kana: String, limit: Int) -> [llama_token] {
+        var scalars = Array(context.unicodeScalars.suffix(ZenzPrompt.maxContextLength))
+        while true {
+            let prompt = tokenize(ZenzPrompt.text(left: String(String.UnicodeScalarView(scalars)), kana: kana))
+            let over = prompt.count + limit - maxPositions
+            if over <= 0 { return prompt }
+            if scalars.isEmpty { return [bos] + prompt.suffix(maxPositions - limit - 1) }
+            // 1 字は 1 トークン以上なので、超えたトークンの数だけ字を削れば、少なくともその数のトークンが減る
+            scalars.removeFirst(min(over, scalars.count))
+        }
+    }
+
+    private func greedy(_ prompt: [llama_token], limit: Int, draft: [llama_token]) -> [llama_token] {
         let sequence = prompt + draft.prefix(limit)
         let needFrom = prompt.count - 1
         var keep = 0

@@ -48,15 +48,21 @@ enum ZenzPrompt {
         Int(Double(kana.unicodeScalars.count) * outputPerKana) + outputMargin
     }
 
-    /// 句読点で終わる部分を、chunkLength 字を超えない範囲で前から順にまとめる。読みが伸びるだけなら、最後以外の区切りは変わらない
-    static func chunks(_ kana: String) -> [String] {
+    /// 出力に位置の半分までを使うとき、1 つの区切りの読みと出力が収まる読みの長さ
+    static func maxChunkLength(positions: Int) -> Int {
+        Int(Double(positions / 2 - outputMargin) / outputPerKana)
+    }
+
+    /// 句読点で終わる部分を、chunkLength 字を超えない範囲で前から順にまとめる。読みが伸びるだけなら、最後以外の区切りは変わらない。
+    /// 句読点の無いまま maxLength 字を超える部分は、maxLength 字ごとに区切る。入力を切り詰めるときに読みが落ちないようにするため
+    static func chunks(_ kana: String, maxLength: Int) -> [String] {
         let scalars = Array(kana.unicodeScalars)
         guard scalars.count > chunkLength else { return [kana] }
         var raw: [[Unicode.Scalar]] = []
         var current: [Unicode.Scalar] = []
         for s in scalars {
             current.append(s)
-            if chunkEnds.contains(s) {
+            if chunkEnds.contains(s) || current.count == maxLength {
                 raw.append(current)
                 current = []
             }

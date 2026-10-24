@@ -143,10 +143,19 @@ private final class FixedGenerator: DirectDisplayGenerating {
     /// 40 字以下は分けない。超えたら句読点で終わる部分を 40 字以内にまとめる
     @Test func splitsLongReadingsAtPunctuation() {
         let short = String(repeating: "あ", count: 40)
-        #expect(ZenzPrompt.chunks(short) == [short])
+        #expect(ZenzPrompt.chunks(short, maxLength: 387) == [short])
         let a = String(repeating: "あ", count: 25) + "、"
         let b = String(repeating: "い", count: 10) + "。"
         let c = String(repeating: "う", count: 20)
-        #expect(ZenzPrompt.chunks(a + b + c) == [a + b, c])
+        #expect(ZenzPrompt.chunks(a + b + c, maxLength: 387) == [a + b, c])
+    }
+
+    /// 句読点の無い長い読みは、出力と合わせてモデルの位置に収まる長さで区切る
+    @Test func splitsLongReadingsWithoutPunctuationByLength() {
+        #expect(ZenzPrompt.maxChunkLength(positions: 1024) == 387)
+        let long = String(repeating: "あ", count: 120)
+        let parts = ZenzPrompt.chunks(long, maxLength: 50)
+        #expect(parts.map(\.count) == [50, 50, 20])
+        #expect(parts.joined() == long)
     }
 }
