@@ -90,14 +90,16 @@ private final class FixedGenerator: DirectDisplayGenerating {
         #expect(shown.clauses == [
             JapaneseClause(reading: "きょうは", text: "今日は"), JapaneseClause(reading: "いい", text: "いい"), JapaneseClause(reading: "てんき", text: "天気"),
         ])
+        #expect(shown.matchesReading)
     }
 
-    /// 読みに対応づかない出力も差し替えず、全体を 1 文節にする
+    /// 読みに対応づかない出力も差し替えず、全体を 1 文節にする。読みと合わない表示として扱う
     @Test func keepsAnOutputThatDoesNotFollowTheReading() throws {
         generator.outputs["きょうはいいてんき"] = "今日はええ天気"
         let shown = try #require(converter.display(kana: "きょうはいいてんき", context: .start, left: ""))
         #expect(shown.text == "今日はええ天気")
         #expect(shown.clauses == [JapaneseClause(reading: "きょうはいいてんき", text: "今日はええ天気")])
+        #expect(!shown.matchesReading)
     }
 
     @Test func returnsNothingWhereTheScorerReturnsNothing() {

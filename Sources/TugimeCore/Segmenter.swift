@@ -95,11 +95,27 @@ public final class Segmenter {
     /// 打っている途中に見せる文字列。Enter で確定するのもこれ。日本語区間は長ければ変換し、短ければかなのまま、英語区間は打ったまま。
     /// かなのまま見せるのは見た目だけで、後ろの区間の左の文脈には変換した表記を渡す
     public func liveText(_ input: String, leading: Leading = .start) -> String {
+        liveDisplay(input, leading: leading).text
+    }
+
+    /// 打っている途中に見せる文字列と、それが打った読みと合わない変換を含むか
+    public struct LiveDisplay: Sendable, Equatable {
+        public var text: String
+        /// 変換して見せた日本語区間のどれかが、読みと対応づかない（JapaneseDisplay.matchesReading が偽）
+        public var differsFromInput: Bool
+    }
+
+    /// liveText と同じ文字列に、読みと合わない変換を見せているかを添える
+    public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
         let segments = segment(input, leading: leading)
-        return zip(segments, displays(of: segments.map(ShownSpan.init))).map { segment, display in
+        var differs = false
+        let text = zip(segments, displays(of: segments.map(ShownSpan.init))).map { segment, display in
             guard let display else { return segment.output }
-            return segment.reading.count < Self.liveConversionMinLength ? segment.reading : display.text
+            if segment.reading.count < Self.liveConversionMinLength { return segment.reading }
+            if !display.matchesReading { differs = true }
+            return display.text
         }.joined()
+        return LiveDisplay(text: text, differsFromInput: differs)
     }
 
     /// 日本語区間をすべて表示の変換にした文字列
