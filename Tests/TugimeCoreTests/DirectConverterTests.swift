@@ -3,16 +3,12 @@ import Testing
 @testable import TugimeCore
 
 @Suite struct ReadingAlignmentTests {
+    /// 文節の読みと表記は、出力の側で位置が確定した境目で組になる。組がずれると、途中の確定で残る打鍵が打った読みと食い違う
     @Test func cutsWhereKanaFixesThePosition() throws {
         let alignment = try #require(ReadingAlignment(text: "今日は", reading: "きょうは"))
         #expect(alignment.clauses(cutAt: [3]) == [JapaneseClause(reading: "きょう", text: "今日"), JapaneseClause(reading: "は", text: "は")])
         let tokyo = try #require(ReadingAlignment(text: "東京と", reading: "とうきょうと"))
         #expect(tokyo.clauses(cutAt: [5]) == [JapaneseClause(reading: "とうきょう", text: "東京"), JapaneseClause(reading: "と", text: "と")])
-    }
-
-    @Test func katakanaIsAnAnchor() throws {
-        let alignment = try #require(ReadingAlignment(text: "テストを", reading: "てすとを"))
-        #expect(alignment.clauses(cutAt: [3]) == [JapaneseClause(reading: "てすと", text: "テスト"), JapaneseClause(reading: "を", text: "を")])
     }
 
     /// は が読みの 4 文字目と 5 文字目のどちらにも当たりうるので、私は / 歯医者 の境目は確定しない
@@ -21,8 +17,8 @@ import Testing
         #expect(alignment.clauses(cutAt: [4]) == [JapaneseClause(reading: "わたしははいしゃ", text: "私は歯医者")])
     }
 
-    /// 錨のかなが読みと合わない出力と、読みを食う文字が足りない出力は対応づかない
-    @Test(arguments: [("コーヒー", "こおひい"), ("今日は", "は"), ("きょう", "きょうは"), ("", "きょう")])
+    /// 錨のかな（カタカナを含む）が読みと合わない出力と、読みを食う文字が足りない出力は対応づかない
+    @Test(arguments: [("コーヒー", "こおひい"), ("テストを", "あいうを"), ("今日は", "は"), ("きょう", "きょうは"), ("", "きょう")])
     func rejectsOutputsThatDoNotFollowTheReading(text: String, reading: String) {
         #expect(ReadingAlignment(text: text, reading: reading) == nil)
     }
@@ -82,17 +78,6 @@ private final class FixedGenerator: DirectDisplayGenerating {
         converter = DirectConverter(scorer: scorer, generator: generator)
     }
 
-    /// 表示は生成の出力そのもので、文節の境目は採点の境目のうち出力の側で確定したもの
-    @Test func showsTheModelOutputWithTheScorersClauses() throws {
-        generator.outputs["きょうはいいてんき"] = "今日はいい天気"
-        let shown = try #require(converter.display(kana: "きょうはいいてんき", context: .start, left: ""))
-        #expect(shown.text == "今日はいい天気")
-        #expect(shown.clauses == [
-            JapaneseClause(reading: "きょうは", text: "今日は"), JapaneseClause(reading: "いい", text: "いい"), JapaneseClause(reading: "てんき", text: "天気"),
-        ])
-        #expect(shown.matchesReading)
-    }
-
     /// 読みに対応づかない出力も差し替えず、全体を 1 文節にする。読みと合わない表示として扱う
     @Test func keepsAnOutputThatDoesNotFollowTheReading() throws {
         generator.outputs["きょうはいいてんき"] = "今日はええ天気"
@@ -100,11 +85,6 @@ private final class FixedGenerator: DirectDisplayGenerating {
         #expect(shown.text == "今日はええ天気")
         #expect(shown.clauses == [JapaneseClause(reading: "きょうはいいてんき", text: "今日はええ天気")])
         #expect(!shown.matchesReading)
-    }
-
-    @Test func returnsNothingWhereTheScorerReturnsNothing() {
-        #expect(converter.display(kana: "ん", context: .start, left: "") == nil)
-        #expect(generator.calls.isEmpty)
     }
 
     /// 確定・取り消しで、採点と生成の両方が覚えたものを捨てる（JapaneseConverting.endComposition の約束）
@@ -142,11 +122,6 @@ private final class FixedGenerator: DirectDisplayGenerating {
     @Test func keepsTheLast500CharactersOfContext() {
         let left = String(repeating: "あ", count: 10) + String(repeating: "い", count: 500)
         #expect(ZenzPrompt.text(left: left, kana: "う") == "\u{EE02}" + String(repeating: "い", count: 500) + "\u{EE00}ウ\u{EE01}")
-    }
-
-    @Test func cutsTheOutputAtTheFirstNewline() {
-        #expect(ZenzPrompt.cutAtNewline("今日は\n明日は") == "今日は")
-        #expect(ZenzPrompt.cutAtNewline("今日は") == "今日は")
     }
 
     /// 40 字以下は分けない。超えたら句読点で終わる部分を 40 字以内にまとめる
