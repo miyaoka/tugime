@@ -385,7 +385,7 @@ final class TugimeInputController: IMKInputController {
     // MARK: 表示と確定
 
     /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示し、それが打った読みと合わなければ警告の窓を出す。
-    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。候補の窓と重ならないよう、警告の窓は出さない
+    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。警告の窓は出さない
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
         var differs = false
