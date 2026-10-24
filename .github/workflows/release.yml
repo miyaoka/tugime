@@ -112,10 +112,45 @@ jobs:
           retention-days: 1
 
   # ==============================================================
-  # 出自の証明と GitHub Release 作成。ビルドした成果物だけを受け取る
+  # mise の packslip の入れ方が確かめる目録に、この workflow で署名する。
+  # 外部の Action を動かすので、リリースと証明へ書き込む権限を持たせない
+  # ==============================================================
+  sign:
+    needs: [decide, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TAG: ${{ needs.decide.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tugime-macos-arm64
+          path: dist
+
+      # 出自の証明は release job が付け、目録からはそれを指す
+      - uses: jdx/packslip@ddcddd9c8c33977d2d08d5db91caec579da59aab # v1.11.0
+        id: packslip
+        with:
+          artifacts: dist/tugime-macos-arm64.tar.gz
+          tag: ${{ env.TAG }}
+          attest: link
+          upload: false
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packslip-bundle
+          path: ${{ steps.packslip.outputs.bundle }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # ==============================================================
+  # 出自の証明と GitHub Release 作成。ビルドした成果物と署名した目録だけを受け取る
   # ==============================================================
   release:
-    needs: [decide, build]
+    needs: [decide, sign]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -130,32 +165,24 @@ jobs:
           name: tugime-macos-arm64
           path: dist
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packslip-bundle
+          path: packslip
+
       # 署名の代わりの改竄検知。gh attestation verify で入れる利用者が確かめる
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/tugime-macos-arm64.tar.gz
 
-      # Releases は immutable なので、署名した目録を上げ終えるまで下書きにしておく
-      - name: Create draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" --draft --generate-notes --target "${GITHUB_SHA}" dist/tugime-macos-arm64.tar.gz
-
-      # mise の packslip の入れ方が確かめる、この workflow で署名した目録を上げる
-      - name: Sign and upload packslip
-        uses: jdx/packslip@ddcddd9c8c33977d2d08d5db91caec579da59aab # v1.11.0
-        with:
-          artifacts: dist/tugime-macos-arm64.tar.gz
-          tag: ${{ env.TAG }}
-          attest: link
-
+      # 配布物を渡すと、gh は下書きにすべて上げてから公開し、途中で失敗したら下書きを消す。
+      # Releases は immutable で、公開した版には asset を足せないので、目録も同じ呼び出しで上げる。
       # mise と gh release download は Latest の版を最新として取るため、Latest を明示する
-      - name: Publish release
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest
+          test -f packslip/packslip.sigstore.json
+          gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" --generate-notes --latest --target "${GITHUB_SHA}" dist/tugime-macos-arm64.tar.gz packslip/packslip.sigstore.json

@@ -48,8 +48,10 @@ Apple Silicon の macOS。動作は macOS 27 でだけ確かめている。
 
 [mise](https://mise.jdx.dev/) を使うと、mise が配布物を確かめてから入れる。tugime の release workflow が署名していない配布物や、署名のあとで書き換えられた配布物は、mise が入れずに止める。確かめには [packslip](https://packslip.dev/) という仕組みを使う。更新は `mise up` だけでよい。
 
+mise は 2026.10.5 以降を使う。それより前の版は、下のコマンドの `workflow` の指定に対応していない。
+
 ```bash
-mise use -g 'packslip:github.com/miyaoka/tugime[postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
+mise use -g 'packslip:github.com/miyaoka/tugime[workflow="release.yml@refs/heads/main",postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
 ```
 
 ### B. GitHub CLI で入れる
