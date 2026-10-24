@@ -340,7 +340,11 @@ private final class RewritingConverter: JapaneseConverting {
     func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
 
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
-        base.display(kana: kana, context: context, left: left).map { JapaneseDisplay(text: $0.text + "ゑ", clauses: $0.clauses) }
+        base.display(kana: kana, context: context, left: left).map { shown in
+            var clauses = shown.clauses
+            clauses[clauses.count - 1].text += "ゑ"
+            return JapaneseDisplay(text: shown.text + "ゑ", clauses: clauses)
+        }
     }
 
     func endComposition() { base.endComposition() }
