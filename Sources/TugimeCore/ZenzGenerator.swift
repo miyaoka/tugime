@@ -20,6 +20,8 @@ final class ZenzGenerator: DirectDisplayGenerating {
     private static let defaultKVType = GGML_TYPE_F32
     /// モデルの全層を GPU に載せる。llama.cpp はモデルの層数を超える値を全層として扱う
     private static let allLayersOnGPU: Int32 = 999
+    /// 文字にするときに最初に用意する、1 トークンあたりのバイト数。足りなければ llama.cpp が要る大きさを返す
+    private static let bytesPerTokenGuess = 8
 
     private static let backend: Void = llama_backend_init()
 
@@ -188,20 +190,16 @@ final class ZenzGenerator: DirectDisplayGenerating {
         return [bos] + buffer.prefix(Int(count))
     }
 
-    /// トークンのバイトを繋いでから文字にする。1 文字が 2 つのトークンに分かれていても壊れない
+    /// トークンの列を文字にする。1 文字が 2 つのトークンに分かれていても、列のバイトを繋いでから文字にするので壊れない
     private func detokenize(_ tokens: [llama_token]) -> String {
-        var bytes: [UInt8] = []
-        var buffer = [CChar](repeating: 0, count: 64)
-        for token in tokens {
-            var count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
-            // 領域が足りないと、要る大きさを負の数で返す
-            if count < 0 {
-                buffer = [CChar](repeating: 0, count: Int(-count))
-                count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
-            }
-            guard count >= 0 else { fatalError("トークンを文字にする領域が足りない: \(token)") }
-            bytes += buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
+        var buffer = [CChar](repeating: 0, count: tokens.count * Self.bytesPerTokenGuess)
+        var count = llama_detokenize(vocab, tokens, Int32(tokens.count), &buffer, Int32(buffer.count), false, false)
+        // 領域が足りないと、要る大きさを負の数で返す
+        if count < 0 {
+            buffer = [CChar](repeating: 0, count: Int(-count))
+            count = llama_detokenize(vocab, tokens, Int32(tokens.count), &buffer, Int32(buffer.count), false, false)
         }
-        return String(decoding: bytes, as: UTF8.self)
+        guard count >= 0 else { fatalError("トークンを文字にする領域が足りない: \(tokens)") }
+        return String(decoding: buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 }
