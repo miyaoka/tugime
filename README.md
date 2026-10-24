@@ -122,6 +122,7 @@ problems=$(scripts/fetch-eval.sh)                                               
 .build/release/tugime-eval accuracy --method "zenzai:$zenz" --problems "$problems" --out .eval/zenz.jsonl
 .build/release/tugime-eval compare .eval/azookey.jsonl .eval/zenz.jsonl           # 片方だけが正解した問題
 .build/release/tugime-eval keystrokes --method "zenzai:$zenz" --problems "$problems" --out .eval/keys.tsv
+model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出力名>)      # Hugging Face の safetensors を GGUF にする
 ```
 
 引数と終了コードは `tugime-eval` を引数なしで実行すると出る。
