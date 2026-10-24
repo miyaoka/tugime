@@ -4,7 +4,7 @@ import TugimeCorpus
 
 let usage = """
     使い方（先頭に次を付けられる。--after <english|japanese> はカーソルの前にその文字がある状態として変換する。
-    --method <方式> は変換の方式。azookey（既定）か zenzai:<GGUF のパス>。zenzai は表示の変換にモデルを使う。scripts/fetch-zenz.sh が取得してパスを出す）:
+    --method <方式> は変換の方式。\(ConversionMethod.forms)（既定は azookey）。zenzai は表示の変換にモデルを使う。scripts/fetch-zenz.sh が取得してパスを出す）:
       tugime-cli <打鍵列>...                  打鍵列を変換した結果を出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す

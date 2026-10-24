@@ -2,8 +2,7 @@ import Foundation
 import TugimeCore
 import TugimeEval
 
-// 検証の道具。CI では動かさず手元で実行する。進捗は標準エラー、結果は標準出力と --out のファイル。
-// tugime-cli（入力メソッドの挙動を 1 入力ずつ見る道具）とは引数の文法が違う（方式・問題・出力先）ので、別の実行ファイルにする
+// 検証の道具。進捗は標準エラー、結果は標準出力と --out のファイル
 
 let usage = """
     使い方:
@@ -15,9 +14,10 @@ let usage = """
       tugime-eval keystrokes --method <方式> --problems <dir> --out <最後の表示.tsv>
           AJIMEE-Bench の文脈の無い文を 1 打鍵ずつ打ち、1 打鍵の時間・読み込み時間・最大常駐量を出す。
           --out には 打鍵列 と最後の表示 をタブ区切りで書く（tugime-cli --live の出力と同じ形）
-    方式: azookey | zenzai:<GGUF のパス>
+    方式: \(ConversionMethod.forms)
     問題の dir は scripts/fetch-eval.sh が出す。モデルは scripts/fetch-zenz.sh か scripts/convert-hf-to-gguf.sh が出す
-    終了コード: 0 成功 / 1 モデルが効いていない / 2 使い方の誤り / 3 時間の上限を超えた / 4 それ以外のエラー
+    終了コード: 0 成功 / 1 モデルが効いていない / 2 使い方の誤り / 3 時間の上限を超えた / 4 それ以外のエラー。
+    在っても読めないモデルは、変換エンジンがプロセスごと止める（終了コードはこの表に無い）
     """
 
 struct UsageError: Error, CustomStringConvertible {
