@@ -1,7 +1,7 @@
 #!/bin/bash
 # 入力メソッドが使うモデル（genmai-310M の q8_0）を .zenz/ に用意し、SHA-256 を確かめてパスを出す。用意済みで一致すれば作り直さない。
-# genmai の作者は GGUF を公開していないので、Hugging Face の重みを scripts/convert-hf-to-gguf.sh で変換する。変換は同じ入力から同じ GGUF を作る。
-# 版は Hugging Face のコミットで固定する。更新するときは commit と sha256 を一緒に変える
+# 無いか一致しなければ、Hugging Face の重みを scripts/convert-hf-to-gguf.sh で変換し、作った GGUF の SHA-256 を確かめる。
+# 版は Hugging Face のコミットで固定する。更新するときは commit・sha256 と、App/Notices/genmai-310M.txt の版とコミットを一緒に変える
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
