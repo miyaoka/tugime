@@ -198,36 +198,28 @@ private final class RewritingConverter: JapaneseConverting {
         let segmenter = try Shared.make(RewritingConverter())
         #expect(segmenter.liveDisplay("kawacwdkyouhaii").differsFromInput)
     }
-
-    /// かなのまま見せる短い区間と英語区間は、表示の変換が読みと合わなくても数えない
-    @Test func ignoresSpansShownAsTyped() throws {
-        let segmenter = try Shared.make(RewritingConverter())
-        #expect(!segmenter.liveDisplay("kawacwd").differsFromInput)
-    }
 }
 
 /// 後ろの区間の表示の変換に、前の区間の表示を左の文脈として渡す
 @Suite struct LeftContextTests {
     fileprivate let recorder = LeftRecorder()
     let segmenter: Segmenter
-    /// 短い日本語区間・英語区間・長い日本語区間の順に並ぶ入力。短い区間はかなのまま見せるが、変換すると かわ は 川 になる
+    /// 日本語区間・英語区間・日本語区間の順に並ぶ入力
     let input = "kawacwdkyouhaii"
 
     init() throws {
         segmenter = try Shared.make(recorder)
     }
 
-    /// 短い区間を変換した表記と英語区間をつないだもの。かなのままの表示（かわcwd）とは違う
+    /// 前の日本語区間を変換した表記と英語区間をつないだもの
     private func convertedLeft() throws -> String {
-        let left = try Shared.segmenter.get().displayText("kawa") + "cwd"
-        #expect(left != "かわcwd")
-        return left
+        try Shared.segmenter.get().liveText("kawa") + "cwd"
     }
 
-    @Test func liveTextPassesTheConvertedShortSpanToTheRight() throws {
+    @Test func liveTextPassesTheConvertedSpanToTheRight() throws {
         let left = try convertedLeft()
         #expect(segmenter.segment(input).map(\.kind) == [.japanese, .english, .japanese])
-        #expect(segmenter.liveText(input).hasPrefix("かわcwd"))
+        #expect(segmenter.liveText(input).hasPrefix(left))
         #expect(recorder.lefts == ["", left])
     }
 

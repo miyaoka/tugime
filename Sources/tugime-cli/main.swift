@@ -128,7 +128,7 @@ do {
     default:
         let segmenter = try method.makeSegmenter()
         for input in args {
-            print(segmenter.displayText(input, leading: leading))
+            print(segmenter.liveText(input, leading: leading))
         }
     }
 } catch {

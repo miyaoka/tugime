@@ -69,9 +69,6 @@ public final class Segmenter {
         return digits.isEmpty ? .afterWord : .afterNumber(digits)
     }
 
-    /// 打っている途中に変換して見せる日本語区間の、かなの最短の長さ。短い断片は的外れな漢字になりやすい（きょ → 居）ので、それより短い区間はかなのまま見せる
-    static let liveConversionMinLength = 4
-
     /// liveDisplay の文字列
     public func liveText(_ input: String, leading: Leading = .start) -> String {
         liveDisplay(input, leading: leading).text
@@ -85,26 +82,16 @@ public final class Segmenter {
         public var differsFromInput: Bool
     }
 
-    /// 打っている途中に見せる文字列。日本語区間は長ければ変換し、短ければかなのまま、英語区間は打ったまま。
-    /// かなのまま見せるのは見た目だけで、後ろの区間の左の文脈には変換した表記を渡す
+    /// 打っている途中に見せる文字列。日本語区間は長さによらず変換し、英語区間は打ったまま
     public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
         let segments = segment(input, leading: leading)
         var differs = false
         let text = zip(segments, displays(of: segments.map(ShownSpan.init))).map { segment, display in
             guard let display else { return segment.output }
-            if segment.reading.count < Self.liveConversionMinLength { return segment.reading }
             if !display.matchesReading { differs = true }
             return display.text
         }.joined()
         return LiveDisplay(text: text, differsFromInput: differs)
-    }
-
-    /// 日本語区間をすべて表示の変換にした文字列
-    public func displayText(_ input: String, leading: Leading = .start) -> String {
-        let segments = segment(input, leading: leading)
-        return zip(segments, displays(of: segments.map(ShownSpan.init))).map { segment, display in
-            display?.text ?? segment.output
-        }.joined()
     }
 
     /// 表示する 1 区間。日本語区間は表示の変換で表記を決め、それ以外は決まった文字列を表示する
