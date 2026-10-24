@@ -139,7 +139,7 @@ public struct AccuracySummary: Sendable {
     }
 }
 
-/// 精度の実行。全問題を対象の方式と基準の方式の両方で変換し、記録を書き、集計を出し、モデルが効いているかを確かめる。
+/// 精度の実行。全問題を対象の方式と基準の方式の両方で変換し、記録を書き、モデルが効いているかを確かめ、集計を出す。
 /// 確かめは記録を書いた後に同じ呼び出しの中で行うので、止まったときも何が出たかを記録から読める
 public enum AccuracyRun {
     public enum Failure: Error, CustomStringConvertible {
@@ -163,7 +163,7 @@ public enum AccuracyRun {
     /// - 問題ごとに両方の変換器の endComposition を呼ぶ
     /// - 文脈は常に `.start`、left は Problem.left。精度は入力メソッドが表示する変換（display）で測る
     /// - 対象が基準なら変換器は 1 つだけ作り、baselineOutput = output とする
-    /// - モデルを使う方式で全件の出力が基準と一致したら、記録と集計を出した後に modelHadNoEffect を投げる。
+    /// - モデルを使う方式で全件の出力が基準と一致したら、記録を書いた後、集計を出す前に modelHadNoEffect を投げる。
     ///   一致した件数ではなく全件で判定する。一致の件数は集計に出すが判定には使わない
     public static func run(
         problems: LoadedProblems,
@@ -202,10 +202,10 @@ public enum AccuracyRun {
         try record.write(to: url)
         watchdog.finish()
 
-        AccuracySummary(results).lines.forEach(report)
         if modelHadNoEffect(results, target: target) {
             throw Failure.modelHadNoEffect(method: target.spec, count: results.count, record: url)
         }
+        AccuracySummary(results).lines.forEach(report)
     }
 
     /// モデルを使う方式で、全件の出力が基準と一致したか
