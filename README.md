@@ -123,7 +123,6 @@ swift build --product tugime-cli
 model=$(scripts/fetch-genmai.sh)                                                  # 表示の変換のモデルを用意してパスを出す
 .build/debug/tugime-cli --method "direct:$model" nodewosakujosite,sitewokoukaisuru # 変換結果
 .build/debug/tugime-cli --explain sitewokoukaisuru                                # 区間と評価値（採点の変換）
-.build/debug/tugime-cli --method "direct:$model" --corpus corpus/examples.tsv      # 例文集の一致件数（CI と同じ組み立て）
 swift test
 bun scripts/make-readme-figures.ts                                                # README の図を tugime-cli の出力から作り直す（Chrome が要る）
 ```

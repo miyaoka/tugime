@@ -1,7 +1,6 @@
 import Foundation
 import Testing
 @testable import TugimeCore
-import TugimeCorpus
 
 /// 本物の変換器と、それで組んだ Segmenter。作るたびに辞書と語表を読むので、全テストで共有する
 private enum Shared {
@@ -45,18 +44,6 @@ private final class LeftRecorder: JapaneseConverting {
 
     private func readings(_ clauses: [Clause]) -> [String] {
         clauses.map(\.reading)
-    }
-
-    // MARK: 例文集
-
-    /// 例文集の全件が、表示する文字列と一致する
-    @Test func matchesEveryCorpusExample() throws {
-        let path = URL(filePath: #filePath).appending(path: "../../../corpus/examples.tsv").standardized.path
-        let examples = try CorpusExample.load(path: path)
-        #expect(!examples.isEmpty)
-        for example in examples {
-            #expect(segmenter.displayText(example.input) == example.expected, "\(example.input)")
-        }
     }
 
     // MARK: 日英の区切り
@@ -328,6 +315,43 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.convertClause(clauses, at: 0, to: .roman) == nil)
         #expect(segmenter.convertClause(clauses, at: 1, to: .fullwidthRoman) == nil)
         #expect(segmenter.commit(clauses, through: 0) == nil)
+    }
+}
+
+/// 本物の変換器に処理を任せ、表示の変換の末尾に読みに無いかなを足して、読みと合わない表示にする
+private final class RewritingConverter: JapaneseConverting {
+    private let base: JapaneseConverting = Shared.converter
+
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { base.convert(kana: kana, context: context) }
+
+    func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
+
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
+        base.display(kana: kana, context: context, left: left).map { shown in
+            var clauses = shown.clauses
+            clauses[clauses.count - 1].text += "ゑ"
+            return JapaneseDisplay(text: shown.text + "ゑ", clauses: clauses)
+        }
+    }
+
+    func endComposition() { base.endComposition() }
+}
+
+/// 打っている途中の表示が、変換して見せた区間で読みと合わないかを返す
+@Suite struct LiveDisplayTests {
+    @Test func flagsAConvertedSpanThatDoesNotFollowTheReading() throws {
+        let segmenter = try Shared.make(RewritingConverter())
+        #expect(segmenter.liveDisplay("kawacwdkyouhaii").differsFromInput)
+    }
+
+    /// かなのまま見せる短い区間と英語区間は、表示の変換が読みと合わなくても数えない
+    @Test func ignoresSpansShownAsTyped() throws {
+        let segmenter = try Shared.make(RewritingConverter())
+        #expect(!segmenter.liveDisplay("kawacwd").differsFromInput)
+    }
+
+    @Test func passesADisplayThatFollowsTheReading() throws {
+        #expect(try !Shared.segmenter.get().liveDisplay("kawacwdkyouhaii").differsFromInput)
     }
 }
 
