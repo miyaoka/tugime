@@ -46,13 +46,17 @@ Apple Silicon の macOS。動作は macOS 27 でだけ確かめている。
 mise use -g 'github:miyaoka/tugime[postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
 ```
 
-mise を使わない場合は、最新版を取得して配置する。更新は同じコマンドで上書きする。
+mise を使わない場合は、[GitHub CLI](https://cli.github.com/) で最新版を取得し、出自を確かめてから展開して配置する。更新も同じ手順で上書きする。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | bash
+gh release download --repo miyaoka/tugime --pattern tugime-macos-arm64.tar.gz
+gh attestation verify tugime-macos-arm64.tar.gz --repo miyaoka/tugime --signer-workflow miyaoka/tugime/.github/workflows/release.yml
+mkdir tugime
+tar -xzf tugime-macos-arm64.tar.gz -C tugime
+bash tugime/install.sh
 ```
 
-Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開したフォルダーで `bash install.sh` を実行する。
+`gh attestation verify` は、取得した配布物がこのリポジトリの release workflow で組み立てられたものかを確かめる。失敗したら展開しない。確かめられるのは組み立てた場所と元のコミットで、中身が安全かではない。
 
 初めて配置したときだけ、ログアウトしてログインし直す。システム設定はログインし直すまで新しい入力ソースを一覧に出さない。その後、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加する。tugime は自分では入力ソースを有効にしない。
 

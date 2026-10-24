@@ -4,13 +4,11 @@
 #
 # 使い方:
 #   bash install.sh [<.app>]
-#   curl -fsSL https://raw.githubusercontent.com/miyaoka/tugime/main/install.sh | bash
 #
-# 導入する .app は、引数、このファイルの隣の tugime.app、GitHub の最新のリリース、の順で決める。
+# 導入する .app は、引数、無ければこのファイルの隣の tugime.app。取得はしない。
+# 配布物の出自は、展開する前に利用者か mise が確かめる
 set -euo pipefail
 
-repo="miyaoka/tugime"
-asset="tugime-macos-arm64.tar.gz"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
@@ -18,27 +16,7 @@ if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
     exit 1
 fi
 
-script_dir=""
-if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-fi
-
-download_latest() {
-    local work
-    work="$(mktemp -d)"
-    local url="https://github.com/$repo/releases/latest/download/$asset"
-    echo "== 取得 $url" >&2
-    curl -fsSL "$url" | tar -xzf - -C "$work"
-    echo "$work/tugime.app"
-}
-
-if [[ $# -ge 1 ]]; then
-    src="$1"
-elif [[ -n "$script_dir" && -d "$script_dir/tugime.app" ]]; then
-    src="$script_dir/tugime.app"
-else
-    src="$(download_latest)"
-fi
+src="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tugime.app}"
 [[ -d "$src/Contents" ]] || { echo "$src は .app ではない" >&2; exit 1; }
 # 置く名前は .app のディレクトリ名にする。渡し方（相対パス・末尾の /.）で変わらないよう、実体の絶対パスに直してから取る
 src=$(CDPATH='' cd -- "$src" && pwd -P)
