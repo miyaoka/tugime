@@ -22,6 +22,7 @@ let package = Package(
         ),
     ],
     targets: [
+        // llama.cpp（import llama）は、azooKey が trait Zenzai で載せる binaryTarget を推移的に使う。別の llama.cpp を足さない
         .target(
             name: "TugimeCore",
             dependencies: [

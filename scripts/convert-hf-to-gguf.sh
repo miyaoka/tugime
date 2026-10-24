@@ -1,9 +1,10 @@
 #!/bin/bash
-# Hugging Face の safetensors（GPT-2 系）を、azooKey の Zenzai が読める GGUF に変換してパスを出す。
+# Hugging Face の safetensors（GPT-2 系）を、azooKey が同梱する llama.cpp が読める GGUF に変換してパスを出す。
 # 使い方: scripts/convert-hf-to-gguf.sh <Hugging Face のリポジトリ> <コミット> <量子化> <出力名>
 #   例: scripts/convert-hf-to-gguf.sh subdiox/genmai-310M 5bbde09cfdf5c25cceebb0db8edb2184559a2fc0 q8_0 genmai-310M-q8_0
 # 量子化は convert_hf_to_gguf.py の --outtype（f32 / f16 / bf16 / q8_0）。出力は .zenz/<出力名>.gguf。
-# 変換が効いたかはこのスクリプトでは判定しない。tugime-eval accuracy --method zenzai:<出力> で、基準と同じ出力の件数と正解数を見る（全件が基準と同じなら終了コード 1）。
+# 変換が効いたかはこのスクリプトでは判定しない。tugime-eval accuracy --method direct:<出力> で、基準と同じ出力の件数と正解数を見る（全件が基準と同じなら終了コード 1）。
+# zenzai: の方式は azooKey の計算の設定で動くので、そこで壊れるモデル（genmai-310M）では、正しい GGUF でも効いていないように見える。
 # 元のファイルは .eval/hf/ に、変換の道具は .eval/llama.cpp に置き、取得済みなら取り直さない
 set -euo pipefail
 
