@@ -37,7 +37,7 @@ let package = Package(
             dependencies: ["TugimeCore", "TugimeCorpus"],
             swiftSettings: [cxx]
         ),
-        // 変換の方式とモデルを比べる検証の道具。問題の読み込み・判定・集計・比較・打鍵の計測。手元でだけ使い、配布物と CI には入れない
+        // 変換の方式とモデルを比べる検証の道具。問題の読み込み・判定・集計・比較・打鍵の計測。配布物には入れない。測定は手元で実行する
         .target(
             name: "TugimeEval",
             dependencies: ["TugimeCore"],

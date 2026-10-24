@@ -16,9 +16,7 @@ public final class Watchdog: @unchecked Sendable {
             self.load = load
         }
 
-        /// 精度: 593 問を 2 方式で。1 問は通常 1 秒未満
         public static let accuracy = Limits(total: .seconds(30 * 60), perItem: .seconds(30), load: .seconds(120))
-        /// 打鍵: 1 打鍵は通常 100ms 未満
         public static let keystroke = Limits(total: .seconds(30 * 60), perItem: .seconds(5), load: .seconds(120))
     }
 
