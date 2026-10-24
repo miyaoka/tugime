@@ -121,7 +121,7 @@ enum MozcRegression {
     /// 5 列目は許す順位。0（先頭の候補）だけが表示の変換 1 つで判定できる
     static let topRank = "0"
 
-    /// 列: label・かなの key・value・command・順位（5 列目は無くてもよい）。id は `<set>:<ファイルの行番号>`。left は空。
+    /// 列: label・かなの key・value・command・順位（5 列目は無いか空でもよく、そのときは 0）。id は `<set>:<ファイルの行番号>`。left は空。
     /// 順位が先頭の候補でない行は、command が表にあっても捨てて数える。
     /// # で始まる行と空行は飛ばし、捨てた数に入れない。列が 4 つ未満の行は malformed で止める
     static func problems(from data: Data, file: String, set: String) throws -> ProblemFiles.Parsed {
@@ -134,7 +134,6 @@ enum MozcRegression {
             if line.isEmpty || line.hasPrefix("#") { continue }
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             guard fields.count >= 4 else { throw ProblemLoadError.malformed(file: file, line: index + 1, String(line)) }
-            // 5 列目が無いか空なら順位 0
             let rank = fields.count < 5 || fields[4].isEmpty ? topRank : fields[4]
             guard let check = checks[fields[3]], rank == topRank else {
                 dropped += 1
