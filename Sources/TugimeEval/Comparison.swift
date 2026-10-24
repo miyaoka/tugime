@@ -19,10 +19,13 @@ public struct Comparison: Sendable {
         case differentProblems(left: [String: String], right: [String: String])
         /// 片方にしか無い id。同じ版なら起きないので、起きたら記録が壊れている
         case unmatched(String)
+        /// 同じ id で読み・左の文脈・判定が違う。問題ファイルは同じでも、読み込みの規則が違う道具で取った記録である
+        case differentProblem(left: Problem, right: Problem)
         public var description: String {
             switch self {
             case .differentProblems(let left, let right): "2 つの記録の問題ファイルが違う版である: \(left) / \(right)"
             case .unmatched(let id): "片方の記録にしか無い問題: \(id)"
+            case .differentProblem(let left, let right): "\(left.id) の問題が 2 つの記録で違う: \(left) / \(right)"
             }
         }
     }
@@ -31,7 +34,7 @@ public struct Comparison: Sendable {
     public var right: AccuracyRecord.Header
     public var differences: [Difference]
 
-    /// 不変条件: header.problemDigests が一致し、id の集合が一致する。並びは左の記録の順
+    /// 不変条件: header.problemDigests が一致し、id の集合が一致し、同じ id の問題が一致する。並びは左の記録の順
     public init(left: AccuracyRecord, right: AccuracyRecord) throws {
         guard left.header.problemDigests == right.header.problemDigests else {
             throw Failure.differentProblems(left: left.header.problemDigests, right: right.header.problemDigests)
@@ -45,6 +48,7 @@ public struct Comparison: Sendable {
         self.right = right.header
         differences = try left.results.compactMap { l in
             guard let r = rightByID[l.problem.id] else { throw Failure.unmatched(l.problem.id) }
+            guard l.problem == r.problem else { throw Failure.differentProblem(left: l.problem, right: r.problem) }
             guard l.passes != r.passes else { return nil }
             return Difference(problem: l.problem, passedBy: l.passes ? .left : .right, leftOutput: l.output, rightOutput: r.output)
         }
