@@ -63,9 +63,12 @@ import Testing
         let zenzai = try ConversionMethod(spec: "zenzai:\(model.path)")
         #expect(zenzai.weight?.path == model.standardizedFileURL.path)
         #expect(try ConversionMethod(spec: zenzai.spec) == zenzai)
+        let direct = try ConversionMethod(spec: "direct:\(model.path)")
+        #expect(direct == .direct(weight: model.standardizedFileURL))
+        #expect(try ConversionMethod(spec: direct.spec) == direct)
     }
 
-    @Test(arguments: ["", "azookeyx", "zenzai:", "zenzai", "llama:/a.gguf"])
+    @Test(arguments: ["", "azookeyx", "zenzai:", "zenzai", "direct:", "direct", "llama:/a.gguf"])
     func rejectsUnknownSpecs(spec: String) {
         #expect(throws: ConversionMethod.ParseError.self) { try ConversionMethod(spec: spec) }
     }
