@@ -113,6 +113,19 @@ bun scripts/make-readme-figures.ts                                              
 
 `tugime-cli` の他の引数は `tugime-cli --help` で出る。
 
+変換の方式とモデルは `tugime-eval` で比べる。問題（AJIMEE-Bench と Mozc の回帰テスト）は版を固定して `.eval/` に取得する。CI では動かさない。
+
+```bash
+swift build -c release --product tugime-eval
+problems=$(scripts/fetch-eval.sh)                                                  # 問題を取得してディレクトリを出す
+.build/release/tugime-eval accuracy --method azookey --problems "$problems" --out .eval/azookey.jsonl
+.build/release/tugime-eval accuracy --method "zenzai:$zenz" --problems "$problems" --out .eval/zenz.jsonl
+.build/release/tugime-eval compare .eval/azookey.jsonl .eval/zenz.jsonl           # 片方だけが正解した問題
+.build/release/tugime-eval keystrokes --method "zenzai:$zenz" --problems "$problems" --out .eval/keys.tsv
+```
+
+引数と終了コードは `tugime-eval` を引数なしで実行すると出る。
+
 ## 使っているもの
 
 - [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter)（MIT）と既定の辞書

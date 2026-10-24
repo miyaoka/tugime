@@ -37,6 +37,17 @@ let package = Package(
             dependencies: ["TugimeCore", "TugimeCorpus"],
             swiftSettings: [cxx]
         ),
+        // 変換の方式とモデルを比べる検証の道具。問題の読み込み・判定・集計・比較・打鍵の計測。手元でだけ使い、配布物と CI には入れない
+        .target(
+            name: "TugimeEval",
+            dependencies: ["TugimeCore"],
+            swiftSettings: [cxx]
+        ),
+        .executableTarget(
+            name: "tugime-eval",
+            dependencies: ["TugimeCore", "TugimeEval"],
+            swiftSettings: [cxx]
+        ),
         .executableTarget(
             name: "TugimeIME",
             dependencies: ["TugimeCore"],
@@ -49,6 +60,12 @@ let package = Package(
             dependencies: ["TugimeCore", "TugimeCorpus"],
             // テストは 1 つの本物の変換器を共有するので、同時に使わないようメインアクターで動かす
             swiftSettings: [.defaultIsolation(MainActor.self), cxx]
+        ),
+        // 検証の道具の読み込みと判定。変換エンジンを通す測定そのものはテストにしない
+        .testTarget(
+            name: "TugimeEvalTests",
+            dependencies: ["TugimeCore", "TugimeEval"],
+            swiftSettings: [cxx]
         ),
     ]
 )
