@@ -95,7 +95,7 @@ jobs:
       # 表示の変換のモデルを Hugging Face の重みから変換するのに使う。変換の結果は fetch-genmai.sh が SHA-256 で確かめる
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: 0.13.5
+          version-file: scripts/convert-env/pyproject.toml
           enable-cache: false
 
       # tag 由来の version を Info.plist に焼き込み、ad-hoc 署名する

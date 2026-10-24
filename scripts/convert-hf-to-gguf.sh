@@ -41,11 +41,10 @@ fi
 source_dir="$root/.eval/hf/$commit/$repo"
 mkdir -p "$source_dir"
 # 取得は Hugging Face の公式 CLI。--local-dir に取得済みの記録を置き、取得済みなら取り直さない
-hf_download=("${uv_run[@]}" hf download "$repo" --revision "$commit" --local-dir "$source_dir" --quiet)
-include=()
-for file in "${meta_files[@]}"; do include+=(--include "$file"); done
+# --include は 1 つの後ろにパターンを並べる。繰り返すと最後の 1 つだけが効く
+hf_download=("${uv_run[@]}" hf download "$repo" --revision "$commit" --local-dir "$source_dir" --quiet --include)
 echo "== 取得 $repo $commit の設定とトークナイザー" >&2
-"${hf_download[@]}" "${include[@]}" >&2
+"${hf_download[@]}" "${meta_files[@]}" >&2
 if [[ ! -f "$source_dir/config.json" ]]; then
     echo "$repo $commit に config.json が無い" >&2
     exit 1
@@ -63,10 +62,8 @@ for name in sorted(set(json.load(open(sys.argv[1]))["weight_map"].values())):
 ' "$index" > "$names"
     while IFS= read -r line; do weights+=("$line"); done < "$names"
 fi
-include=()
-for file in "${weights[@]}"; do include+=(--include "$file"); done
 echo "== 取得 $repo $commit の重み ${weights[*]}" >&2
-"${hf_download[@]}" "${include[@]}" >&2
+"${hf_download[@]}" "${weights[@]}" >&2
 # 重みの組に入らない safetensors が置かれていれば止める（変換がそれも読むため）
 for file in "$source_dir"/*.safetensors; do
     if ! printf "%s\n" "${weights[@]}" | grep -qx "$(basename "$file")"; then

@@ -2,7 +2,8 @@
 [project]
 name = "tugime-convert-env"
 version = "0"
-requires-python = "==3.11.*"
+# パッチまで固定し、ランナーに入っている別のパッチの Python を使わせない
+requires-python = "==3.11.17"
 # torch・numpy・sentencepiece・transformers・protobuf は llama.cpp b4846 の変換が動いた組み合わせ。
 # huggingface_hub は transformers 4.x が受け付ける 1.0 未満で、hf download がある版
 dependencies = [
@@ -16,3 +17,5 @@ dependencies = [
 
 [tool.uv]
 package = false
+# 手元と CI の uv の版。CI の setup-uv はこのファイルからこの値を読む
+required-version = "==0.13.5"

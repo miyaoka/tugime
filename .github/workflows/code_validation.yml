@@ -71,7 +71,7 @@ jobs:
       # 表示の変換のモデルを Hugging Face の重みから変換するのに使う
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: 0.13.5
+          version-file: scripts/convert-env/pyproject.toml
           enable-cache: false
 
       # 日英判定と変換結果の一致件数を記録に残す。件数では落とさず、CLI が実行に失敗したときだけ落とす。
@@ -99,7 +99,7 @@ jobs:
       # 表示の変換のモデルを Hugging Face の重みから変換するのに使う
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: 0.13.5
+          version-file: scripts/convert-env/pyproject.toml
           enable-cache: false
 
       - name: Build .app
