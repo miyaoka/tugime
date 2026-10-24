@@ -176,8 +176,7 @@ final class TugimeInputController: IMKInputController {
     private var panelIndex = 0
     private var movingPanel = false
 
-    private func showCandidatePanel() {
-        guard let clauses else { return }
+    private func showCandidatePanel(_ clauses: [Clause]) {
         candidatePanel.update()
         candidatePanel.show(kIMKLocateCandidatesBelowHint)
         // 窓は作り直すと先頭を強調するので、選んでいる候補まで送る
@@ -224,14 +223,14 @@ final class TugimeInputController: IMKInputController {
         if !keys.isEmpty, let form = KeyCode.characterForms[event.keyCode] {
             // 文節が 2 つ以上ある間は選んでいる文節だけを変える。打っている途中と文節が 1 つのときは未確定の文字列全体を変える
             if let clauses, clauses.count > 1 {
-                convertFocusedClause(to: form, client: client)
+                convertFocusedClause(to: form, clauses: clauses, client: client)
             } else {
                 convertWhole(to: form, client: client)
             }
             return true
         }
-        if clauses != nil {
-            return handleConverted(event, client: client)
+        if let clauses {
+            return handleConverted(event, clauses: clauses, client: client)
         }
         return handleComposing(event, client: client)
     }
@@ -243,9 +242,10 @@ final class TugimeInputController: IMKInputController {
             guard !keys.isEmpty else { return false }
             if event.modifierFlags.contains(.shift) {
                 // 矢印キーと同じく文節の選択に入り、最初の文節までを確定する
-                clauses = sharedSegmenter.clauses(keys, leading: leading)
+                let clauses = sharedSegmenter.clauses(keys, leading: leading)
+                self.clauses = clauses
                 focus = 0
-                commitThroughFocus(client)
+                commitThroughFocus(clauses, client: client)
             } else {
                 commit(client)
             }
@@ -267,11 +267,12 @@ final class TugimeInputController: IMKInputController {
             // 打っている途中も変換して見せているので、矢印キーで Shift+Space を押さずに文節の選択に入る。
             // Shift+Space と同じく最初の文節を選び、選んだ後の操作としてそのキーを扱う
             guard !keys.isEmpty else { return false }
-            clauses = sharedSegmenter.clauses(keys, leading: leading)
+            let clauses = sharedSegmenter.clauses(keys, leading: leading)
+            self.clauses = clauses
             focus = 0
             // ↑ ↓ は文節の表示を描き直さないので、先に文節の選択の表示にしておく
             showMarkedText(client)
-            return handleConverted(event, client: client)
+            return handleConverted(event, clauses: clauses, client: client)
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
             keys.removeLast()
@@ -290,31 +291,31 @@ final class TugimeInputController: IMKInputController {
     }
 
     /// 文節の選択に入った後
-    private func handleConverted(_ event: NSEvent, client: IMKTextInput) -> Bool {
+    private func handleConverted(_ event: NSEvent, clauses: [Clause], client: IMKTextInput) -> Bool {
         let panelVisible = candidatePanel.isVisible()
         switch event.keyCode {
         case KeyCode.returnKey, KeyCode.enter:
             if event.modifierFlags.contains(.shift) {
-                commitThroughFocus(client)
+                commitThroughFocus(clauses, client: client)
             } else {
                 commit(client)
             }
         case KeyCode.space, KeyCode.down:
             if panelVisible {
-                moveCandidate(by: 1, client: client)
+                moveCandidate(by: 1, clauses: clauses, client: client)
             } else {
-                showCandidatePanel()
+                showCandidatePanel(clauses)
             }
         case KeyCode.up:
             if panelVisible {
-                moveCandidate(by: -1, client: client)
+                moveCandidate(by: -1, clauses: clauses, client: client)
             }
         case KeyCode.left, KeyCode.right:
             // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する
             let step = event.keyCode == KeyCode.left ? -1 : 1
             if event.modifierFlags.contains(.shift) {
-                focus = min(max(focus + step, 0), (clauses?.count ?? 1) - 1)
-            } else if let clauses {
+                focus = (focus + step + clauses.count) % clauses.count
+            } else {
                 self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step, leading: leading)
             }
             candidatePanel.hide()
@@ -324,7 +325,7 @@ final class TugimeInputController: IMKInputController {
             if panelVisible {
                 candidatePanel.hide()
             } else {
-                clauses = nil
+                self.clauses = nil
                 showMarkedText(client)
             }
         default:
@@ -334,8 +335,8 @@ final class TugimeInputController: IMKInputController {
         return true
     }
 
-    private func moveCandidate(by delta: Int, client: IMKTextInput) {
-        guard var clauses else { return }
+    private func moveCandidate(by delta: Int, clauses: [Clause], client: IMKTextInput) {
+        var clauses = clauses
         let count = clauses[focus].candidates.count
         clauses[focus].selected = (clauses[focus].selected + delta + count) % count
         self.clauses = clauses
@@ -353,8 +354,9 @@ final class TugimeInputController: IMKInputController {
 
     /// 選んでいる文節を指定の文字種にする。その文字列を文節の候補として選ぶので、候補の窓で選び直せる。
     /// 文節の境目が 1 つの綴りの途中にあって英字にできないときは、Shift+Enter と同じく何もしない
-    private func convertFocusedClause(to form: CharacterForm, client: IMKTextInput) {
-        guard var clauses, let text = sharedSegmenter.convertClause(clauses, at: focus, to: form) else { return }
+    private func convertFocusedClause(to form: CharacterForm, clauses: [Clause], client: IMKTextInput) {
+        guard let text = sharedSegmenter.convertClause(clauses, at: focus, to: form) else { return }
+        var clauses = clauses
         if let index = clauses[focus].candidates.firstIndex(of: text) {
             clauses[focus].selected = index
         } else {
@@ -429,8 +431,8 @@ final class TugimeInputController: IMKInputController {
 
     /// 選んでいる文節までを確定し、残りの文節は変換したまま、次の文節を選んだ状態で残す。
     /// 選んでいるのが最後の文節なら全体を確定する。切る位置に当たる打鍵が決まらなければ何もしない
-    private func commitThroughFocus(_ client: IMKTextInput) {
-        guard let clauses, focus < clauses.count - 1 else {
+    private func commitThroughFocus(_ clauses: [Clause], client: IMKTextInput) {
+        guard focus < clauses.count - 1 else {
             commit(client)
             return
         }
