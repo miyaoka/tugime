@@ -89,11 +89,11 @@ public struct ReadingAlignment: Sendable, Equatable {
         }
     }
 
-    /// 錨として扱う文字なら、比べるためのひらがな。ヵ・ヶ は「か」「が」「こ」と読まれるので錨にしない
+    /// 錨として扱う文字なら、比べるためのひらがな。小さい か・け（ゕ ゖ ヵ ヶ）は「か」「が」「こ」と読まれるので錨にしない
     static func anchor(_ c: Character) -> Character? {
         guard c.unicodeScalars.count == 1, let s = c.unicodeScalars.first else { return nil }
         switch s.value {
-        case 0x3041...0x3096, 0x30FC:
+        case 0x3041...0x3094, 0x30FC:
             return c
         case 0x30A1...0x30F4:
             return Character(Unicode.Scalar(s.value - 0x60)!)

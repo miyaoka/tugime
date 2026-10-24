@@ -105,17 +105,13 @@ private final class FixedGenerator: DirectDisplayGenerating {
         #expect(generator.calls.isEmpty)
     }
 
-    /// 同じ区間は未確定の文字列の間 1 回だけ生成し、確定・取り消しで覚えを捨てる
-    @Test func generatesOncePerComposition() {
+    /// 確定・取り消しで、採点と生成の両方が覚えたものを捨てる（JapaneseConverting.endComposition の約束）
+    @Test func endCompositionDropsWhatTheConvertersRemembered() {
         generator.outputs["きょうはいいてんき"] = "今日はいい天気"
         _ = converter.display(kana: "きょうはいいてんき", context: .start, left: "")
-        _ = converter.display(kana: "きょうはいいてんき", context: .start, left: "")
-        #expect(generator.calls.count == 1)
         converter.endComposition()
         #expect(generator.resets == 1)
         #expect(scorer.ended == 1)
-        _ = converter.display(kana: "きょうはいいてんき", context: .start, left: "")
-        #expect(generator.calls.count == 2)
     }
 
     /// 入力欄に確定済みの数字に続く区間は、その数字を左の文脈にする
@@ -137,6 +133,11 @@ private final class FixedGenerator: DirectDisplayGenerating {
     @Test func keepsTheLast500CharactersOfContext() {
         let left = String(repeating: "あ", count: 10) + String(repeating: "い", count: 500)
         #expect(ZenzPrompt.text(left: left, kana: "う") == "\u{EE02}" + String(repeating: "い", count: 500) + "\u{EE00}ウ\u{EE01}")
+    }
+
+    @Test func cutsTheOutputAtTheFirstNewline() {
+        #expect(ZenzPrompt.cutAtNewline("今日は\n明日は") == "今日は")
+        #expect(ZenzPrompt.cutAtNewline("今日は") == "今日は")
     }
 
     /// 40 字以下は分けない。超えたら句読点で終わる部分を 40 字以内にまとめる

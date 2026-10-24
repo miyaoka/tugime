@@ -6,17 +6,19 @@ import llama
 /// llama.cpp は azooKey が trait Zenzai で載せるもの（binaryTarget）をそのまま使い、別の llama.cpp を足さない。
 /// direct の方式は azooKey に Zenzai を渡さないので、プロセスで llama.cpp にモデルを載せるのはこの型だけになる。
 ///
-/// 返す値の定義は「BOS + ZenzPrompt.text をトークンにし、EOS か上限まで argmax を 1 つずつ足した列」を区切りごとに繋いだもの。
-/// 打鍵ごとの再計算を速くする仕組み（KV キャッシュの持ち越しと下書き）は、その列を少ない decode で得るための省略である。
+/// 区切りごとに「BOS + ZenzPrompt.text をトークンにし、EOS か上限まで argmax を 1 つずつ足した列」を作り、文字にして繋ぐ。
+/// 入力と出力がモデルの位置の上限に収まらないときは、作者の実装と同じく BOS と入力の末尾を残して入力を切り詰める。
+/// 打鍵ごとの再計算は、2 つの仕組みで少ない decode にする:
 /// - KV キャッシュには、前に計算した入力と下書きが残る。新しい入力と先頭が一致する範囲は計算し直さない
 /// - 下書きは、同じ左の文脈で前に生成した出力。入力の後ろに置いて一度に decode し、各位置の argmax と一致する先頭だけを採る
-/// まとめて decode した位置と 1 つずつ decode した位置では浮動小数の丸めが違い、argmax が並ぶ所では打鍵の途中の出力が変わりうる
+/// まとめて decode した位置と 1 つずつ decode した位置では浮動小数の丸めが違うので、argmax が並ぶ所では、
+/// 同じ入力でもそれまでの打鍵によって出力が変わることがある
 final class ZenzGenerator: DirectDisplayGenerating {
     /// KV キャッシュの型。単精度より軽い型で出力が変わらないことを tugime-eval で確かめたモデルだけを、GGUF の general.name で書く
     private static let kvTypes: [String: ggml_type] = ["Genmai 310M": GGML_TYPE_BF16]
     private static let defaultKVType = GGML_TYPE_F32
-    /// GPT-2 の位置の上限。入力と出力はこの中に収める
-    private static let maxPositions = 1024
+    /// モデルの全層を GPU に載せる。llama.cpp はモデルの層数を超える値を全層として扱う
+    private static let allLayersOnGPU: Int32 = 999
 
     private static let backend: Void = llama_backend_init()
 
@@ -27,9 +29,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
     private let bos: llama_token
     private let eos: llama_token
     private let vocabularySize: Int
-    /// KV キャッシュの系列 0 に入っているトークンと、各位置の直後の argmax。KV を消したら同じだけ縮める
+    /// モデルが学習した位置の数。入力と出力はこの中に収める
+    private let maxPositions: Int
+    /// KV キャッシュの系列 0 に入っているトークンと、各位置の直後の argmax。KV を消したら同じだけ縮める。
+    /// argmax は、そのトークンを足したときの入力の最後の位置より前では求めないので nil になる
     private var resident: [llama_token] = []
-    private var next: [llama_token] = []
+    private var next: [llama_token?] = []
     /// 左の文脈ごとの、前に生成した出力
     private var drafts: [String: [llama_token]] = [:]
 
@@ -37,18 +42,19 @@ final class ZenzGenerator: DirectDisplayGenerating {
     init(weight: URL) {
         _ = Self.backend
         var modelParams = llama_model_default_params()
-        modelParams.n_gpu_layers = 999
+        modelParams.n_gpu_layers = Self.allLayersOnGPU
         guard let model = llama_model_load_from_file(weight.path, modelParams) else { fatalError("モデルを読めない: \(weight.path)") }
         self.model = model
         vocab = llama_model_get_vocab(model)!
+        maxPositions = Int(llama_model_n_ctx_train(model))
         var nameBuffer = [CChar](repeating: 0, count: 256)
         let name = llama_model_meta_val_str(model, "general.name", &nameBuffer, nameBuffer.count) >= 0
             ? String(decoding: nameBuffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
             : ""
         let kvType = Self.kvTypes[name] ?? Self.defaultKVType
         var contextParams = llama_context_default_params()
-        contextParams.n_ctx = UInt32(Self.maxPositions)
-        contextParams.n_batch = UInt32(Self.maxPositions)
+        contextParams.n_ctx = UInt32(maxPositions)
+        contextParams.n_batch = UInt32(maxPositions)
         contextParams.type_k = kvType
         contextParams.type_v = kvType
         contextParams.no_perf = true
@@ -56,7 +62,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
         contextParams.flash_attn = false
         guard let context = llama_init_from_model(model, contextParams) else { fatalError("llama.cpp のコンテキストを作れない: \(weight.path)") }
         self.context = context
-        batch = llama_batch_init(Int32(Self.maxPositions), 0, 1)
+        batch = llama_batch_init(Int32(maxPositions), 0, 1)
         bos = llama_vocab_bos(vocab)
         eos = llama_vocab_eos(vocab)
         vocabularySize = Int(llama_vocab_n_tokens(vocab))
@@ -75,7 +81,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
             let prompt = tokenize(ZenzPrompt.text(left: contextText, kana: part))
             let tokens = greedy(prompt, limit: ZenzPrompt.outputLimit(part), draft: drafts[contextText] ?? [])
             drafts[contextText] = tokens
-            output += detokenize(tokens)
+            output += ZenzPrompt.cutAtNewline(detokenize(tokens))
         }
         return ZenzPrompt.restoreSpaces(output)
     }
@@ -85,21 +91,27 @@ final class ZenzGenerator: DirectDisplayGenerating {
         drafts = [:]
     }
 
-    private func greedy(_ prompt: [llama_token], limit: Int, draft: [llama_token]) -> [llama_token] {
+    private func greedy(_ fullPrompt: [llama_token], limit requested: Int, draft: [llama_token]) -> [llama_token] {
+        // 出力に位置の半分までを使い、残りに入力を収める
+        let limit = min(requested, maxPositions / 2)
+        let prompt = fullPrompt.count + limit <= maxPositions ? fullPrompt : [bos] + fullPrompt.suffix(maxPositions - limit - 1)
         let sequence = prompt + draft.prefix(limit)
-        var common = 0
-        while common < min(resident.count, sequence.count), resident[common] == sequence[common] { common += 1 }
-        truncate(common)
-        append(Array(sequence[common...]))
+        let needFrom = prompt.count - 1
+        var keep = 0
+        while keep < min(resident.count, sequence.count), resident[keep] == sequence[keep] { keep += 1 }
+        // 入力の最後から先は argmax が要る。持ち越す範囲で求めていない位置があれば、そこから計算し直す
+        if let missing = (needFrom..<max(needFrom, keep)).first(where: { next[$0] == nil }) { keep = missing }
+        truncate(keep)
+        append(Array(sequence[keep...]), needFrom: needFrom)
         var out: [llama_token] = []
         while out.count < limit {
-            let token = next[prompt.count - 1 + out.count]
+            let token = next[needFrom + out.count]!
             if token == eos { break }
             out.append(token)
             let position = prompt.count + out.count - 1
             if position < resident.count, resident[position] == token { continue }
             truncate(position)
-            append([token])
+            append([token], needFrom: position)
         }
         return out
     }
@@ -111,22 +123,26 @@ final class ZenzGenerator: DirectDisplayGenerating {
         next.removeLast(next.count - count)
     }
 
-    /// tokens を resident の後ろに decode し、各位置の argmax を next に足す。decode が失敗したら止める。
-    /// 計算があふれると logits が有限でなくなる。そのまま argmax を取ると、エラーにならずに壊れた出力を返すので、止める
-    private func append(_ tokens: [llama_token]) {
+    /// tokens を resident の後ろに decode し、位置 needFrom 以降の argmax を next に足す。decode が失敗したら止める。
+    /// 計算が壊れると logits が有限でなくなる。そのまま argmax を取るとエラーにならずに壊れた出力を返すので、止める
+    private func append(_ tokens: [llama_token], needFrom: Int) {
         guard !tokens.isEmpty else { return }
-        guard resident.count + tokens.count <= Self.maxPositions else { fatalError("入力と出力がモデルの位置の上限 \(Self.maxPositions) を超えた") }
+        let start = resident.count
         batch.n_tokens = 0
         for (i, token) in tokens.enumerated() {
             batch.token[i] = token
-            batch.pos[i] = Int32(resident.count + i)
+            batch.pos[i] = Int32(start + i)
             batch.n_seq_id[i] = 1
             batch.seq_id[i]![0] = 0
-            batch.logits[i] = 1
+            batch.logits[i] = start + i >= needFrom ? 1 : 0
             batch.n_tokens += 1
         }
         guard llama_decode(context, batch) == 0 else { fatalError("llama.cpp の decode が失敗した") }
         for i in 0..<tokens.count {
+            guard start + i >= needFrom else {
+                next.append(nil)
+                continue
+            }
             let logits = llama_get_logits_ith(context, Int32(i))!
             var best = 0
             var finite = logits[0].isFinite
