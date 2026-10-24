@@ -10,6 +10,8 @@ public enum ConversionMethod: Sendable, Hashable {
     case azooKey
     /// 採点は azooKey、表示は azooKey の Zenzai に GGUF のモデルを渡して選び直す
     case azooKeyZenzai(weight: URL)
+    /// 採点と候補の窓は azooKey（Zenzai なし）、表示は tugime が zenz 形式の GGUF のモデルを直接動かした出力そのもの
+    case direct(weight: URL)
 
     /// 基準の方式。検証はどの対象の方式にも、これの出力を並べて残す
     public static let baseline = ConversionMethod.azooKey
@@ -20,6 +22,7 @@ public enum ConversionMethod: Sendable, Hashable {
         switch self {
         case .azooKey: nil
         case .azooKeyZenzai(let weight): weight
+        case .direct(let weight): weight
         }
     }
 
@@ -37,11 +40,13 @@ public enum ConversionMethod: Sendable, Hashable {
     /// 指定の接頭辞。読む表と記録に残す名前の両方が使う
     private static let azooKeyPrefix = "azookey"
     private static let zenzaiPrefix = "zenzai:"
+    private static let directPrefix = "direct:"
 
     /// 指定の接頭辞から方式を作る表。form は使い方に出す書式。パスを取らない方式は接頭辞と完全一致させる
     private static let specs: [(prefix: String, form: String, make: @Sendable (URL?) -> ConversionMethod?)] = [
         (azooKeyPrefix, azooKeyPrefix, { $0 == nil ? .azooKey : nil }),
         (zenzaiPrefix, "\(zenzaiPrefix)<GGUF のパス>", { $0.map { .azooKeyZenzai(weight: $0) } }),
+        (directPrefix, "\(directPrefix)<GGUF のパス>", { $0.map { .direct(weight: $0) } }),
     ]
 
     /// 指定できる書式の一覧。CLI の使い方とエラーの文言はこれを使う
@@ -68,6 +73,7 @@ public enum ConversionMethod: Sendable, Hashable {
         switch self {
         case .azooKey: Self.azooKeyPrefix
         case .azooKeyZenzai(let weight): Self.zenzaiPrefix + weight.path
+        case .direct(let weight): Self.directPrefix + weight.path
         }
     }
 
@@ -77,7 +83,7 @@ public enum ConversionMethod: Sendable, Hashable {
     }
 
     /// 変換器を作り、モデルを読み込み終えた状態で返す。最初の変換で読み込みの時間が混ざらないよう、ここで先読みまで済ませる。
-    /// モデルを読めなければプロセスごと止まる（AzooKeyConverter の fatalError。投げるエラーではないので、呼び出し元は受け止められない）
+    /// モデルを読めなければプロセスごと止まる（fatalError。投げるエラーではないので、呼び出し元は受け止められない）
     public func make() -> any JapaneseConverting {
         switch self {
         case .azooKey:
@@ -86,6 +92,9 @@ public enum ConversionMethod: Sendable, Hashable {
             let converter = AzooKeyConverter(zenzaiWeight: weight)
             converter.preloadZenzai()
             return converter
+        case .direct(let weight):
+            // azooKey には Zenzai を渡さない。llama.cpp にモデルを載せるのは ZenzGenerator だけになる
+            return DirectConverter(scorer: AzooKeyConverter(zenzaiWeight: nil), generator: ZenzGenerator(weight: weight))
         }
     }
 }

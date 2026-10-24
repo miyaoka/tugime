@@ -101,6 +101,10 @@ public struct AccuracySummary: Sendable {
     public var rows: [Row]
     /// 対象の出力が基準と同じだった件数
     public var sameAsBaseline: Int
+    /// 出力が読みに対応づかなかった件数（ReadingAlignment が nil）。表示ではその区間を 1 文節にした件数でもある。
+    /// 漢字の連なりの中の食い違いは数えないので、読みと違う出力の下限である
+    public var unalignedTarget: Int
+    public var unalignedBaseline: Int
     public var total: Int
 
     /// 集まりは記録の順、判定は集まりの中で現れた順に並べる
@@ -124,18 +128,23 @@ public struct AccuracySummary: Sendable {
             )
         }
         sameAsBaseline = results.filter { $0.output == $0.baselineOutput }.count
+        unalignedTarget = results.filter { ReadingAlignment(text: $0.output, reading: $0.problem.kana) == nil }.count
+        unalignedBaseline = results.filter { ReadingAlignment(text: $0.baselineOutput, reading: $0.problem.kana) == nil }.count
         total = results.count
     }
 
     /// 1 行目は列の名前。以降 1 行 1 集計のタブ区切り: 集まり 判定（all は全判定） 対象の正解数 基準の正解数 問題数 対象の正解率。
-    /// 最後に、対象の出力が基準と同じだった件数
+    /// 最後に、対象の出力が基準と同じだった件数と、読みとの対応を確かめられなかった出力の件数
     public var lines: [String] {
         let header = ["集まり", "判定", "対象", "基準", "問題数", "対象の正解率"].joined(separator: "\t")
         let body = rows.map { row in
             let rate = String(format: "%.1f%%", Double(row.passed) / Double(row.total) * 100)
             return [row.set, row.kind ?? "all", String(row.passed), String(row.baselinePassed), String(row.total), rate].joined(separator: "\t")
         }
-        return [header] + body + ["基準と同じ出力 \(sameAsBaseline) / \(total)"]
+        return [header] + body + [
+            "基準と同じ出力 \(sameAsBaseline) / \(total)",
+            "読みとの対応を確かめられなかった出力 対象 \(unalignedTarget) / 基準 \(unalignedBaseline) / \(total)",
+        ]
     }
 }
 
