@@ -67,4 +67,13 @@ import TugimeCore
             try AJIMEE.problems(from: Data(json.utf8), file: "t.json", set: AJIMEE.set)
         }
     }
+
+    @Test func keystrokesStopWithoutScripts() {
+        let watchdog = Watchdog(limits: .keystroke)
+        defer { watchdog.finish() }
+        let selection = KeystrokeScript.Selection(scripts: [], skipped: [])
+        #expect(throws: KeystrokeBench.Failure.self) {
+            try KeystrokeBench.run(selection: selection, method: .azooKey, watchdog: watchdog, progress: { _ in })
+        }
+    }
 }

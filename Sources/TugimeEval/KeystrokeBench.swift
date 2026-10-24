@@ -75,9 +75,12 @@ public enum KeystrokeBench {
 
     public enum Failure: Error, CustomStringConvertible {
         case keystrokeCountMismatch(samples: Int, keys: Int)
+        /// 測る文が 1 つも無い。時間の分布を作れないので、変換器を作る前に止める
+        case noScripts(skipped: Int)
         public var description: String {
             switch self {
             case .keystrokeCountMismatch(let samples, let keys): "打鍵の回数 \(samples) が打鍵列の長さの合計 \(keys) と一致しない"
+            case .noScripts(let skipped): "測る文が無い（綴りで書けず外した文 \(skipped) 件）"
             }
         }
     }
@@ -92,6 +95,7 @@ public enum KeystrokeBench {
         watchdog: Watchdog,
         progress: (String) -> Void
     ) throws -> Report {
+        guard !selection.scripts.isEmpty else { throw Failure.noScripts(skipped: selection.skipped.count) }
         let clock = ContinuousClock()
         let loadStart = clock.now
         watchdog.armLoad("読み込み \(method.spec)")
