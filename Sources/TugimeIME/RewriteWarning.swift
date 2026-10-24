@@ -31,7 +31,14 @@ final class RewriteWarning {
         panel.contentView?.subviews.forEach { $0.removeFromSuperview() }
         label.frame.origin = NSPoint(x: Self.padding.width, y: Self.padding.height)
         panel.contentView?.addSubview(label)
-        panel.setFrameOrigin(NSPoint(x: line.minX, y: line.minY - size.height - Self.gap))
+        // 行の下に収まらなければ行の上に置き、左右と上は画面の中へ詰める
+        var origin = NSPoint(x: line.minX, y: line.minY - size.height - Self.gap)
+        if let visible = (NSScreen.screens.first { $0.frame.intersects(line) } ?? NSScreen.main)?.visibleFrame {
+            if origin.y < visible.minY { origin.y = line.maxY + Self.gap }
+            origin.y = min(origin.y, visible.maxY - size.height)
+            origin.x = max(visible.minX, min(origin.x, visible.maxX - size.width))
+        }
+        panel.setFrameOrigin(origin)
         self.panel = panel
         panel.orderFrontRegardless()
     }
