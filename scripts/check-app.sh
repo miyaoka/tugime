@@ -12,6 +12,13 @@ mv "$root/.build" "$aside/"
 trap 'mv "$aside/.build" "$root/" && rmdir "$aside"' EXIT
 "$app/Contents/MacOS/tugime" --check
 
+# App Sandbox で動き、権限は入力メソッドの接続の名前の登録だけ。通信の権限が付いていれば止める
+expected=$(jq -cn --arg name "$(plutil -extract InputMethodConnectionName raw "$app/Contents/Info.plist")" \
+    '{"com.apple.security.app-sandbox": true, "com.apple.security.temporary-exception.mach-register.global-name": $name}')
+actual=$(codesign -d --entitlements - --xml "$app" 2>/dev/null | plutil -convert json -o - - | jq -cS .)
+[[ "$actual" == "$(jq -cS . <<< "$expected")" ]] || { echo "entitlements が想定と違う: $actual" >&2; exit 1; }
+echo "entitlements $actual"
+
 # 対象は Apple Silicon だけなので、実行ファイルと同梱のフレームワークは arm64 だけを含む
 for binary in "$app/Contents/MacOS/tugime" "$app/Contents/Frameworks/llama.framework/llama"; do
     archs=$(lipo -archs "$binary")
