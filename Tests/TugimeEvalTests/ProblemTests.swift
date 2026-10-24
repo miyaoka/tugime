@@ -26,11 +26,12 @@ import TugimeCore
             a\tきょう\t今日\tPrediction Expected
             a\tざんち\t殘置\tConversion Expected\t999
             a\tかな\t仮名\tConversion Expected\t0
+            a\tやま\t山\tConversion Expected\t
 
             """
         let parsed = try MozcRegression.problems(from: Data(tsv.utf8), file: "t.tsv", set: "mozc-oss")
-        #expect(parsed.problems.map(\.id) == ["mozc-oss:2", "mozc-oss:4", "mozc-oss:5", "mozc-oss:8"])
-        #expect(parsed.problems.map(\.check) == [.exact("足しました"), .contains("誤算"), .excludes("凸"), .exact("仮名")])
+        #expect(parsed.problems.map(\.id) == ["mozc-oss:2", "mozc-oss:4", "mozc-oss:5", "mozc-oss:8", "mozc-oss:9"])
+        #expect(parsed.problems.map(\.check) == [.exact("足しました"), .contains("誤算"), .excludes("凸"), .exact("仮名"), .exact("山")])
         #expect(parsed.problems.allSatisfy { $0.left.isEmpty })
         #expect(parsed.dropped == 3)
     }
