@@ -3,7 +3,7 @@ import Foundation
 /// 日本語区間を変換する方式。入力メソッドも CLI も検証の道具も、変換器はこの値からだけ作る。
 /// 検証で測った方式と入力メソッドが使う方式が別の組み立てにならないことが、この型の役目である。
 ///
-/// 方式を足すときは case を 1 つ足し、`specs` の表に 1 行足す。switch の網羅はコンパイラが確かめる。
+/// 方式を足すときは case を 1 つ足し、接頭辞の定数と `specs` の表に 1 行ずつ足す。switch の網羅はコンパイラが確かめ、表との往復はテストが確かめる。
 /// 検証の道具は case を switch せず、使い方の文言も `forms` から作るので、触らずに新しい方式を測れる
 public enum ConversionMethod: Sendable, Hashable {
     /// azooKey の辞書と n-gram だけで変換する。検証の基準
@@ -34,10 +34,14 @@ public enum ConversionMethod: Sendable, Hashable {
         }
     }
 
+    /// 指定の接頭辞。読む表と記録に残す名前の両方が使う
+    private static let azooKeyPrefix = "azookey"
+    private static let zenzaiPrefix = "zenzai:"
+
     /// 指定の接頭辞から方式を作る表。form は使い方に出す書式。パスを取らない方式は接頭辞と完全一致させる
     private static let specs: [(prefix: String, form: String, make: @Sendable (URL?) -> ConversionMethod?)] = [
-        ("azookey", "azookey", { $0 == nil ? .azooKey : nil }),
-        ("zenzai:", "zenzai:<GGUF のパス>", { $0.map { .azooKeyZenzai(weight: $0) } }),
+        (azooKeyPrefix, azooKeyPrefix, { $0 == nil ? .azooKey : nil }),
+        (zenzaiPrefix, "\(zenzaiPrefix)<GGUF のパス>", { $0.map { .azooKeyZenzai(weight: $0) } }),
     ]
 
     /// 指定できる書式の一覧。CLI の使い方とエラーの文言はこれを使う
@@ -62,9 +66,14 @@ public enum ConversionMethod: Sendable, Hashable {
     /// 記録に残す名前。`init(spec:)` と往復する
     public var spec: String {
         switch self {
-        case .azooKey: "azookey"
-        case .azooKeyZenzai(let weight): "zenzai:\(weight.path)"
+        case .azooKey: Self.azooKeyPrefix
+        case .azooKeyZenzai(let weight): Self.zenzaiPrefix + weight.path
         }
+    }
+
+    /// 同梱の綴りの表と語表で、この方式の区切りを作る。入力メソッド・CLI・打鍵の計測は、区切りをこれからだけ作る
+    public func makeSegmenter() throws -> Segmenter {
+        try Segmenter(table: .bundled(), english: .bundled(), japanese: make())
     }
 
     /// 変換器を作り、モデルを読み込み終えた状態で返す。最初の変換で読み込みの時間が混ざらないよう、ここで先読みまで済ませる。

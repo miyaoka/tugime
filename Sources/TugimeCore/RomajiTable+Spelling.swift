@@ -1,5 +1,10 @@
 import Foundation
 
+/// 綴りが複数あるときの選び方。打鍵の少ない方、同じ長さなら打鍵列の辞書順で前の方
+func prefersKeys(_ a: String, over b: String) -> Bool {
+    a.count != b.count ? a.count < b.count : a < b
+}
+
 /// 読みの 1 文字分か 1 項目分の打鍵。何打鍵目でいくつの文字を打ち終えたかを数えるのに使う
 public struct SpelledKana: Sendable, Equatable {
     /// 読みのうちこの打鍵が打つもの（き・きゃ・っ・ん・、 など）
@@ -16,7 +21,7 @@ extension RomajiTable {
     /// かなを、利用者の綴りの表で打つ打鍵列に逆にたどる。表で書けないかなを含めば nil。
     ///
     /// 不変条件: 返した綴りを繋いだ打鍵列を `reading(of:)` で読むと kana に戻る。戻らなければ nil にする。
-    /// 綴りが複数あるとき（ん: nn / n）は打鍵の少ない方、同じ長さなら打鍵列の辞書順で前の方を選ぶ。同じかなには常に同じ打鍵列を返す
+    /// 綴りが複数あるとき（ん: nn / n）は打鍵列全体を prefersKeys で選ぶ。同じかなには常に同じ打鍵列を返す
     public func spelling(of kana: String) -> [SpelledKana]? {
         let chars = Array(kana)
         guard !chars.isEmpty else { return nil }
@@ -29,7 +34,7 @@ extension RomajiTable {
             for step in steps(at: start, in: chars, reverse: reverse) {
                 let candidate = here + step
                 let end = start + step.map(\.kana.count).reduce(0, +)
-                if let current = best[end], !Self.isBetter(candidate, than: current) { continue }
+                if let current = best[end], !prefersKeys(candidate.map(\.keys).joined(), over: current.map(\.keys).joined()) { continue }
                 best[end] = candidate
             }
         }
@@ -37,17 +42,11 @@ extension RomajiTable {
         return spelled
     }
 
-    /// 打鍵の少ない方、同じなら打鍵列の辞書順で前の方
-    private static func isBetter(_ a: [SpelledKana], than b: [SpelledKana]) -> Bool {
-        let (x, y) = (a.map(\.keys).joined(), b.map(\.keys).joined())
-        return x.count != y.count ? x.count < y.count : x < y
-    }
-
-    /// かなから綴りへの表。同じかなに綴りが複数あれば、短い方、同じ長さなら辞書順で前の方
+    /// かなから綴りへの表。同じかなに綴りが複数あれば prefersKeys で選ぶ
     private var reverseEntries: [String: String] {
         var reverse: [String: String] = [:]
         for (key, value) in entries {
-            if let current = reverse[value], current.count < key.count || (current.count == key.count && current < key) { continue }
+            if let current = reverse[value], !prefersKeys(key, over: current) { continue }
             reverse[value] = key
         }
         return reverse
@@ -88,21 +87,22 @@ extension RomajiTable {
 }
 
 extension Segmenter {
-    /// 句読点と記号を打鍵から逆にたどる表。同じ記号に打鍵が複数あれば、短い方、同じ長さなら辞書順で前の方（・ は / と z/ のうち /）
+    /// 句読点と記号を打鍵から逆にたどる表。同じ記号に打鍵が複数あれば prefersKeys で選ぶ（・ は / と z/ のうち /）
     static let symbolKeys: [String: String] = {
         var keys: [String: String] = [:]
         let all = punctuation.map { (String($0.key), $0.value) } + symbols.map { ($0.key, $0.value) }
         for (key, symbol) in all {
-            if let current = keys[symbol], current.count < key.count || (current.count == key.count && current < key) { continue }
+            if let current = keys[symbol], !prefersKeys(key, over: current) { continue }
             keys[symbol] = key
         }
         return keys
     }()
 
     /// 読み（ひらがなと、入力メソッドが打鍵から出す句読点・記号）を打鍵列に逆にたどる。
-    /// 句読点・記号の位置で読みを切り、かなの連なりは綴りの表（`RomajiTable.spelling(of:)`）でたどる。書けない文字を含めば nil。
+    /// 句読点・記号の位置で読みを切り、かなの連なりは綴りの表（`RomajiTable.spelling(of:)`）でたどる。空か、書けない文字を含めば nil。
     /// 句読点は直前が英語の区間なら打ったまま残るので、打鍵列を打った表示が読みと同じ記号になるとは限らない
     public static func spelling(of reading: String, table: RomajiTable) -> [SpelledKana]? {
+        guard !reading.isEmpty else { return nil }
         var spelled: [SpelledKana] = []
         var run = ""
         func flush() -> Bool {

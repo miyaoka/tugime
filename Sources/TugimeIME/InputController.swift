@@ -45,7 +45,7 @@ let sharedSegmenter: Segmenter = {
         fatalError("tugime を初期化できない: Zenzai のモデルが Contents/Resources/zenz に無い")
     }
     do {
-        return try Segmenter(table: .bundled(), english: .bundled(), japanese: ConversionMethod.azooKeyZenzai(weight: zenz).make())
+        return try ConversionMethod.azooKeyZenzai(weight: zenz).makeSegmenter()
     } catch {
         fatalError("tugime を初期化できない: \(error)")
     }

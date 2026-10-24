@@ -18,10 +18,6 @@ let usage = """
       tugime-cli --tune <例文集.tsv>          重みを格子状に試し、近傍平均の高い順に出す
     """
 
-func makeSegmenter(method: ConversionMethod) throws -> Segmenter {
-    try Segmenter(table: .bundled(), english: .bundled(), japanese: method.make())
-}
-
 let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P"]
 let clauseTag: [Clause.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .whole: "W"]
 
@@ -152,7 +148,7 @@ do {
             exit(2)
         }
         let examples = try CorpusExample.load(path: args[1])
-        let segmenter = try makeSegmenter(method: method)
+        let segmenter = try method.makeSegmenter()
         if args[0] == "--tune" {
             tune(examples, segmenter: segmenter)
             exit(0)
@@ -174,13 +170,13 @@ do {
         }
     case "--whole":
         // F6〜F10 の全体の変換を並べる
-        let segmenter = try makeSegmenter(method: method)
+        let segmenter = try method.makeSegmenter()
         for input in args.dropFirst() {
             print("\(input)\t" + CharacterForm.allCases.map { segmenter.convertWhole(input, to: $0, leading: leading) }.joined(separator: " / "))
         }
     case "--clauses":
         // IME の候補の窓に並ぶものを区間ごとに出す
-        let segmenter = try makeSegmenter(method: method)
+        let segmenter = try method.makeSegmenter()
         for input in args.dropFirst() {
             print("== \(input)")
             for clause in segmenter.clauses(input, leading: leading) {
@@ -192,7 +188,7 @@ do {
             print(usage)
             exit(2)
         }
-        let segmenter = try makeSegmenter(method: method)
+        let segmenter = try method.makeSegmenter()
         var clauses = segmenter.clauses(args[1], leading: leading)
         var focus = 0
         func show(_ label: String) {
@@ -213,18 +209,18 @@ do {
             show(String(op))
         }
     case "--live":
-        let segmenter = try makeSegmenter(method: method)
+        let segmenter = try method.makeSegmenter()
         for input in args.dropFirst() {
             print("\(input)\t\(segmenter.liveText(input, leading: leading))")
         }
     case "--explain":
-        let segmenter = try makeSegmenter(method: method)
+        let segmenter = try method.makeSegmenter()
         for input in args.dropFirst() {
             let segments = segmenter.segment(input, leading: leading)
             print("\(segments.map(\.output).joined())\t\(describe(segments))")
         }
     case "--lattice":
-        let segmenter = try makeSegmenter(method: method)
+        let segmenter = try method.makeSegmenter()
         for input in args.dropFirst() {
             print("== \(input)\t\(describe(segmenter.segment(input, leading: leading)))")
             for span in segmenter.candidates(input, leading: leading) {
@@ -234,7 +230,7 @@ do {
             }
         }
     default:
-        let segmenter = try makeSegmenter(method: method)
+        let segmenter = try method.makeSegmenter()
         for input in args {
             print(segmenter.displayText(input, leading: leading))
         }
