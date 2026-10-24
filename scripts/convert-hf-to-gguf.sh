@@ -9,6 +9,9 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
+# 取得と変換の Python は scripts/convert-env の uv.lock で固定した環境で動かす。環境は .eval/ に作る
+export UV_PROJECT_ENVIRONMENT="$root/.eval/convert-env"
+uv_run=(uv run --project "$root/scripts/convert-env" --locked)
 # azooKey の llama.cpp のフォークで、azooKey が同梱する llama.cpp と同じ版。前処理の名前の表がこの版のもの
 llama_repo=https://github.com/azooKey/llama.cpp
 llama_commit=10131b23ee0dbd9d03dfc618cec9fe3402919277 # タグ b4846
@@ -38,12 +41,10 @@ fi
 source_dir="$root/.eval/hf/$commit/$repo"
 mkdir -p "$source_dir"
 # 取得は Hugging Face の公式 CLI。--local-dir に取得済みの記録を置き、取得済みなら取り直さない
-hf_download=(uv run --no-project --python 3.11 --with huggingface_hub==2.2.0
-    hf download "$repo" --revision "$commit" --local-dir "$source_dir" --quiet)
-include=()
-for file in "${meta_files[@]}"; do include+=(--include "$file"); done
+# --include は 1 つの後ろにパターンを並べる。繰り返すと最後の 1 つだけが効く
+hf_download=("${uv_run[@]}" hf download "$repo" --revision "$commit" --local-dir "$source_dir" --quiet --include)
 echo "== 取得 $repo $commit の設定とトークナイザー" >&2
-"${hf_download[@]}" "${include[@]}" >&2
+"${hf_download[@]}" "${meta_files[@]}" >&2
 if [[ ! -f "$source_dir/config.json" ]]; then
     echo "$repo $commit に config.json が無い" >&2
     exit 1
@@ -54,7 +55,7 @@ index="$source_dir/model.safetensors.index.json"
 if [[ -f "$index" ]]; then
     weights=()
     names="$source_dir/.weights"
-    uv run --no-project --python 3.11 python -I -c '
+    "${uv_run[@]}" python -I -c '
 import json, sys
 for name in sorted(set(json.load(open(sys.argv[1]))["weight_map"].values())):
     print(name)
@@ -82,10 +83,6 @@ fi
 
 out="$root/.zenz/$name.gguf"
 mkdir -p "$(dirname "$out")"
-# 依存は llama.cpp のこの版の変換が動いた組み合わせ
-uv_run=(uv run --no-project --python 3.11
-    --with torch==2.2.2 --with numpy==1.26.4 --with sentencepiece==0.2.0
-    --with "transformers>=4.45.1,<5" --with "protobuf<5")
 echo "== 変換 $repo $commit → ${out}（${outtype}）" >&2
 "${uv_run[@]}" python "$llama/convert_hf_to_gguf.py" "$source_dir" --outtype "$outtype" --outfile "$out.part" >&2
 

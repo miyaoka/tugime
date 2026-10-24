@@ -32,7 +32,7 @@ nodewosakujosite,sitewokoukaisuru                       →  nodeを削除して
 
 ### かな漢字変換
 
-[AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter) を使い、表示する変換は Zenzai（小さな言語モデル）が前の文脈を見て選ぶ。
+表示する変換は、かな漢字変換の言語モデル [genmai-310M](https://huggingface.co/subdiox/genmai-310M) が前の文脈を見て出す。区切りの採点と候補の窓は [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter) が受け持つ。
 
 ## 動作環境
 
@@ -60,7 +60,7 @@ Releases から `tugime-macos-arm64.tar.gz` を取得した場合は、展開し
 
 ### ソースから
 
-Xcode（Swift 6.2 以降）が要る。組み立てのときに Zenzai のモデル（約 70MB）を Hugging Face から `.zenz/` に取得する。
+Xcode（Swift 6.2 以降）が要る。組み立てのときに genmai-310M の GGUF（約 340MB）を Hugging Face から `.zenz/` に取得する。
 
 ```bash
 scripts/build-app.sh                    # dist/tugime Dev.app を組み立てて ad-hoc 署名する
@@ -103,10 +103,10 @@ main に `feat` か `fix` のコミットが入ると、CI が版（`vYYYY.M.PAT
 
 ```bash
 swift build --product tugime-cli
-zenz=$(scripts/fetch-zenz.sh)                                                     # Zenzai のモデルを取得してパスを出す
-.build/debug/tugime-cli --method "zenzai:$zenz" nodewosakujosite,sitewokoukaisuru  # 変換結果
+model=$(scripts/fetch-genmai.sh)                                                  # 表示の変換のモデルを用意してパスを出す
+.build/debug/tugime-cli --method "direct:$model" nodewosakujosite,sitewokoukaisuru # 変換結果
 .build/debug/tugime-cli --explain sitewokoukaisuru                                # 区間と評価値（採点の変換）
-.build/debug/tugime-cli --method "zenzai:$zenz" --corpus corpus/examples.tsv       # 例文集の一致件数（CI と同じ組み立て）
+.build/debug/tugime-cli --method "direct:$model" --corpus corpus/examples.tsv      # 例文集の一致件数（CI と同じ組み立て）
 swift test
 bun scripts/make-readme-figures.ts                                                # README の図を tugime-cli の出力から作り直す（Chrome が要る）
 ```
@@ -119,9 +119,9 @@ bun scripts/make-readme-figures.ts                                              
 swift build -c release --product tugime-eval
 problems=$(scripts/fetch-eval.sh)                                                  # 問題を取得してディレクトリを出す
 .build/release/tugime-eval accuracy --method azookey --problems "$problems" --out .eval/azookey.jsonl
-.build/release/tugime-eval accuracy --method "zenzai:$zenz" --problems "$problems" --out .eval/zenz.jsonl
-.build/release/tugime-eval compare .eval/azookey.jsonl .eval/zenz.jsonl           # 片方だけが正解した問題
-.build/release/tugime-eval keystrokes --method "zenzai:$zenz" --problems "$problems" --out .eval/keys.tsv
+.build/release/tugime-eval accuracy --method "direct:$model" --problems "$problems" --out .eval/genmai.jsonl
+.build/release/tugime-eval compare .eval/azookey.jsonl .eval/genmai.jsonl         # 片方だけが正解した問題
+.build/release/tugime-eval keystrokes --method "direct:$model" --problems "$problems" --out .eval/keys.tsv
 model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出力名>)      # Hugging Face の safetensors を GGUF にする
 ```
 
@@ -130,6 +130,6 @@ model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出
 ## 使っているもの
 
 - [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter)（MIT）と既定の辞書
-- [zenz-v3.2-small](https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf)（Apache-2.0）と [llama.cpp](https://github.com/azooKey/llama.cpp)（MIT）
+- [genmai-310M](https://huggingface.co/subdiox/genmai-310M)（CC BY-SA 4.0。[zenz-v2.5-medium](https://huggingface.co/Miwa-Keita/zenz-v2.5-medium) を元にしたモデル）と [llama.cpp](https://github.com/azooKey/llama.cpp)（MIT）
 - 英語の語の頻度: [wordfreq](https://github.com/rspeer/wordfreq) の日本語データ（CC BY-SA 4.0）
 - 英語の綴りらしさを数える語表: macOS 同梱の Webster's Second International（1934 年、著作権切れ）と固有名詞表
