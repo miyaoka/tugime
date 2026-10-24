@@ -310,10 +310,12 @@ final class TugimeInputController: IMKInputController {
                 moveCandidate(by: -1, client: client)
             }
         case KeyCode.left, KeyCode.right:
-            // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する
+            // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する。
+            // 文節の移動は両端で反対の端へ回る（Mozc と同じ）
             let step = event.keyCode == KeyCode.left ? -1 : 1
             if event.modifierFlags.contains(.shift) {
-                focus = min(max(focus + step, 0), (clauses?.count ?? 1) - 1)
+                let count = clauses?.count ?? 1
+                focus = (focus + step + count) % count
             } else if let clauses {
                 self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step, leading: leading)
             }
