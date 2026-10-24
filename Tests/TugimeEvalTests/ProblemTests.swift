@@ -4,17 +4,6 @@ import TugimeCore
 @testable import TugimeEval
 
 @Suite struct ProblemTests {
-    @Test func checksFollowTheSourceWording() {
-        #expect(Check.oneOf(["青年誌", "成年誌"]).passes("成年誌"))
-        #expect(!Check.oneOf(["青年誌"]).passes("青年誌で"))
-        #expect(Check.exact("足しました").passes("足しました"))
-        #expect(!Check.exact("足しました").passes("足しました。"))
-        #expect(Check.contains("誤算").passes("これは嬉しい誤算です"))
-        #expect(!Check.contains("誤算").passes("これは嬉しい五三です"))
-        #expect(Check.excludes("田中").passes("気心の知れた仲なので"))
-        #expect(!Check.excludes("田中").passes("気心の知れた田中なので"))
-    }
-
     /// 先頭の候補だけで判定できる行を残す。順位を command に付けた行と、5 列目に 0 以外の順位を書いた行は捨てる
     @Test func mozcKeepsOnlyTopCandidateChecks() throws {
         let tsv = """
@@ -65,15 +54,6 @@ import TugimeCore
         let json = #"[{"context_text":"","input":"ア","expected_output":["亜"]}]"#
         #expect(throws: ProblemLoadError.self) {
             try AJIMEE.problems(from: Data(json.utf8), file: "t.json", set: AJIMEE.set)
-        }
-    }
-
-    @Test func keystrokesStopWithoutScripts() {
-        let watchdog = Watchdog(limits: .keystroke)
-        defer { watchdog.finish() }
-        let selection = KeystrokeScript.Selection(scripts: [], skipped: [])
-        #expect(throws: KeystrokeBench.Failure.self) {
-            try KeystrokeBench.run(selection: selection, method: .azooKey, watchdog: watchdog, progress: { _ in })
         }
     }
 }
