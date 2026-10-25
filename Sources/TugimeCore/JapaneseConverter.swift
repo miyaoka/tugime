@@ -110,11 +110,27 @@ final class AzooKeyConverter: JapaneseConverting {
     /// 前に置くものだけを変換した評価値。未確定の文字列の寿命だけ持つ
     private var prefixValues: [String: Double?] = [:]
     /// 利用者の語を LOUDS に組み立てて置くディレクトリ。変換エンジンは ConvertRequestOptions.sharedContainerURL の
-    /// user.louds を利用者の辞書として読む。置き換えるたびに作り直し、変換器を捨てるときに消す。まだ置き換えていなければ無い
-    private var userDictionaryDirectory = newUserDictionaryDirectory()
+    /// user.louds を利用者の辞書として読む。置き換えるたびに作り直し、変換器を捨てるときに消す。利用者の語が無ければ nil
+    private var userDictionaryDirectory: URL?
+
+    /// 組み立てたディレクトリを置く場所。ディレクトリの名前はプロセスの番号で始め、終わったプロセスが残したものは次に変換器を作るときに消す
+    private static let userDictionaryRoot = FileManager.default.temporaryDirectory.appendingPathComponent("tugime-user-dictionary", isDirectory: true)
+    /// 利用者の語が無いときに変換エンジンに渡す場所。作らないので、変換エンジンは利用者の辞書を読まない
+    private static let noUserDictionary = userDictionaryRoot.appendingPathComponent("none", isDirectory: true)
 
     private static func newUserDictionaryDirectory() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("tugime-user-dictionary-\(UUID().uuidString)", isDirectory: true)
+        userDictionaryRoot.appendingPathComponent("\(getpid())-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    /// 終わったプロセスが残したディレクトリを消す。入力メソッドは install.sh で止められるので、プロセスの終わりには消せない
+    private static func removeLeftoverUserDictionaries() {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: userDictionaryRoot.path) else { return }
+        for name in names {
+            guard let pid = name.split(separator: "-").first.flatMap({ pid_t($0) }), pid != getpid(),
+                  kill(pid, 0) != 0, errno == ESRCH
+            else { continue }
+            try? FileManager.default.removeItem(at: userDictionaryRoot.appendingPathComponent(name))
+        }
     }
     /// 利用者の語の読み（カタカナ）ごとの、登録した表記
     private var userSpellings: [String: [String]] = [:]
@@ -158,10 +174,11 @@ final class AzooKeyConverter: JapaneseConverting {
     init(zenzaiWeight: URL?) {
         converter = KanaKanjiConverter.withDefaultDictionary()
         self.zenzaiWeight = zenzaiWeight
+        Self.removeLeftoverUserDictionaries()
     }
 
     deinit {
-        try? FileManager.default.removeItem(at: userDictionaryDirectory)
+        if let userDictionaryDirectory { try? FileManager.default.removeItem(at: userDictionaryDirectory) }
     }
 
     /// 採点のセッションを選ぶ。前に渡した読みが text の先頭と一致するセッションがあればそれを使い、
@@ -195,7 +212,7 @@ final class AzooKeyConverter: JapaneseConverting {
             keyboardLanguage: .ja_JP,
             learningType: .nothing,
             memoryDirectoryURL: unused,
-            sharedContainerURL: userDictionaryDirectory,
+            sharedContainerURL: userDictionaryDirectory ?? Self.noUserDictionary,
             textReplacer: .empty,
             specialCandidateProviders: [],
             zenzaiMode: zenzai,
@@ -322,8 +339,7 @@ final class AzooKeyConverter: JapaneseConverting {
         return .success(table)
     }()
 
-    /// azooKey-Desktop と同じく、利用者の語を LOUDS に組み立てて変換エンジンに読ませる。
-    /// 変換エンジンの動的な利用者辞書は、引くたびに全語を順に見るので、語が多いと打鍵ごとの変換が遅くなる
+    /// azooKey-Desktop と同じく、利用者の語を LOUDS に組み立てて変換エンジンに読ませる
     public func replaceUserDictionary(_ dictionary: UserDictionary) throws {
         let elements = dictionary.entries.map {
             DicdataElement(word: $0.word, ruby: Kana.katakana($0.reading), cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: Self.userWordValue)
@@ -335,11 +351,18 @@ final class AzooKeyConverter: JapaneseConverting {
         }
         // 新しいディレクトリに組み立て終えてから差し替え、前のディレクトリを消す。途中で投げても前の辞書は残る
         let manager = FileManager.default
-        let next = Self.newUserDictionaryDirectory()
-        try manager.createDirectory(at: next, withIntermediateDirectories: true)
+        var next: URL?
         if !elements.isEmpty {
-            let ids = Dictionary(uniqueKeysWithValues: table.enumerated().map { ($0.element, UInt8($0.offset)) })
-            try DictionaryBuilder.exportDictionary(entries: elements, to: next, baseName: "user", shardByFirstCharacter: false, char2UInt8: ids)
+            let directory = Self.newUserDictionaryDirectory()
+            do {
+                try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+                let ids = Dictionary(uniqueKeysWithValues: table.enumerated().map { ($0.element, UInt8($0.offset)) })
+                try DictionaryBuilder.exportDictionary(entries: elements, to: directory, baseName: "user", shardByFirstCharacter: false, char2UInt8: ids)
+            } catch {
+                try? manager.removeItem(at: directory)
+                throw error
+            }
+            next = directory
         }
         endComposition()
         // 採点のセッションは、前の辞書で組んだ途中の計算を未確定の文字列をまたいで持つ
@@ -347,10 +370,10 @@ final class AzooKeyConverter: JapaneseConverting {
         scoringSessions = []
         let previous = userDictionaryDirectory
         userDictionaryDirectory = next
-        converter.updateUserDictionaryURL(next, forceReload: true)
+        converter.updateUserDictionaryURL(next ?? Self.noUserDictionary, forceReload: true)
         userSpellings = Dictionary(grouping: elements, by: \.ruby).mapValues { $0.map(\.word) }
-        // 差し替えは済んでいるので、前のディレクトリを消せなくても変換は新しい辞書で動く。消せなかったものは一時ディレクトリに残るだけ
-        try? manager.removeItem(at: previous)
+        // 差し替えは済んでいるので、前のディレクトリを消せなくても変換は新しい辞書で動く。残ったものは、このプロセスが終わった後に消える
+        if let previous { try? manager.removeItem(at: previous) }
     }
 
     /// 変換エンジンは直前の入力との差分で計算する。採点は前に渡した読みの続きを同じセッションに渡して途中の計算を使い回す。

@@ -59,6 +59,23 @@ import Testing
         #expect(converter.alternatives(kana: "いっゕげつ", context: .start).contains("壱ヶ月"))
     }
 
+    /// 変換器を作ると、終わったプロセスが残した辞書のディレクトリを消し、動いているプロセスのものは残す
+    @Test func removesDirectoriesLeftByFinishedProcesses() throws {
+        let finished = Process()
+        finished.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try finished.run()
+        finished.waitUntilExit()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tugime-user-dictionary", isDirectory: true)
+        let left = root.appendingPathComponent("\(finished.processIdentifier)-left", isDirectory: true)
+        let alive = root.appendingPathComponent("\(getpid())-alive", isDirectory: true)
+        try FileManager.default.createDirectory(at: left, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: alive, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: alive) }
+        _ = ConversionMethod.baseline.make()
+        #expect(!FileManager.default.fileExists(atPath: left.path))
+        #expect(FileManager.default.fileExists(atPath: alive.path))
+    }
+
     /// 5000 語の辞書でも組み立てられ、入れた語を引ける
     @Test func findsWordsInALargeDictionary() throws {
         let digits = Array("あいうえおかきくけこ")
