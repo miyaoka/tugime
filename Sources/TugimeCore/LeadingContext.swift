@@ -17,6 +17,8 @@ public struct LeadingContext: Sendable {
         if !committed.text.isEmpty, field.text.hasSuffix(committed.text) || committed.text.hasSuffix(field.text) {
             fieldShowsCommits = true
         }
+        // 入力欄が返した文字列がそこまでの前の文字列なので、それより前の確定は次の判定に持ち越さない
+        committed = .start
         return field
     }
 

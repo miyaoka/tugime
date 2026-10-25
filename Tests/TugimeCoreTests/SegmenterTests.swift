@@ -114,8 +114,9 @@ private final class LeftRecorder: JapaneseConverting {
         // 続けて確定した文字列はつなげ、入力欄から読むときと同じ上限までにする
         context.didCommit("今日")
         #expect(context.leading(field: .start).text == "API今日")
-        context.didCommit(String(repeating: "あ", count: Segmenter.Leading.maxLength))
-        #expect(context.leading(field: .start).text == String(repeating: "あ", count: Segmenter.Leading.maxLength - 1))
+        let long = String(repeating: "あ", count: Segmenter.Leading.maxLength)
+        context.didCommit(long)
+        #expect(context.leading(field: .start) == Segmenter.Leading(field: "API今日" + long))
     }
 
     /// 入力欄が返す前の文字列は確定した文字列より優先し、確定した文字列はアプリにキーを渡すと捨てる
@@ -123,6 +124,7 @@ private final class LeftRecorder: JapaneseConverting {
         var context = LeadingContext()
         context.didCommit("API")
         #expect(context.leading(field: Segmenter.Leading("今日")).text == "今日")
+        context.didCommit("API")
         context.forgetCommits()
         #expect(context.leading(field: .start) == .start)
     }
@@ -133,6 +135,17 @@ private final class LeftRecorder: JapaneseConverting {
         context.didCommit("API")
         #expect(context.leading(field: Segmenter.Leading("README の API")).text == "README の API")
         context.didCommit("です")
+        #expect(context.leading(field: .start) == .start)
+    }
+
+    /// 入力欄が返した文字列が確定した文字列と食い違っても、その後に同じ欄で確定した文字列を返せば、空の入力欄を文頭にする
+    @Test func trustsAnEmptyFieldAfterReadingAnotherFieldOnce() {
+        var context = LeadingContext()
+        context.didCommit("API")
+        #expect(context.leading(field: Segmenter.Leading("hello")).text == "hello")
+        context.didCommit("x")
+        #expect(context.leading(field: Segmenter.Leading("hellox")).text == "hellox")
+        context.didCommit("y")
         #expect(context.leading(field: .start) == .start)
     }
 
