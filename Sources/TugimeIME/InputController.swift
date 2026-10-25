@@ -125,7 +125,7 @@ final class TugimeInputController: IMKInputController {
         nonisolated(unsafe) var menu: NSMenu?
         MainActor.assumeIsolated {
             let built = NSMenu()
-            built.addItem(NSMenuItem(title: "利用者の辞書を開く", action: #selector(openUserDictionary(_:)), keyEquivalent: ""))
+            built.addItem(NSMenuItem(title: "tugime の辞書を編集…", action: #selector(openUserDictionary(_:)), keyEquivalent: ""))
             menu = built
         }
         return menu
@@ -133,11 +133,9 @@ final class TugimeInputController: IMKInputController {
 
     @objc nonisolated func openUserDictionary(_ sender: Any?) {
         onMain {
-            do {
-                try userDictionaryFile.openInEditor()
-            } catch {
+            userDictionaryFile.openInEditor { error in
                 let alert = NSAlert()
-                alert.messageText = "利用者の辞書を開けない"
+                alert.messageText = "tugime の辞書を開けない"
                 alert.informativeText = "\(userDictionaryFile.url.path)\n\(error.localizedDescription)"
                 alert.runModal()
             }

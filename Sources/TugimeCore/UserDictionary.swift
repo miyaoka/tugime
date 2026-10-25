@@ -18,10 +18,10 @@ public struct UserDictionary: Sendable, Equatable {
 
         public var description: String {
             switch self {
-            case .malformedLine(let n, let line): "利用者の辞書 \(n) 行目を読めない（打鍵、タブ、表記の順に書く）: \(line)"
-            case .invalidKeys(let n, let keys): "利用者の辞書 \(n) 行目の打鍵は、英数字と記号（空白を除く ASCII）で書く: \(keys)"
-            case .unreachableKeys(let n, let keys): "利用者の辞書 \(n) 行目の打鍵は、記号に変わる打鍵（zh / [ など）を含むか句読点で始まるので、打っても一致しない: \(keys)"
-            case .duplicateEntry(let n, let line): "利用者の辞書 \(n) 行目は前の行にもある: \(line)"
+            case .malformedLine(let n, let line): "tugime の辞書の \(n) 行目を読めない（打鍵、タブ、表記の順に書く）: \(line)"
+            case .invalidKeys(let n, let keys): "tugime の辞書の \(n) 行目の打鍵は、英数字と記号（空白を除く ASCII）で書く: \(keys)"
+            case .unreachableKeys(let n, let keys): "tugime の辞書の \(n) 行目の打鍵は、記号に変わる打鍵（zh / [ など）を含むか句読点で始まるので、打っても一致しない: \(keys)"
+            case .duplicateEntry(let n, let line): "tugime の辞書の \(n) 行目は前の行にもある: \(line)"
             }
         }
     }
@@ -34,7 +34,7 @@ public struct UserDictionary: Sendable, Equatable {
         public var description: String {
             switch self {
             case .missingCharacterTable: "既定の辞書の文字の表（charID.chid）がバンドルに無い"
-            case .unsupportedCharacter(let reading): "利用者の辞書の読み \(reading) に、変換エンジンが辞書で扱えない文字がある"
+            case .unsupportedCharacter(let reading): "tugime の辞書の読み \(reading) に、変換エンジンが辞書で扱えない文字がある"
             }
         }
     }
