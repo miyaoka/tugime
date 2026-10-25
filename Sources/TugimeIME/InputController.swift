@@ -41,11 +41,13 @@ private enum KeyCode {
 /// 区切りと変換はプロセスに 1 つだけ持つ。辞書・語表・モデルの読み込みが重いので、入力源ごとに作らない
 let sharedSegmenter: Segmenter = {
     // 表示の変換のモデルはバンドルの Contents/Resources/model に同梱する
-    guard let model = Bundle.main.url(forResource: ConversionMethod.inputMethodModel, withExtension: nil, subdirectory: "model") else {
+    guard let resources = Bundle.main.resourceURL else { fatalError("tugime を初期化できない: バンドルの Contents/Resources が無い") }
+    let method = ConversionMethod.inputMethod(modelDirectory: resources.appendingPathComponent("model"))
+    guard let model = method.weight, FileManager.default.fileExists(atPath: model.path) else {
         fatalError("tugime を初期化できない: 表示の変換のモデルが Contents/Resources/model に無い")
     }
     do {
-        return try ConversionMethod.direct(weight: model).makeSegmenter()
+        return try method.makeSegmenter()
     } catch {
         fatalError("tugime を初期化できない: \(error)")
     }
