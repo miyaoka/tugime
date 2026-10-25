@@ -27,11 +27,23 @@ public struct AccuracyRecord: Sendable, Codable {
 
     public struct Result: Sendable, Codable {
         public var problem: Problem
-        /// 問題を打った結果。読みが綴りで書けない文字を含めば nil で、利用者はその読みを打てないので、どちらの方式も不正解とする
-        public var typed: Typed?
+        public var outcome: Outcome
+
+        /// 打てた問題の結果。打てなかった問題は nil
+        public var typed: Typed? {
+            guard case .typed(let typed) = outcome else { return nil }
+            return typed
+        }
 
         public var passes: Bool { typed.map { problem.check.passes($0.output) } ?? false }
         public var baselinePasses: Bool { typed.map { problem.check.passes($0.baselineOutput) } ?? false }
+    }
+
+    /// 問題を打てたか。打てなかったことも値として記録に書く（無いキーで表すと、欄の欠けた記録と見分けられない）
+    public enum Outcome: Sendable, Codable {
+        case typed(Typed)
+        /// 読みが綴りで書けない文字を含む。利用者はその読みを打てないので、どちらの方式も不正解とする
+        case untypable
     }
 
     public struct Typed: Sendable, Codable {
@@ -110,8 +122,8 @@ public struct AccuracySummary: Sendable {
     public var untyped: Int
     /// 打てた問題のうち、対象の出力が基準と同じだった件数
     public var sameAsBaseline: Int
-    /// 打てた問題のうち、出力が読みに対応づかなかった件数（ReadingAlignment が nil）。読みを英語の区間として打ったまま残したものも入る。
-    /// 漢字の連なりの中の食い違いは数えないので、読みと違う出力の下限である
+    /// 打てた問題のうち、出力が読みに対応づかなかった件数（ReadingAlignment が nil）。
+    /// 漢字や英字の連なりの中の食い違いは数えないので、読みと違う出力の下限である。読みを英語の区間として打ったまま残した出力は、英字の連なりが読みを食うのでここに入らない
     public var unalignedTarget: Int
     public var unalignedBaseline: Int
     public var total: Int
@@ -165,10 +177,13 @@ public struct AccuracySummary: Sendable {
 /// 確かめは記録を書いた後に同じ呼び出しの中で行うので、止まったときも何が出たかを記録から読める
 public enum AccuracyRun {
     public enum Failure: Error, CustomStringConvertible {
+        /// 綴りで打てる問題が 1 つも無い。正解数を比べられないので、変換器を作る前に止める
+        case noTypableProblems(count: Int)
         /// モデルを使う方式の出力が、基準と打てた問題の全件で一致した
         case modelHadNoEffect(method: String, count: Int, record: URL)
         public var description: String {
             switch self {
+            case .noTypableProblems(let count): "綴りで打てる問題が無い（問題 \(count) 件）"
             case .modelHadNoEffect(let method, let count, let record):
                 "\(method) の出力が基準の方式と \(count) 件すべてで一致した。モデルが効いていない。記録は \(record.path)"
             }
@@ -179,11 +194,11 @@ public enum AccuracyRun {
     /// 時間の上限は watchdog が、変換器を作るところから記録を書き終えるまで見る。
     ///
     /// 不変条件:
-    /// - 精度は利用者が問題の読みを打ったときに確定する文字列で測る。読みを同梱の綴りの表で打鍵列に逆にたどり、
-    ///   ConversionMethod.makeSegmenter() で作った区切りの liveText に渡す。入力メソッド・tugime-cli と同じ区切りを通る
+    /// - 精度は問題の読みを打ったときに確定する文字列で測る。読みを同梱の綴りの表で打鍵列に逆にたどり、
+    ///   ConversionMethod.makeSegmenter() で作った区切りの liveText に渡す
     /// - Problem.left は、入力欄のカーソルより前の文字列として Segmenter.Leading に渡す
     /// - 問題ごとに両方の区切りの endComposition を呼ぶ
-    /// - 打鍵列に逆にたどれない問題は打たずに typed を nil にし、どちらの方式も不正解とする
+    /// - 打鍵列に逆にたどれない問題は打たずに outcome を untypable にし、どちらの方式も不正解とする。打てる問題が無ければ変換器を作る前に止める
     /// - 対象が基準なら区切りは 1 つだけ作り、baselineOutput = output とする
     /// - モデルを使う方式で打てた問題の全件の出力が基準と一致したら、記録を書いた後、集計を出す前に modelHadNoEffect を投げる。
     ///   一致した件数ではなく全件で判定する。一致の件数は集計に出すが判定には使わない
@@ -197,6 +212,9 @@ public enum AccuracyRun {
     ) throws {
         let startedAt = Date()
         let clock = ContinuousClock()
+        let table = try RomajiTable.bundled()
+        let keys = problems.problems.map { Segmenter.spelling(of: $0.kana, table: table)?.map(\.keys).joined() }
+        guard keys.contains(where: { $0 != nil }) else { throw Failure.noTypableProblems(count: problems.problems.count) }
         watchdog.armLoad("モデルの SHA-256")
         let header = try AccuracyRecord.Header(method: target, problems: problems, startedAt: startedAt)
         let loadStart = clock.now
@@ -204,25 +222,23 @@ public enum AccuracyRun {
         let targetSegmenter = try target.makeSegmenter()
         watchdog.armLoad("読み込み \(ConversionMethod.baseline.spec)")
         let baselineSegmenter = target == .baseline ? nil : try ConversionMethod.baseline.makeSegmenter()
-        let table = try RomajiTable.bundled()
         progress("変換器の読み込み \(String(format: "%.2f", seconds(clock.now - loadStart)))s、問題 \(problems.problems.count) 件")
 
         var results: [AccuracyRecord.Result] = []
-        for (n, problem) in problems.problems.enumerated() {
+        for (n, (problem, keys)) in zip(problems.problems, keys).enumerated() {
             watchdog.arm(item: problem.id)
             let count = "[\(n + 1)/\(problems.problems.count)] \(problem.id)"
-            guard let spelled = Segmenter.spelling(of: problem.kana, table: table) else {
-                results.append(AccuracyRecord.Result(problem: problem, typed: nil))
+            guard let keys else {
+                results.append(AccuracyRecord.Result(problem: problem, outcome: .untypable))
                 progress("\(count) 打てない")
                 continue
             }
-            let keys = spelled.map(\.keys).joined()
             let leading = Segmenter.Leading(problem.left)
             let (output, outputSeconds) = type(keys, leading: leading, with: targetSegmenter, clock: clock)
             let (baselineOutput, baselineSeconds) = baselineSegmenter.map { type(keys, leading: leading, with: $0, clock: clock) } ?? (output, outputSeconds)
-            let result = AccuracyRecord.Result(problem: problem, typed: AccuracyRecord.Typed(
+            let result = AccuracyRecord.Result(problem: problem, outcome: .typed(AccuracyRecord.Typed(
                 keys: keys, output: output, baselineOutput: baselineOutput, seconds: outputSeconds, baselineSeconds: baselineSeconds
-            ))
+            )))
             results.append(result)
             let mark = { (ok: Bool) in ok ? "ok" : "NG" }
             progress("\(count) 対象 \(mark(result.passes)) 基準 \(mark(result.baselinePasses)) \(String(format: "%.2f", outputSeconds))s")
