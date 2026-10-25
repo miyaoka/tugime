@@ -45,6 +45,8 @@ public final class Segmenter {
     static let continuingJapanesePenalty = 2.0
     /// 英語の区間を 1 つ増やすごとに引く値。負なので、英語の区間は増やすほど点が上がる
     static let englishSpanPenalty = -2.0
+    /// 英字が 1 文字だけの英語の区間で、さらに引く値
+    static let singleLetterEnglishPenalty = 3.0
 
     public init(table: RomajiTable, english: EnglishModel, japanese: any JapaneseConverting) {
         self.table = table
@@ -395,7 +397,8 @@ public final class Segmenter {
     }
 
     private func englishSegment(_ source: String, context: JapaneseContext) -> Segment {
-        let score = Self.englishWeight * english.logProbability(source) - Self.englishSpanPenalty
+        let singleLetter = source.filter(\.isLetter).count == 1 ? Self.singleLetterEnglishPenalty : 0
+        let score = Self.englishWeight * english.logProbability(source) - Self.englishSpanPenalty - singleLetter
         return Segment(kind: .english, source: source, reading: source, output: source, score: score, context: context)
     }
 
