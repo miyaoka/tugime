@@ -41,8 +41,7 @@ public final class Segmenter {
     static let englishWeight = 1.4
     /// 日本語の区間を 1 つ増やすごとに引く値
     static let japaneseSpanPenalty = 3.0
-    /// 日本語区間に続く日本語区間で引く値。この切れ目は採点のためのもので、区切りが決まったら前の区間とまとめ直すので、
-    /// 日本語の区間を増やすときより少なく引く。続く区間は文頭の形で採点するので、それだけで前の区間に続けた読みより点が下がる
+    /// 日本語区間に続く日本語区間で引く値
     static let continuingJapanesePenalty = 2.0
     /// 英語の区間を 1 つ増やすごとに引く値。負なので、英語の区間は増やすほど点が上がる
     static let englishSpanPenalty = -2.0
@@ -378,7 +377,7 @@ public final class Segmenter {
     func singleSpan(_ source: String, context: JapaneseContext) -> Segment {
         let english = englishSegment(source, context: context)
         guard let kana = table.reading(of: source), Self.canBeJapanese(kana),
-              let japanese = japaneseSegment(source, kana: kana, context: context)
+              let japanese = japaneseSegment(source, kana: kana, context: context, penalty: Self.japaneseSpanPenalty)
         else { return english }
         return prefersJapanese(source, readable: true) || japanese.score >= english.score ? japanese : english
     }
@@ -389,7 +388,7 @@ public final class Segmenter {
         table.isSingleKana(source) || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
     }
 
-    private func japaneseSegment(_ source: String, kana: String, context: JapaneseContext, penalty: Double = japaneseSpanPenalty) -> Segment? {
+    private func japaneseSegment(_ source: String, kana: String, context: JapaneseContext, penalty: Double) -> Segment? {
         guard let reading = japaneseConverter.convert(kana: kana, context: context) else { return nil }
         let score = reading.value - penalty
         return Segment(kind: .japanese, source: source, reading: kana, output: reading.text, score: score, context: reading.context)
