@@ -82,4 +82,11 @@ final class DirectConverter: JapaneseConverting {
         generator.reset()
         displays = [:]
     }
+
+    /// 生成するものは辞書を知らないが、未確定の文字列が終わるので、覚えた生成も捨てる
+    func replaceUserDictionary(_ dictionary: UserDictionary) {
+        scorer.replaceUserDictionary(dictionary)
+        generator.reset()
+        displays = [:]
+    }
 }

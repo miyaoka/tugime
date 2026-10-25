@@ -84,6 +84,9 @@ public protocol JapaneseConverting: AnyObject {
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay?
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
     func endComposition()
+    /// 利用者の語を dictionary に丸ごと置き換える。endComposition で捨てるものに加え、変換エンジンが未確定の文字列をまたいで持つ
+    /// 途中の計算も捨てるので、呼ぶと未確定の文字列が終わる。作った直後の変換器は利用者の語を持たない
+    func replaceUserDictionary(_ dictionary: UserDictionary)
 }
 
 /// AzooKeyKanaKanjiConverter による変換。学習は使わないので、同じかなには常に同じ結果を返す。
@@ -289,6 +292,25 @@ final class AzooKeyConverter: JapaneseConverting {
         displayCache = [:]
     }
 
+    /// 利用者の語の評価値。品詞（固有名詞・一般）とともに、azooKey-Desktop が利用者の語に付けるものと同じ
+    private static let userWordValue: PValue = -5
+
+    public func replaceUserDictionary(_ dictionary: UserDictionary) {
+        endComposition()
+        // 採点のセッションは、前の辞書で組んだ途中の計算を未確定の文字列をまたいで持つ
+        for session in scoringSessions { converter.removeSession(session.id) }
+        scoringSessions = []
+        converter.importDynamicUserDictionary(dictionary.entries.map {
+            DicdataElement(
+                word: $0.word,
+                ruby: $0.reading.applyingTransform(.hiraganaToKatakana, reverse: false)!,
+                cid: CIDData.固有名詞.cid,
+                mid: MIDData.一般.mid,
+                value: Self.userWordValue
+            )
+        })
+    }
+
     /// 変換エンジンは直前の入力との差分で計算する。採点は前に渡した読みの続きを同じセッションに渡して途中の計算を使い回す。
     /// 表示と候補の窓は前の状態を捨てて、要求ごとに独立した結果にする。Zenzai は前の変換で選んだ表記を次の探索の制約に引き継ぎ、
     /// 候補の窓は採点と上位の数が違うので、採点の途中の計算を共有できない
@@ -320,10 +342,11 @@ final class AzooKeyConverter: JapaneseConverting {
     /// 採点では、カタカナは「プ」「ー」などを含むほど評価値が上がるので、日英の比較に使えない。
     /// 表示では、Zenzai が並べ替えるのは文全体の変換の上位だけで、これらはその後ろに固定値のまま足される。
     /// 前に置いた仮の名詞と数字はカタカナにしても先頭に残るので、文全体の変換が前に置いたものを保たないときや文全体の変換が無いときに、
-    /// 除かなければ言語モデルも Zenzai も通らない候補を表示に選ぶ
+    /// 除かなければ言語モデルも Zenzai も通らない候補を表示に選ぶ。
+    /// 利用者の語は同じ品詞を持つが、辞書の語として言語モデルで評価されるので除かない
     private static func isUnscoredWhole(_ candidate: Candidate) -> Bool {
         guard candidate.data.count == 1, let only = candidate.data.first else { return false }
-        return only.mid == MIDData.一般.mid && only.lcid == CIDData.固有名詞.cid
+        return only.mid == MIDData.一般.mid && only.lcid == CIDData.固有名詞.cid && !only.metadata.contains(.isFromUserDictionary)
     }
 
     /// 候補の語の列を、変換エンジンが文節の境目とする位置で切り、文節ごとに使った利用者の語を添える。prefix は候補の前に置いたもので、その語を外して切る。

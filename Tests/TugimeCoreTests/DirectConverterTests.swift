@@ -50,6 +50,8 @@ private final class FixedScorer: JapaneseConverting {
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? { nil }
 
     func endComposition() { ended += 1 }
+
+    func replaceUserDictionary(_ dictionary: UserDictionary) {}
 }
 
 /// 決めた出力を返し、呼ばれた左の文脈と読みを記録する

@@ -29,6 +29,7 @@ private final class LeftRecorder: JapaneseConverting {
     }
 
     func endComposition() { base.endComposition() }
+    func replaceUserDictionary(_ dictionary: UserDictionary) { base.replaceUserDictionary(dictionary) }
 }
 
 @Suite struct SegmenterTests {
@@ -212,6 +213,7 @@ private final class RewritingConverter: JapaneseConverting {
     }
 
     func endComposition() { base.endComposition() }
+    func replaceUserDictionary(_ dictionary: UserDictionary) { base.replaceUserDictionary(dictionary) }
 }
 
 /// 打っている途中の表示が、変換して見せた区間で読みと合わないかを返す
