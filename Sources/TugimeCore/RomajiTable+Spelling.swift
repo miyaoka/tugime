@@ -101,8 +101,8 @@ extension Segmenter {
         return keys
     }()
 
-    /// 読み（ひらがなと、入力メソッドが打鍵から出す句読点・記号、打ったまま出る ASCII の英字・数字）を打鍵列に逆にたどる。
-    /// 句読点・記号・英字・数字の位置で読みを切り、かなの連なりは綴りの表（`RomajiTable.spelling(of:)`）でたどる。英字・数字はその文字を打つ。
+    /// 読み（ひらがなと、入力メソッドが打鍵から出す句読点・記号、打ったまま出る ASCII の文字）を打鍵列に逆にたどる。
+    /// 句読点・記号・ASCII の文字の位置で読みを切り、かなの連なりは綴りの表（`RomajiTable.spelling(of:)`）でたどる。ASCII の文字はその文字を打つ。
     /// 空か、書けない文字を含めば nil。
     /// 句読点は直前が英語の区間なら打ったまま残り、英字の後のかなの綴りは英字と続けて読まれうるので、打鍵列を打った表示が読みと同じになるとは限らない
     public static func spelling(of reading: String, table: RomajiTable) -> [SpelledKana]? {
@@ -117,7 +117,7 @@ extension Segmenter {
             return true
         }
         for ch in reading {
-            let typedAsIs = ch.isASCII && (ch.isLetter || ch.isNumber)
+            let typedAsIs = ch.isASCII && !ch.isNewline
             guard let keys = typedAsIs ? String(ch) : symbolKeys[String(ch)] else {
                 run.append(ch)
                 continue
