@@ -7,11 +7,11 @@ public struct JapaneseReading: Sendable, Equatable {
     /// 変換エンジンの評価値。大きいほど自然
     public var value: Double
     /// text を文節に分けたもの。読みを繋ぐと変換したかなに、表記を繋ぐと text になる
-    public var clauses: [JapaneseClause]
+    public var clauses: [ScoredClause]
     /// この変換を読んだ文脈。afterCaret は文頭か前の語に続く形のどちらかに決まり、それ以外は求めたとおり
     public var context: JapaneseContext
 
-    public init(text: String, value: Double, clauses: [JapaneseClause], context: JapaneseContext) {
+    public init(text: String, value: Double, clauses: [ScoredClause], context: JapaneseContext) {
         self.text = text
         self.value = value
         self.clauses = clauses
@@ -44,6 +44,19 @@ public struct JapaneseClause: Sendable, Equatable {
     public init(reading: String, text: String) {
         self.reading = reading
         self.text = text
+    }
+}
+
+/// 採点の変換の 1 文節と、変換エンジンがその文節に使った利用者の語。
+/// 利用者の語を使ったかは採点の変換だけが知るので、表示の文節（JapaneseClause）には持たせない
+public struct ScoredClause: Sendable, Equatable {
+    public var clause: JapaneseClause
+    /// この文節の読みの中で、変換エンジンが語の列に使った利用者の語の表記
+    public var userWords: [String]
+
+    public init(_ clause: JapaneseClause, userWords: [String] = []) {
+        self.clause = clause
+        self.userWords = userWords
     }
 }
 
@@ -197,7 +210,7 @@ final class AzooKeyConverter: JapaneseConverting {
 
     private func convertAtStart(_ kana: String) -> JapaneseReading? {
         candidates(kana, nBest: Self.scoringBest, scoring: true).first.map {
-            JapaneseReading(text: $0.text, value: Double($0.value), clauses: Self.clauses(of: $0.data[...], kana: kana, text: $0.text), context: .start)
+            JapaneseReading(text: $0.text, value: Double($0.value), clauses: Self.clauses(of: $0, after: nil, kana: kana, text: $0.text), context: .start)
         }
     }
 
@@ -236,12 +249,12 @@ final class AzooKeyConverter: JapaneseConverting {
                 .first { Self.drop(prefix, from: $0) != nil }
                 .flatMap { candidate in
                     Self.drop(prefix, from: candidate).map { text in
-                        JapaneseDisplay(text: text, clauses: Self.clauses(of: Self.words(after: prefix, in: candidate), kana: kana, text: text))
+                        JapaneseDisplay(text: text, clauses: Self.clauses(of: candidate, after: prefix, kana: kana, text: text).map(\.clause))
                     }
                 }
         } else {
             result = candidates(kana, nBest: Self.scoringBest, zenzai: zenzai).first.map {
-                JapaneseDisplay(text: $0.text, clauses: Self.clauses(of: $0.data[...], kana: kana, text: $0.text))
+                JapaneseDisplay(text: $0.text, clauses: Self.clauses(of: $0, after: nil, kana: kana, text: $0.text).map(\.clause))
             }
         }
         // Zenzai の候補が表示に使えないときは、採点の変換を表示にする。使えないのは、前に置いたものを含む候補が無いときと、
@@ -253,7 +266,7 @@ final class AzooKeyConverter: JapaneseConverting {
 
     /// 採点の変換を表示の形にしたもの
     private func scoredDisplay(kana: String, context: JapaneseContext) -> JapaneseDisplay? {
-        convert(kana: kana, context: context).map { JapaneseDisplay(text: $0.text, clauses: $0.clauses) }
+        convert(kana: kana, context: context).map { JapaneseDisplay(text: $0.text, clauses: $0.clauses.map(\.clause)) }
     }
 
     /// 先読みで Zenzai に渡すかな。モデルを読ませるためだけのもので、結果は使わない
@@ -313,22 +326,36 @@ final class AzooKeyConverter: JapaneseConverting {
         return only.mid == MIDData.一般.mid && only.lcid == CIDData.固有名詞.cid
     }
 
-    /// 語の列を、変換エンジンが文節の境目とする位置で切る。
-    /// 語の列が text と読みに一致しない（前に置いたものと 1 語にまとまった、表記を書き換える語を含む）ときは、境目が分からないので全体を 1 文節にする
-    private static func clauses(of words: ArraySlice<DicdataElement>?, kana: String, text: String) -> [JapaneseClause] {
-        let whole = [JapaneseClause(reading: kana, text: text)]
+    /// 候補の語の列を、変換エンジンが文節の境目とする位置で切り、文節ごとに使った利用者の語を添える。prefix は候補の前に置いたもので、その語を外して切る。
+    /// 語の列が text と読みに一致しない（前に置いたものと 1 語にまとまった、表記を書き換える語を含む）ときは、境目が分からないので全体を 1 文節にし、
+    /// 前に置いたものより後ろから始まる利用者の語をその文節に添える
+    private static func clauses(of candidate: Candidate, after prefix: Prefix?, kana: String, text: String) -> [ScoredClause] {
+        let prefixCount = prefix?.input.count ?? 0
+        let whole = [ScoredClause(JapaneseClause(reading: kana, text: text), userWords: userWords(in: candidate.data, from: prefixCount))]
+        let words: ArraySlice<DicdataElement>? = if let prefix { Self.words(after: prefix, in: candidate) } else { candidate.data[...] }
         guard let words, words.map(\.ruby.count).reduce(0, +) == kana.count else { return whole }
         var rest = words
         var restKana = Substring(kana)
-        var clauses: [JapaneseClause] = []
+        var clauses: [ScoredClause] = []
         while !rest.isEmpty {
             let first = Candidate.makePrefixClauseCandidate(data: rest)
             precondition(!first.data.isEmpty, "文節が空になった: \(kana)")
-            clauses.append(JapaneseClause(reading: String(restKana.prefix(first.rubyCount)), text: first.text))
+            clauses.append(ScoredClause(JapaneseClause(reading: String(restKana.prefix(first.rubyCount)), text: first.text), userWords: userWords(in: first.data, from: 0)))
             rest = rest.dropFirst(first.data.count)
             restKana = restKana.dropFirst(first.rubyCount)
         }
-        return clauses.map(\.text).joined() == text ? clauses : whole
+        return clauses.map(\.clause.text).joined() == text ? clauses : whole
+    }
+
+    /// 語の列のうち、読みの位置 start 以降から始まる利用者の語の表記
+    private static func userWords(in words: [DicdataElement], from start: Int) -> [String] {
+        var position = 0
+        var found: [String] = []
+        for word in words {
+            if position >= start, word.metadata.contains(.isFromUserDictionary) { found.append(word.word) }
+            position += word.ruby.count
+        }
+        return found
     }
 
     /// 前に置いたものに当たる語を外した残り。前に置いたものと後ろの語が 1 語にまとまっていれば、語の切れ目で外せないので nil
@@ -364,7 +391,7 @@ final class AzooKeyConverter: JapaneseConverting {
               let combined = candidates(prefix.input + kana, nBest: Self.scoringBest, scoring: true).first(where: { Self.drop(prefix, from: $0) != nil }),
               let text = Self.drop(prefix, from: combined)
         else { return nil }
-        let clauses = Self.clauses(of: Self.words(after: prefix, in: combined), kana: kana, text: text)
+        let clauses = Self.clauses(of: combined, after: prefix, kana: kana, text: text)
         return JapaneseReading(text: text, value: Double(combined.value) - prefixOnly, clauses: clauses, context: context)
     }
 }

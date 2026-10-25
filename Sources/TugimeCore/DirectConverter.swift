@@ -47,7 +47,7 @@ final class DirectConverter: JapaneseConverting {
         let shown = scorer.convert(kana: kana, context: context).map { scored in
             let text = generator.generate(left: ZenzPrompt.leftContext(context: context, left: left), kana: kana)
             var cuts: [Int] = []
-            for clause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + clause.reading.count) }
+            for scoredClause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + scoredClause.clause.reading.count) }
             let clauses = ReadingAlignment(text: text, reading: kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: kana, text: text)]
             return JapaneseDisplay(text: text, clauses: clauses)
         }

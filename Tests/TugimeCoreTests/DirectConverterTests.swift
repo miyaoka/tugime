@@ -38,11 +38,11 @@ import Testing
 
 /// 採点は決めた文節で返し、候補は空にする
 private final class FixedScorer: JapaneseConverting {
-    var clauses: [String: [JapaneseClause]] = [:]
+    var clauses: [String: [ScoredClause]] = [:]
     private(set) var ended = 0
 
     func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
-        clauses[kana].map { JapaneseReading(text: $0.map(\.text).joined(), value: 0, clauses: $0, context: context) }
+        clauses[kana].map { JapaneseReading(text: $0.map(\.clause.text).joined(), value: 0, clauses: $0, context: context) }
     }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { [] }
@@ -73,7 +73,8 @@ private final class FixedGenerator: DirectDisplayGenerating {
 
     init() {
         scorer.clauses["きょうはいいてんき"] = [
-            JapaneseClause(reading: "きょうは", text: "今日は"), JapaneseClause(reading: "いい", text: "いい"), JapaneseClause(reading: "てんき", text: "天気"),
+            ScoredClause(JapaneseClause(reading: "きょうは", text: "今日は")), ScoredClause(JapaneseClause(reading: "いい", text: "いい")),
+            ScoredClause(JapaneseClause(reading: "てんき", text: "天気")),
         ]
         converter = DirectConverter(scorer: scorer, generator: generator)
     }
@@ -98,7 +99,7 @@ private final class FixedGenerator: DirectDisplayGenerating {
 
     /// 入力欄に確定済みの数字に続く区間は、その数字を左の文脈にする
     @Test func passesConfirmedDigitsAsTheLeftContext() {
-        scorer.clauses["えん"] = [JapaneseClause(reading: "えん", text: "円")]
+        scorer.clauses["えん"] = [ScoredClause(JapaneseClause(reading: "えん", text: "円"))]
         generator.outputs["えん"] = "円"
         _ = converter.display(kana: "えん", context: .afterNumber("100"), left: "")
         _ = converter.display(kana: "えん", context: .afterNumber("100"), left: "合計100")
