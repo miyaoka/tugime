@@ -103,6 +103,7 @@ extension Segmenter {
 
     /// 読み（ひらがなと、入力メソッドが打鍵から出す句読点・記号、打ったまま出る ASCII の文字）を打鍵列に逆にたどる。
     /// 句読点・記号・ASCII の文字の位置で読みを切り、かなの連なりは綴りの表（`RomajiTable.spelling(of:)`）でたどる。ASCII の文字はその文字を打つ。
+    /// ASCII の文字のうち記号の打鍵（`symbols` の / [ ] や z. など）になるものは、打つと日本語の記号になり、読みに戻らない。
     /// 空か、書けない文字を含めば nil。
     /// 句読点は直前が英語の区間なら打ったまま残り、英字の後のかなの綴りは英字と続けて読まれうるので、打鍵列を打った表示が読みと同じになるとは限らない
     public static func spelling(of reading: String, table: RomajiTable) -> [SpelledKana]? {
