@@ -40,6 +40,12 @@ import Testing
         #expect(spelled.map(\.kana).joined() == "ほん、「よむ」・…")
         #expect(Segmenter.spelling(of: "ほん（", table: table) == nil)
     }
+
+    @Test func spellsAsciiLettersAndDigitsAsTyped() throws {
+        let spelled = try #require(Segmenter.spelling(of: "5まんえんCJK", table: table))
+        #expect(spelled.map(\.keys).joined() == "5mannennCJK")
+        #expect(spelled.map(\.kana).joined() == "5まんえんCJK")
+    }
 }
 
 @Suite struct ConversionMethodTests {

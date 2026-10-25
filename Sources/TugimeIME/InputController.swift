@@ -65,16 +65,11 @@ final class TugimeInputController: IMKInputController {
     /// 打ち始めたときにカーソルの前にあったもの
     private var leading: Segmenter.Leading = .start
 
-    /// 入力欄のカーソルの直前の 1 文字を読む。読めない、空白・改行、文末の記号の後なら文頭とする。
-    /// それ以外の ASCII（英字・数字・記号）の後は英語の後とする。日本語モードが出す文字は全角なので、ASCII があればそこは英語の文脈になる
+    /// 入力欄のカーソルの直前の 1 文字を読む。読めなければ前に何も無いとする
     private static func leadingContext(of client: IMKTextInput) -> Segmenter.Leading {
         let selection = client.selectedRange()
-        guard selection.location != NSNotFound, selection.location > 0,
-              let before = client.attributedSubstring(from: NSRange(location: selection.location - 1, length: 1))?.string.last,
-              !before.isWhitespace,
-              !before.unicodeScalars.contains(where: \.properties.isSentenceTerminal)
-        else { return .start }
-        return before.isASCII ? .afterEnglish : .afterJapanese
+        guard selection.location != NSNotFound, selection.location > 0 else { return .start }
+        return Segmenter.Leading(client.attributedSubstring(from: NSRange(location: selection.location - 1, length: 1))?.string ?? "")
     }
 
     // MARK: InputMethodKit からの呼び出し

@@ -24,8 +24,7 @@ public enum ConversionMethod: Sendable, Hashable {
         .direct(weight: modelDirectory.appendingPathComponent(inputMethodModel))
     }
 
-    /// 方式が読むモデルのファイル。nil ならモデルを使わない方式。
-    /// モデルを使う方式の出力が基準と全件で一致したら、モデルが効いていないとみなす
+    /// 方式が読むモデルのファイル。nil ならモデルを使わない方式
     public var weight: URL? {
         switch self {
         case .azooKey: nil
@@ -85,7 +84,7 @@ public enum ConversionMethod: Sendable, Hashable {
         }
     }
 
-    /// 同梱の綴りの表と語表で、この方式の区切りを作る。入力メソッド・CLI・打鍵の計測は、区切りをこれからだけ作る
+    /// 同梱の綴りの表と語表で、この方式の区切りを作る。区切りはこれからだけ作る
     public func makeSegmenter() throws -> Segmenter {
         try Segmenter(table: .bundled(), english: .bundled(), japanese: make())
     }

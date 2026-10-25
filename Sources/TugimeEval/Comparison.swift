@@ -10,9 +10,13 @@ public struct Comparison: Sendable {
         public var problem: Problem
         /// 正解した側
         public var passedBy: Side
-        public var leftOutput: String
-        public var rightOutput: String
+        /// 打てなかった側は nil
+        public var leftOutput: String?
+        public var rightOutput: String?
     }
+
+    /// 打てなかった問題の出力の欄に書く文字列
+    static let untypedOutput = "（打てない）"
 
     public enum Failure: Error, CustomStringConvertible {
         /// 問題ファイルの SHA-256 が違う。違う版の問題どうしは比べない
@@ -57,15 +61,16 @@ public struct Comparison: Sendable {
             guard let r = rightByID[l.problem.id] else { throw Failure.unmatched(l.problem.id) }
             guard l.problem == r.problem else { throw Failure.differentProblem(left: l.problem, right: r.problem) }
             guard l.passes != r.passes else { return nil }
-            return Difference(problem: l.problem, passedBy: l.passes ? .left : .right, leftOutput: l.output, rightOutput: r.output)
+            return Difference(problem: l.problem, passedBy: l.passes ? .left : .right, leftOutput: l.typed?.output, rightOutput: r.typed?.output)
         }
     }
 
     /// 先頭に左右の方式。1 件 1 行のタブ区切り: id 正解した側（left|right） かな 左の文脈 左の出力 右の出力 判定。
-    /// 最後に「左だけ正解 n 件 / 右だけ正解 m 件」
+    /// 打てなかった側の出力は untypedOutput。最後に「左だけ正解 n 件 / 右だけ正解 m 件」
     public var lines: [String] {
         let body = differences.map { d in
-            [d.problem.id, d.passedBy.rawValue, d.problem.kana, d.problem.left, d.leftOutput, d.rightOutput, d.problem.check.kind].joined(separator: "\t")
+            let outputs = [d.leftOutput, d.rightOutput].map { $0 ?? Self.untypedOutput }
+            return ([d.problem.id, d.passedBy.rawValue, d.problem.kana, d.problem.left] + outputs + [d.problem.check.kind]).joined(separator: "\t")
         }
         let leftOnly = differences.filter { $0.passedBy == .left }.count
         return ["left\t\(left.method)", "right\t\(right.method)"] + body + ["左だけ正解 \(leftOnly) 件 / 右だけ正解 \(differences.count - leftOnly) 件"]

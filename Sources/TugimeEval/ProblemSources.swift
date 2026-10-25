@@ -118,7 +118,7 @@ enum MozcRegression {
         "Conversion Not Match": { .excludes($0) },
     ]
 
-    /// 5 列目は許す順位。0（先頭の候補）だけが表示の変換 1 つで判定できる
+    /// 5 列目は許す順位。0（先頭の候補）だけが打って確定する文字列 1 つで判定できる
     static let topRank = "0"
 
     /// 列: label・かなの key・value・command・順位（5 列目は無いか空でもよく、そのときは 0）。id は `<set>:<ファイルの行番号>`。left は空。

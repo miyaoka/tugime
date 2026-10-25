@@ -32,7 +32,7 @@ extension Segmenter {
     /// 伸縮するときは区切りから文節を作り直す（`resize`）
     public func wholeClause(_ input: String, to form: CharacterForm, leading: Leading = .start) -> Clause {
         let reading = wholeReading(input, leading: leading)
-        let span = ClauseSpan(index: 0, source: input, reading: reading, context: leading.japaneseContext)
+        let span = ClauseSpan(index: 0, source: input, reading: reading, context: leading.continuation.japaneseContext)
         return Clause(kind: .whole, reading: reading, candidates: [convertWhole(input, to: form, leading: leading)], selected: 0, span: span)
     }
 
