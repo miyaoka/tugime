@@ -37,8 +37,8 @@ final class UserDictionaryFile {
             return
         }
         guard seen != .some(modified) else { return }
-        // 書式の誤りは同じ中身なら何度読んでも同じなので、時刻を覚えて読み直さない。
-        // 読み込みと組み立ての失敗は一時のこともあるので、時刻を覚えず、次の打ち始めにまた読む
+        // 中身で決まる誤り（書式の誤りと、変換エンジンが扱えない読みの文字）は同じ中身なら何度読んでも同じなので、時刻を覚えて読み直さない。
+        // それ以外の失敗（ファイルの読み込み、文字の表、組み立ての書き出し）は一時のこともあるので、時刻を覚えず、次の打ち始めにまた読む
         do {
             let dictionary = try modified.map { _ in try UserDictionary(contents: String(contentsOf: url, encoding: .utf8)) } ?? .empty
             try segmenter.replaceUserDictionary(dictionary)
@@ -48,7 +48,7 @@ final class UserDictionaryFile {
             seen = modified
             rejection = error.description
         } catch let error as UserDictionary.ImportError {
-            seen = nil
+            if case .unsupportedCharacter = error { seen = modified } else { seen = nil }
             rejection = error.description
         } catch {
             seen = nil
