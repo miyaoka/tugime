@@ -236,7 +236,7 @@ extension Segmenter {
         let rest = self.clauses(
             of: segment(
                 String(keys[end...]),
-                after: fixed.kind == .japanese ? .afterJapanese : .afterEnglish,
+                after: fixed.kind == .english ? .afterEnglish : .afterJapanese,
                 context: context(after: resized, keys: keys[..<end], leading: leading)
             ),
             left: left + resized.output,

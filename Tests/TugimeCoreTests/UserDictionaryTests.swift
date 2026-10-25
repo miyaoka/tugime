@@ -152,6 +152,13 @@ import Testing
         #expect(first.candidates.prefix(2) == ["Café", "cafe"])
     }
 
+    /// 文節の伸縮で打鍵を 1 区間として判定し直すときも、読めない日本語の打鍵はその語の区間にする
+    @Test func makesUnreadableJapaneseKeysTheWordWhenResized() {
+        let span = segmenter.singleSpan("cafe", context: .start)
+        #expect(span.kind == .word)
+        #expect(span.output == "Café")
+    }
+
     /// 英語の後の句読点は英語区間に入るので、句読点で区切った綴りごとに引く
     @Test func showsTheRegisteredSpellingBeforePunctuation() {
         #expect(segmenter.liveText("github.") == "GitHub.")

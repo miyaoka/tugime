@@ -365,8 +365,7 @@ public final class Segmenter {
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
-                if let words = typedJapaneseWords[source] {
-                    let segment = Segment(kind: .word, source: source, reading: source, output: words[0], score: Self.registeredScore, context: context)
+                if let segment = wordSegment(source, context: context) {
                     for predecessor in predecessors { relax(end, start, segment, after: predecessor.kind) }
                     continue
                 }
@@ -391,8 +390,9 @@ public final class Segmenter {
     }
 
     /// source の全体を 1 区間として、日本語区間と英語区間のうち評価値の高い方にする。区切りの選択と同じく、
-    /// 読めない箇所を含めば英語、日本語として採れて英語にしない綴りなら日本語にする
+    /// 利用者の辞書で日本語として扱う読めない打鍵ならその語の区間、読めない箇所を含めば英語、日本語として採れて英語にしない綴りなら日本語にする
     func singleSpan(_ source: String, context: JapaneseContext) -> Segment {
+        if let word = wordSegment(source, context: context) { return word }
         let english = englishSegment(source, context: context)
         guard let kana = table.reading(of: source), Self.canBeJapanese(kana),
               let japanese = japaneseSegment(source, kana: kana, context: context, penalty: Self.japaneseSpanPenalty)
@@ -411,6 +411,11 @@ public final class Segmenter {
         guard let reading = japaneseConverter.convert(kana: kana, context: context) else { return nil }
         let score = reading.value - penalty
         return Segment(kind: .japanese, source: source, reading: kana, output: reading.text, score: score, context: reading.context)
+    }
+
+    /// 利用者の辞書で日本語として扱う、かなに読めない打鍵にちょうど一致すれば、最初に登録した語の区間
+    private func wordSegment(_ source: String, context: JapaneseContext) -> Segment? {
+        typedJapaneseWords[source].map { Segment(kind: .word, source: source, reading: source, output: $0[0], score: Self.registeredScore, context: context) }
     }
 
     private func englishSegment(_ source: String, context: JapaneseContext) -> Segment {
