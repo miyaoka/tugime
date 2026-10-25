@@ -7,8 +7,9 @@ import TugimeEval
 let usage = """
     使い方:
       tugime-eval accuracy --method <方式> --problems <dir> --out <記録.jsonl>
-          全問題を方式と基準（azookey）で変換し、問題ごとの記録を書き、集まりごと・判定ごとの正解数を出す。
-          モデルを使う方式の出力が基準と全件で一致したら、記録を書き、集計を出さずに終了コード 1
+          全問題の読みを綴りの表で打鍵列にし、問題の前の文脈を入力欄のカーソルの前の文字列として、方式と基準（azookey）で入力メソッドと同じく打ち、
+          問題ごとの記録を書き、集まりごと・判定ごとの正解数を出す。綴りで書けない読みの問題は打たずに不正解とする。
+          モデルを使う方式の出力が、打てた問題の全件で基準と一致したら、記録を書き、集計を出さずに終了コード 1
       tugime-eval compare <記録.jsonl> <記録.jsonl>
           片方だけが正解した問題を 1 件 1 行で出す
       tugime-eval keystrokes --method <方式> --problems <dir> --out <最後の表示.tsv>

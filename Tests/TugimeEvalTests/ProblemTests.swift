@@ -41,11 +41,13 @@ import TugimeCore
     @Test func modelWithoutEffectIsCaughtOnlyWhenEveryOutputMatches() {
         let problem = Problem(id: "t:1", set: "t", kana: "かな", left: "", check: .exact("仮名"))
         let result = { (output: String) in
-            AccuracyRecord.Result(problem: problem, output: output, baselineOutput: "かな", seconds: 0, baselineSeconds: 0)
+            AccuracyRecord.Result(problem: problem, typed: .init(keys: "kana", output: output, baselineOutput: "かな", seconds: 0, baselineSeconds: 0))
         }
+        let untyped = AccuracyRecord.Result(problem: problem, typed: nil)
         let model = ConversionMethod.azooKeyZenzai(weight: URL(fileURLWithPath: "/m.gguf"))
-        #expect(AccuracyRun.modelHadNoEffect([result("かな"), result("かな")], target: model))
-        #expect(!AccuracyRun.modelHadNoEffect([result("かな"), result("仮名")], target: model))
+        // 打てなかった問題は出力が無いので、一致にも不一致にも数えない
+        #expect(AccuracyRun.modelHadNoEffect([result("かな"), untyped, result("かな")], target: model))
+        #expect(!AccuracyRun.modelHadNoEffect([result("かな"), untyped, result("仮名")], target: model))
         // モデルを使わない方式は、基準と一致して当然なので止めない
         #expect(!AccuracyRun.modelHadNoEffect([result("かな")], target: .azooKey))
     }

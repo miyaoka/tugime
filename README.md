@@ -129,7 +129,7 @@ bun scripts/make-readme-figures.ts                                              
 
 `tugime-cli` の他の引数は `tugime-cli --help` で出る。
 
-変換の方式とモデルは `tugime-eval` で比べる。問題（AJIMEE-Bench と Mozc の回帰テスト）は版を固定して `.eval/` に取得する。CI では動かさない。
+変換の方式・モデル・綴りの表・日英判定の変更は `tugime-eval` で比べる。精度は、問題（AJIMEE-Bench と Mozc の回帰テスト）の読みを利用者の綴りで打ったときに確定する文字列で測る。問題は版を固定して `.eval/` に取得する。CI では動かさない。
 
 ```bash
 swift build -c release --product tugime-eval

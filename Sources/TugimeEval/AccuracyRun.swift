@@ -27,16 +27,23 @@ public struct AccuracyRecord: Sendable, Codable {
 
     public struct Result: Sendable, Codable {
         public var problem: Problem
-        /// 対象の方式の表示の変換
+        /// 問題を打った結果。読みが綴りで書けない文字を含めば nil で、利用者はその読みを打てないので、どちらの方式も不正解とする
+        public var typed: Typed?
+
+        public var passes: Bool { typed.map { problem.check.passes($0.output) } ?? false }
+        public var baselinePasses: Bool { typed.map { problem.check.passes($0.baselineOutput) } ?? false }
+    }
+
+    public struct Typed: Sendable, Codable {
+        /// 読みを綴りの表で逆にたどった打鍵列（Segmenter.spelling(of:table:)）
+        public var keys: String
+        /// 対象の方式で keys を打ったときに、Enter で確定する文字列
         public var output: String
-        /// 基準の方式（ConversionMethod.baseline）の表示の変換。対象が基準なら output と同じ
+        /// 基準の方式（ConversionMethod.baseline）で同じく打ったときの文字列。対象が基準なら output と同じ
         public var baselineOutput: String
-        /// 対象と基準の変換にかかった時間。対象が基準なら同じ値
+        /// 対象と基準で打つのにかかった時間。対象が基準なら同じ値
         public var seconds: Double
         public var baselineSeconds: Double
-
-        public var passes: Bool { problem.check.passes(output) }
-        public var baselinePasses: Bool { problem.check.passes(baselineOutput) }
     }
 
     public var header: Header
@@ -99,9 +106,11 @@ public struct AccuracySummary: Sendable {
     }
 
     public var rows: [Row]
-    /// 対象の出力が基準と同じだった件数
+    /// 綴りで書けない文字を含み、打てなかった問題の件数。正解数には入らず、問題数には入る
+    public var untyped: Int
+    /// 打てた問題のうち、対象の出力が基準と同じだった件数
     public var sameAsBaseline: Int
-    /// 出力が読みに対応づかなかった件数（ReadingAlignment が nil）。表示ではその区間を 1 文節にした件数でもある。
+    /// 打てた問題のうち、出力が読みに対応づかなかった件数（ReadingAlignment が nil）。読みを英語の区間として打ったまま残したものも入る。
     /// 漢字の連なりの中の食い違いは数えないので、読みと違う出力の下限である
     public var unalignedTarget: Int
     public var unalignedBaseline: Int
@@ -127,52 +136,56 @@ public struct AccuracySummary: Sendable {
                 passed: group.filter(\.passes).count, baselinePassed: group.filter(\.baselinePasses).count, total: group.count
             )
         }
-        sameAsBaseline = results.filter { $0.output == $0.baselineOutput }.count
-        unalignedTarget = results.filter { ReadingAlignment(text: $0.output, reading: $0.problem.kana) == nil }.count
-        unalignedBaseline = results.filter { ReadingAlignment(text: $0.baselineOutput, reading: $0.problem.kana) == nil }.count
+        let typed = results.compactMap { result in result.typed.map { (problem: result.problem, typed: $0) } }
+        untyped = results.count - typed.count
+        sameAsBaseline = typed.filter { $0.typed.output == $0.typed.baselineOutput }.count
+        unalignedTarget = typed.filter { ReadingAlignment(text: $0.typed.output, reading: $0.problem.kana) == nil }.count
+        unalignedBaseline = typed.filter { ReadingAlignment(text: $0.typed.baselineOutput, reading: $0.problem.kana) == nil }.count
         total = results.count
     }
 
     /// 1 行目は列の名前。以降 1 行 1 集計のタブ区切り: 集まり 判定（all は全判定） 対象の正解数 基準の正解数 問題数 対象の正解率。
-    /// 最後に、対象の出力が基準と同じだった件数と、読みとの対応を確かめられなかった出力の件数
+    /// 最後に、打てなかった問題の件数、対象の出力が基準と同じだった件数、読みとの対応を確かめられなかった出力の件数
     public var lines: [String] {
         let header = ["集まり", "判定", "対象", "基準", "問題数", "対象の正解率"].joined(separator: "\t")
         let body = rows.map { row in
             let rate = String(format: "%.1f%%", Double(row.passed) / Double(row.total) * 100)
             return [row.set, row.kind ?? "all", String(row.passed), String(row.baselinePassed), String(row.total), rate].joined(separator: "\t")
         }
+        let typed = total - untyped
         return [header] + body + [
-            "基準と同じ出力 \(sameAsBaseline) / \(total)",
-            "読みとの対応を確かめられなかった出力 対象 \(unalignedTarget) / 基準 \(unalignedBaseline) / \(total)",
+            "綴りで書けず打てなかった問題 \(untyped) / \(total)",
+            "基準と同じ出力 \(sameAsBaseline) / \(typed)",
+            "読みとの対応を確かめられなかった出力 対象 \(unalignedTarget) / 基準 \(unalignedBaseline) / \(typed)",
         ]
     }
 }
 
-/// 精度の実行。全問題を対象の方式と基準の方式の両方で変換し、記録を書き、モデルが効いているかを確かめ、集計を出す。
+/// 精度の実行。全問題の読みを対象の方式と基準の方式の両方で打ち、記録を書き、モデルが効いているかを確かめ、集計を出す。
 /// 確かめは記録を書いた後に同じ呼び出しの中で行うので、止まったときも何が出たかを記録から読める
 public enum AccuracyRun {
     public enum Failure: Error, CustomStringConvertible {
-        /// 表示の変換が nil を返した。JapaneseConverting.display の約束に反するので、正誤を付けずに止める
-        case noOutput(Problem)
-        /// モデルを使う方式の出力が、基準と全件で一致した
+        /// モデルを使う方式の出力が、基準と打てた問題の全件で一致した
         case modelHadNoEffect(method: String, count: Int, record: URL)
         public var description: String {
             switch self {
-            case .noOutput(let p): "\(p.id) の表示の変換が結果を返さない: \(p.kana)"
             case .modelHadNoEffect(let method, let count, let record):
                 "\(method) の出力が基準の方式と \(count) 件すべてで一致した。モデルが効いていない。記録は \(record.path)"
             }
         }
     }
 
-    /// 1 問ごとに進捗を `progress` に渡し（`[n/N] id 対象 ok|NG 基準 ok|NG 秒`）、集計の行を `report` に渡す。
+    /// 1 問ごとに進捗を `progress` に渡し（`[n/N] id 対象 ok|NG 基準 ok|NG 秒`、打てない問題は `[n/N] id 打てない`）、集計の行を `report` に渡す。
     /// 時間の上限は watchdog が、変換器を作るところから記録を書き終えるまで見る。
     ///
     /// 不変条件:
-    /// - 問題ごとに両方の変換器の endComposition を呼ぶ
-    /// - 文脈は常に `.start`、left は Problem.left。精度は入力メソッドが表示する変換（display）で測る
-    /// - 対象が基準なら変換器は 1 つだけ作り、baselineOutput = output とする
-    /// - モデルを使う方式で全件の出力が基準と一致したら、記録を書いた後、集計を出す前に modelHadNoEffect を投げる。
+    /// - 精度は利用者が問題の読みを打ったときに確定する文字列で測る。読みを同梱の綴りの表で打鍵列に逆にたどり、
+    ///   ConversionMethod.makeSegmenter() で作った区切りの liveText に渡す。入力メソッド・tugime-cli と同じ区切りを通る
+    /// - Problem.left は、入力欄のカーソルより前の文字列として Segmenter.Leading に渡す
+    /// - 問題ごとに両方の区切りの endComposition を呼ぶ
+    /// - 打鍵列に逆にたどれない問題は打たずに typed を nil にし、どちらの方式も不正解とする
+    /// - 対象が基準なら区切りは 1 つだけ作り、baselineOutput = output とする
+    /// - モデルを使う方式で打てた問題の全件の出力が基準と一致したら、記録を書いた後、集計を出す前に modelHadNoEffect を投げる。
     ///   一致した件数ではなく全件で判定する。一致の件数は集計に出すが判定には使わない
     public static func run(
         problems: LoadedProblems,
@@ -188,22 +201,31 @@ public enum AccuracyRun {
         let header = try AccuracyRecord.Header(method: target, problems: problems, startedAt: startedAt)
         let loadStart = clock.now
         watchdog.armLoad("読み込み \(target.spec)")
-        let targetConverter = target.make()
+        let targetSegmenter = try target.makeSegmenter()
         watchdog.armLoad("読み込み \(ConversionMethod.baseline.spec)")
-        let baselineConverter = target == .baseline ? nil : ConversionMethod.baseline.make()
+        let baselineSegmenter = target == .baseline ? nil : try ConversionMethod.baseline.makeSegmenter()
+        let table = try RomajiTable.bundled()
         progress("変換器の読み込み \(String(format: "%.2f", seconds(clock.now - loadStart)))s、問題 \(problems.problems.count) 件")
 
         var results: [AccuracyRecord.Result] = []
         for (n, problem) in problems.problems.enumerated() {
             watchdog.arm(item: problem.id)
-            let (output, outputSeconds) = try display(problem, with: targetConverter, clock: clock)
-            let (baselineOutput, baselineSeconds) = try baselineConverter.map { try display(problem, with: $0, clock: clock) } ?? (output, outputSeconds)
-            let result = AccuracyRecord.Result(
-                problem: problem, output: output, baselineOutput: baselineOutput, seconds: outputSeconds, baselineSeconds: baselineSeconds
-            )
+            let count = "[\(n + 1)/\(problems.problems.count)] \(problem.id)"
+            guard let spelled = Segmenter.spelling(of: problem.kana, table: table) else {
+                results.append(AccuracyRecord.Result(problem: problem, typed: nil))
+                progress("\(count) 打てない")
+                continue
+            }
+            let keys = spelled.map(\.keys).joined()
+            let leading = Segmenter.Leading(problem.left)
+            let (output, outputSeconds) = type(keys, leading: leading, with: targetSegmenter, clock: clock)
+            let (baselineOutput, baselineSeconds) = baselineSegmenter.map { type(keys, leading: leading, with: $0, clock: clock) } ?? (output, outputSeconds)
+            let result = AccuracyRecord.Result(problem: problem, typed: AccuracyRecord.Typed(
+                keys: keys, output: output, baselineOutput: baselineOutput, seconds: outputSeconds, baselineSeconds: baselineSeconds
+            ))
             results.append(result)
             let mark = { (ok: Bool) in ok ? "ok" : "NG" }
-            progress("[\(n + 1)/\(problems.problems.count)] \(problem.id) 対象 \(mark(result.passes)) 基準 \(mark(result.baselinePasses)) \(String(format: "%.2f", outputSeconds))s")
+            progress("\(count) 対象 \(mark(result.passes)) 基準 \(mark(result.baselinePasses)) \(String(format: "%.2f", outputSeconds))s")
         }
 
         watchdog.arm(item: "記録の書き出し")
@@ -212,24 +234,23 @@ public enum AccuracyRun {
         watchdog.finish()
 
         if modelHadNoEffect(results, target: target) {
-            throw Failure.modelHadNoEffect(method: target.spec, count: results.count, record: url)
+            throw Failure.modelHadNoEffect(method: target.spec, count: results.count { $0.typed != nil }, record: url)
         }
         AccuracySummary(results).lines.forEach(report)
     }
 
-    /// モデルを使う方式で、全件の出力が基準と一致したか
+    /// モデルを使う方式で、打てた問題の全件の出力が基準と一致したか
     static func modelHadNoEffect(_ results: [AccuracyRecord.Result], target: ConversionMethod) -> Bool {
-        target.weight != nil && results.allSatisfy { $0.output == $0.baselineOutput }
+        target.weight != nil && results.compactMap(\.typed).allSatisfy { $0.output == $0.baselineOutput }
     }
 
-    /// 1 問を表示の変換にかけ、出力と時間を返す。後の問題に覚えを持ち越さないよう endComposition まで呼ぶ
-    private static func display(_ problem: Problem, with converter: any JapaneseConverting, clock: ContinuousClock) throws -> (String, Double) {
+    /// 打鍵列を打ち、Enter で確定する文字列と時間を返す。後の問題に覚えを持ち越さないよう endComposition まで呼ぶ
+    private static func type(_ keys: String, leading: Segmenter.Leading, with segmenter: Segmenter, clock: ContinuousClock) -> (String, Double) {
         let start = clock.now
-        let shown = converter.display(kana: problem.kana, context: .start, left: problem.left)
+        let text = segmenter.liveText(keys, leading: leading)
         let elapsed = seconds(clock.now - start)
-        converter.endComposition()
-        guard let shown else { throw Failure.noOutput(problem) }
-        return (shown.text, elapsed)
+        segmenter.endComposition()
+        return (text, elapsed)
     }
 }
 
