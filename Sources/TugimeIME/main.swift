@@ -44,7 +44,7 @@ func printStatus() -> Int32 {
 func check() -> Int32 {
     let input = "kyouhagoogledekensaku"
     print("\(input)\t\(sharedSegmenter.liveText(input))")
-    let word = (keys: "i-sou", entry: "いーそう\t一索", text: "一索")
+    let word = (keys: "i-sou", entry: "i-sou\t一索", text: "一索")
     do {
         try sharedSegmenter.replaceUserDictionary(UserDictionary(contents: word.entry))
     } catch {

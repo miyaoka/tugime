@@ -84,10 +84,10 @@ public protocol JapaneseConverting: AnyObject {
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay?
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
     func endComposition()
-    /// 利用者の語を dictionary に丸ごと置き換える。endComposition で捨てるものに加え、変換エンジンが未確定の文字列をまたいで持つ
+    /// 利用者の語を words に丸ごと置き換える。endComposition で捨てるものに加え、変換エンジンが未確定の文字列をまたいで持つ
     /// 途中の計算も捨てるので、呼ぶと未確定の文字列が終わる。作った直後の変換器は利用者の語を持たない。
     /// 投げたときは、前の語のまま変わらない
-    func replaceUserDictionary(_ dictionary: UserDictionary) throws
+    func replaceUserWords(_ words: [UserWord]) throws
 }
 
 /// AzooKeyKanaKanjiConverter による変換。学習は使わないので、同じかなには常に同じ結果を返す。
@@ -340,8 +340,8 @@ final class AzooKeyConverter: JapaneseConverting {
     }()
 
     /// azooKey-Desktop と同じく、利用者の語を LOUDS に組み立てて変換エンジンに読ませる
-    public func replaceUserDictionary(_ dictionary: UserDictionary) throws {
-        let elements = dictionary.entries.map {
+    public func replaceUserWords(_ words: [UserWord]) throws {
+        let elements = words.map {
             DicdataElement(word: $0.word, ruby: Kana.katakana($0.reading), cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: Self.userWordValue)
         }
         let table = try Self.characterTable.get()

@@ -66,7 +66,7 @@ do {
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
         let japanese = method.make()
-        try japanese.replaceUserDictionary(dictionary)
+        try japanese.replaceUserWords(dictionary.words(readingWith: RomajiTable.bundled()))
         for arg in args.dropFirst() {
             let isKana = arg.unicodeScalars.contains { $0.value > 0x3000 }
             if isKana {

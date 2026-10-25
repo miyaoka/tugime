@@ -413,6 +413,8 @@ extension Segmenter {
         case .japanese:
             preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
         case .english:
+            // 利用者の辞書で表記を替えたときは、打ったままの綴りをすぐ後に置く
+            list.append(segment.source)
             // 英語と判定した区間も、`englishReading` で読めればかなを選べるようにする
             if let kana = englishReading(of: segment.source) {
                 list += [kana, Self.katakana(kana)]

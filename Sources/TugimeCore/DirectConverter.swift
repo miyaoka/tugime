@@ -85,8 +85,8 @@ final class DirectConverter: JapaneseConverting {
     }
 
     /// 生成するものは辞書を知らないが、未確定の文字列が終わるので、覚えた生成も捨てる
-    func replaceUserDictionary(_ dictionary: UserDictionary) throws {
-        try scorer.replaceUserDictionary(dictionary)
+    func replaceUserWords(_ words: [UserWord]) throws {
+        try scorer.replaceUserWords(words)
         generator.reset()
         displays = [:]
     }

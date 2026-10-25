@@ -37,6 +37,8 @@ public final class Segmenter {
     let table: RomajiTable
     private let english: EnglishModel
     let japaneseConverter: any JapaneseConverting
+    /// 利用者の辞書に英字の読みで登録した語。打った綴りごとの表記を、ファイルの行の順に持つ
+    var typedWords: [String: [String]] = [:]
     /// 英語の綴りの評価値を、日本語の変換の評価値と同じ尺度に揃える倍率
     static let englishWeight = 1.4
     /// 日本語の区間を 1 つ増やすごとに引く値
@@ -399,7 +401,13 @@ public final class Segmenter {
     private func englishSegment(_ source: String, context: JapaneseContext) -> Segment {
         let singleLetter = source.filter(\.isLetter).count == 1 ? Self.singleLetterEnglishPenalty : 0
         let score = Self.englishWeight * english.logProbability(source) - Self.englishSpanPenalty - singleLetter
-        return Segment(kind: .english, source: source, reading: source, output: source, score: score, context: context)
+        return Segment(kind: .english, source: source, reading: source, output: englishOutput(source), score: score, context: context)
+    }
+
+    /// 英語区間の表記。空白で区切った綴りのうち、利用者の辞書に英字の読みで登録したものを、最初に登録した表記にする。
+    /// 区切りの採点は打った綴りで行うので、登録は日英の判定に効かない
+    private func englishOutput(_ source: String) -> String {
+        source.split(separator: " ", omittingEmptySubsequences: false).map { typedWords[String($0)]?.first ?? String($0) }.joined(separator: " ")
     }
 
     /// 隣り合う日本語区間を 1 つにまとめ、まとめた読みを最初の区間の文脈で変換し直す。
