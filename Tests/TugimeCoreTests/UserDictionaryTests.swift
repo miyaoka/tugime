@@ -9,10 +9,17 @@ import Testing
         #expect(dictionary.entries.map { [$0.keys, $0.word] } == [["i-sou", "一索"], ["mannzu", "萬子"], ["mannzu", "マンズ"], ["github", "GitHub"]])
     }
 
+    /// 種類を書かなければ、表記が ASCII だけなら英語、それ以外は日本語にする。書けばそれに従う
+    @Test func decidesTheKindFromTheWordUnlessWritten() throws {
+        let dictionary = try UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js™\ncafe\tCafé\nsake\tSAKE\tja\nkara\t唐\ten\n")
+        #expect(dictionary.entries.map(\.kind) == [.japanese, .english, .japanese, .japanese, .japanese, .english])
+    }
+
     /// 誤りは 1 始まりの行番号で返し、一部だけの辞書を作らない
     @Test(arguments: [
         ("i-sou\t一索\nryannsou", UserDictionary.ParseError.malformedLine(2, "ryannsou")),
-        ("i-sou\t一索\t牌", .malformedLine(1, "i-sou\t一索\t牌")),
+        ("i-sou\t一索\t牌", .unknownKind(1, "牌")),
+        ("i-sou\t一索\tja\t牌", .malformedLine(1, "i-sou\t一索\tja\t牌")),
         ("\t一索", .malformedLine(1, "\t一索")),
         ("いーそう\t一索", .invalidKeys(1, "いーそう")),
         ("i sou\t一索", .invalidKeys(1, "i sou")),
@@ -104,7 +111,7 @@ import Testing
 
     init() throws {
         segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: ConversionMethod.baseline.make())
-        try segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js"))
+        try segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\nsake\t鮭\tja\ncafe\tCafé"))
     }
 
     /// 綴りの表で読める打鍵は、そのかなの語になり、長い打鍵の途中でも効く
@@ -119,10 +126,30 @@ import Testing
         #expect(first.candidates.prefix(2) == ["GitHub", "github"])
     }
 
-    /// 読めて英語の語でもある打鍵は、英語の区間の表記にだけ使い、かな漢字変換には入れない。英語の語を割らない（nodes は Node.js と s にならない）
-    @Test func usesAnEnglishWordOnlyForEnglishSpans() {
+    /// 英語として扱う打鍵は、かな漢字変換に入れないので英語の語を割らない（nodes は Node.js と s にならない）
+    @Test func keepsEnglishKeysOutOfKanaConversion() {
         #expect(segmenter.liveText("nodewoinsuto-rusuru").hasPrefix("Node.js"))
         #expect(segmenter.liveText("nodes") == "nodes")
+    }
+
+    /// 英語として扱う打鍵は、日本語として読める綴りでも英語の区間にする（tugime は継ぎ目にならない）
+    @Test func makesEnglishKeysAnEnglishSpan() {
+        #expect(segmenter.liveText("tugime") == "tugime")
+        #expect(segmenter.liveText("tugimewotukau").hasPrefix("tugimeを"))
+    }
+
+    /// 日本語として扱う打鍵は、英語の語でもかな漢字変換に入れる。区切りが日本語に寄るのも登録に従う
+    @Test func putsJapaneseKeysIntoKanaConversion() {
+        #expect(segmenter.liveText("sakewonomu").hasPrefix("鮭を"))
+    }
+
+    /// 日本語として扱う、かなに読めない打鍵は、打鍵とちょうど一致する区間をその語にし、日本語区間と同じく後ろに続ける
+    @Test func makesUnreadableJapaneseKeysTheWord() throws {
+        #expect(segmenter.liveText("cafe") == "Café")
+        #expect(segmenter.liveText("cafedeyasumu").hasPrefix("Caféで"))
+        #expect(segmenter.liveText("cafe,") == "Café、")
+        let first = try #require(segmenter.clauses("cafedeyasumu").first)
+        #expect(first.candidates.prefix(2) == ["Café", "cafe"])
     }
 
     /// 英語の後の句読点は英語区間に入るので、句読点で区切った綴りごとに引く

@@ -324,7 +324,7 @@ final class AzooKeyConverter: JapaneseConverting {
     }
 
     /// 利用者の語の評価値。品詞（固有名詞・一般）とともに、azooKey-Desktop が利用者の語に付けるものと同じ
-    private static let userWordValue: PValue = -5
+    static let userWordValue: PValue = -5
 
     /// 既定の辞書のバンドルの名前と、その中の文字の表。利用者の辞書の LOUDS は、変換エンジンが既定の辞書を引くのと同じ文字の番号で組み立てる
     private static let defaultDictionaryBundle = "AzooKeyKanaKanjiConverter_KanaKanjiConverterModuleWithDefaultDictionary.bundle"

@@ -19,8 +19,8 @@ let usage = """
       tugime-cli --span <英字|かな>...        英字は英語として、かなは日本語として評価値を出す
     """
 
-let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P"]
-let clauseTag: [Clause.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .whole: "W"]
+let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .word: "U"]
+let clauseTag: [Clause.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .word: "U", .whole: "W"]
 
 func describe(_ segments: [Segment]) -> String {
     segments.map { s in
@@ -66,7 +66,7 @@ do {
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
         let japanese = method.make()
-        try japanese.replaceUserWords(dictionary.words(readingWith: RomajiTable.bundled(), english: english))
+        try Segmenter(table: .bundled(), english: english, japanese: japanese).replaceUserDictionary(dictionary)
         for arg in args.dropFirst() {
             let isKana = arg.unicodeScalars.contains { $0.value > 0x3000 }
             if isKana {

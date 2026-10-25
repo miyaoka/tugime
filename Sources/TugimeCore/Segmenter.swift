@@ -6,6 +6,8 @@ public struct Segment: Sendable, Equatable {
         case english
         /// 日本語の記号にした句読点（, . ? ! ~）と記号の打鍵（zh [ / など）
         case punctuation
+        /// 利用者の辞書で日本語にした、かなに読めない打鍵（cafe を Café）。日本語区間と同じく前後に続き、表記は登録した語
+        case word
     }
 
     public var kind: Kind
@@ -37,8 +39,10 @@ public final class Segmenter {
     let table: RomajiTable
     let english: EnglishModel
     let japaneseConverter: any JapaneseConverting
-    /// 利用者の辞書に登録した打鍵ごとの表記。ファイルの行の順に持つ
+    /// 利用者の辞書で英語として扱う打鍵ごとの表記。ファイルの行の順に持つ
     var typedWords: [String: [String]] = [:]
+    /// 利用者の辞書で日本語として扱う、かなに読めない打鍵ごとの表記。ファイルの行の順に持つ
+    var typedJapaneseWords: [String: [String]] = [:]
     /// 英語の綴りの評価値を、日本語の変換の評価値と同じ尺度に揃える倍率
     static let englishWeight = 1.4
     /// 日本語の区間を 1 つ増やすごとに引く値
@@ -49,6 +53,9 @@ public final class Segmenter {
     static let englishSpanPenalty = -2.0
     /// 英字が 1 文字だけの英語の区間で、さらに引く値
     static let singleLetterEnglishPenalty = 3.0
+    /// 利用者の辞書で英語として扱う打鍵の区間の評価値の下限と、日本語として扱う読めない打鍵の区間の評価値。
+    /// かな漢字変換に入れた利用者の語 1 つの区間と同じ強さにする
+    static let registeredScore = Double(AzooKeyConverter.userWordValue) - japaneseSpanPenalty
 
     public init(table: RomajiTable, english: EnglishModel, japanese: any JapaneseConverting) {
         self.table = table
@@ -340,7 +347,7 @@ public final class Segmenter {
             let context = start == 0 ? leading : Self.context(after: chars[..<start])
             let predecessors: [(kind: Segment.Kind?, context: JapaneseContext, penalty: Double)] = start == 0
                 ? [(nil, leading, Self.japaneseSpanPenalty)]
-                : [(.english, context, Self.japaneseSpanPenalty), (.japanese, .start, Self.continuingJapanesePenalty)]
+                : [(.english, context, Self.japaneseSpanPenalty), (.japanese, .start, Self.continuingJapanesePenalty), (.word, context, Self.japaneseSpanPenalty)]
             let readings = readingsAt[start]
             // この位置から綴りの表で最後まで読める終端。英語区間の候補が読める綴りかを引くのに使う
             let readableEnds = Set(readings.map(\.end))
@@ -358,8 +365,15 @@ public final class Segmenter {
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
+                if let words = typedJapaneseWords[source] {
+                    let segment = Segment(kind: .word, source: source, reading: source, output: words[0], score: Self.registeredScore, context: context)
+                    for predecessor in predecessors { relax(end, start, segment, after: predecessor.kind) }
+                    continue
+                }
                 if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseReach.contains(end) { continue }
-                relax(end, start, englishSegment(source, context: context), after: start == 0 ? nil : .japanese)
+                for previous in start == 0 ? [nil] : [Segment.Kind.japanese, .word] {
+                    relax(end, start, englishSegment(source, context: context), after: previous)
+                }
             }
         }
 
@@ -387,9 +401,10 @@ public final class Segmenter {
     }
 
     /// 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
-    /// 日本語として採れるなら英語にしない
+    /// 日本語として採れるなら英語にしない。利用者の辞書で英語として扱う打鍵は、どれにも当たらない
     func prefersJapanese(_ source: String, readable: Bool) -> Bool {
-        table.isSingleKana(source) || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
+        guard typedWords[source] == nil else { return false }
+        return table.isSingleKana(source) || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
     }
 
     private func japaneseSegment(_ source: String, kana: String, context: JapaneseContext, penalty: Double) -> Segment? {
@@ -400,12 +415,12 @@ public final class Segmenter {
 
     private func englishSegment(_ source: String, context: JapaneseContext) -> Segment {
         let singleLetter = source.filter(\.isLetter).count == 1 ? Self.singleLetterEnglishPenalty : 0
-        let score = Self.englishWeight * english.logProbability(source) - Self.englishSpanPenalty - singleLetter
+        let spelled = Self.englishWeight * english.logProbability(source) - Self.englishSpanPenalty - singleLetter
+        let score = typedWords[source] == nil ? spelled : max(spelled, Self.registeredScore)
         return Segment(kind: .english, source: source, reading: source, output: englishOutput(source), score: score, context: context)
     }
 
-    /// 英語区間の表記。空白で区切った綴りのうち、利用者の辞書に登録した打鍵と一致するものを、最初に登録した表記にする。
-    /// 区切りの採点は打った綴りで行うので、表記を替えても英語区間の判定は変わらない
+    /// 英語区間の表記。空白で区切った綴りのうち、利用者の辞書で英語として扱う打鍵と一致するものを、最初に登録した表記にする
     private func englishOutput(_ source: String) -> String {
         source.split(separator: " ", omittingEmptySubsequences: false).map { registered(String($0)) }.joined(separator: " ")
     }

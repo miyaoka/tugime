@@ -27,8 +27,10 @@ final class UserDictionaryFile {
     static let template = """
         # tugime の辞書。1 行 1 語で、打鍵、タブ、表記の順に書く。# で始まる行は読まない
         # 打鍵は日本語モードで打つとおりの綴り。保存すると、次に打ち始めたときから効く
+        # 3 つ目に ja か en を書くと、打鍵の区間を日本語区間か英語区間にする。書かなければ、表記が ASCII だけなら en、それ以外は ja
         # mannzu\t萬子
         # github\tGitHub
+        # sake\t鮭\tja
 
         """
 
