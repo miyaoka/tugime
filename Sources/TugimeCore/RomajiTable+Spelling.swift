@@ -1,6 +1,6 @@
 import Foundation
 
-/// 綴りが複数あるときの選び方。打鍵の少ない方、同じ長さなら打鍵列の辞書順で前の方
+/// 打鍵列の選び方。打鍵の少ない方、同じ長さなら打鍵列の辞書順で前の方
 func prefersKeys(_ a: String, over b: String) -> Bool {
     a.count != b.count ? a.count < b.count : a < b
 }
@@ -21,7 +21,8 @@ extension RomajiTable {
     /// かなを、利用者の綴りの表で打つ打鍵列に逆にたどる。表で書けないかなを含めば nil。
     ///
     /// 不変条件: 返した綴りを繋いだ打鍵列を `reading(of:)` で読むと kana に戻る。戻らなければ nil にする。
-    /// 綴りが複数あるとき（ん: nn / n）は打鍵列全体を prefersKeys で選ぶ。同じかなには常に同じ打鍵列を返す
+    /// 同じかなの綴りは表で上の行を使う。区切り方が複数あるとき（きゃ: kya / kixya、っちゃ: ttya / tcha）は、使った行のうち最も下の行が
+    /// 上にある方を選び、それが同じなら打鍵列全体を prefersKeys で選ぶ。同じかなには常に同じ打鍵列を返す
     public func spelling(of kana: String) -> [SpelledKana]? {
         let chars = Array(kana)
         guard !chars.isEmpty else { return nil }
@@ -34,7 +35,7 @@ extension RomajiTable {
             for step in steps(at: start, in: chars, reverse: reverse) {
                 let candidate = here + step
                 let end = start + step.map(\.kana.count).reduce(0, +)
-                if let current = best[end], !prefersKeys(candidate.map(\.keys).joined(), over: current.map(\.keys).joined()) { continue }
+                if let current = best[end], !prefers(candidate, over: current) { continue }
                 best[end] = candidate
             }
         }
@@ -42,31 +43,33 @@ extension RomajiTable {
         return spelled
     }
 
-    /// かなから綴りへの表。同じかなに綴りが複数あれば prefersKeys で選ぶ
+    /// 使った行のうち最も下の行が上にある方、同じなら prefersKeys。「っ」の重ね打ちの 1 文字は表の行ではないので数えない
+    private func prefers(_ a: [SpelledKana], over b: [SpelledKana]) -> Bool {
+        let lowest = { (spelled: [SpelledKana]) in spelled.compactMap { rank[$0.keys] }.max() ?? 0 }
+        let (rankA, rankB) = (lowest(a), lowest(b))
+        if rankA != rankB { return rankA < rankB }
+        return prefersKeys(a.map(\.keys).joined(), over: b.map(\.keys).joined())
+    }
+
+    /// かなから綴りへの表。同じかなに綴りが複数あれば、表で上の行を選ぶ
     private var reverseEntries: [String: String] {
         var reverse: [String: String] = [:]
         for (key, value) in entries {
-            if let current = reverse[value], !prefersKeys(key, over: current) { continue }
+            if let current = reverse[value], rank[current]! < rank[key]! { continue }
             reverse[value] = key
         }
         return reverse
     }
 
-    /// start から打てる 1 歩。表の 1 項目、「っ」を次の項目の先頭の子音を重ねて打つもの、単独の n の「ん」に次の項目を続けたもの。
-    /// 「っ」と単独の「ん」は後ろに綴りが続くときだけ読むので、続く項目と組にして 1 歩にする
+    /// start から打てる 1 歩。表の 1 項目と、「っ」を次の項目の先頭の子音を重ねて打つもの。
+    /// 「っ」は後ろに綴りが続くときだけ読むので、続く項目と組にして 1 歩にする。
+    /// 「ん」は単独の n でも読めるが、既定の打ち方に合わせて表の項目（nn）で打つ
     private func steps(at start: Int, in chars: [Character], reverse: [String: String]) -> [[SpelledKana]] {
-        let entriesHere = entries(at: start, in: chars, reverse: reverse)
-        var steps = entriesHere.map { [$0] }
-        let next = entries(at: start + 1, in: chars, reverse: reverse)
-        let leaders: [(kana: Character, letters: Set<Character>, keys: (Character) -> String)] = [
-            ("っ", sokuonLetters, { String($0) }),
-            ("ん", nBeforeLetters, { _ in "n" }),
-        ]
-        for leader in leaders where chars[start] == leader.kana {
-            for entry in next {
-                guard let first = entry.keys.first, leader.letters.contains(first) else { continue }
-                steps.append([SpelledKana(kana: String(leader.kana), keys: leader.keys(first)), entry])
-            }
+        var steps = entries(at: start, in: chars, reverse: reverse).map { [$0] }
+        guard chars[start] == "っ" else { return steps }
+        for entry in entries(at: start + 1, in: chars, reverse: reverse) {
+            guard let first = entry.keys.first, sokuonLetters.contains(first) else { continue }
+            steps.append([SpelledKana(kana: "っ", keys: String(first)), entry])
         }
         return steps
     }

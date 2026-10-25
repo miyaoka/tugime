@@ -24,7 +24,7 @@ nodewosakujosite,sitewokoukaisuru                       →  nodeを削除して
 
 ![設定をhideしたままにする を打ち進めるごとの表示と、その裏で比べた読み方の候補。打鍵列の範囲を日本語や英語として読む候補を挙げ、点の合計が最も高い並びを採る。hide は、打った直後は英語、続けて打つと日本語、最後の打鍵で英語に戻る](docs/images/conversion.png)
 
-利用者のローマ字の綴りで読めない並び（`gl` `pr` `c` `l` など）を含む区間は英語になる。ローマ字として読める英単語（`node` `site` など）は、文の前後から日本語か英語かを決める。英語の後の句読点は、日本語の記号にせず打ったまま残る。
+利用者のローマ字の綴りで読めない並び（`gl` `pr` `str` など）を含む区間は英語になる。ローマ字として読める英単語（`node` `site` など）は、文の前後から日本語か英語かを決める。英語の後の句読点は、日本語の記号にせず打ったまま残る。
 
 ### 学習
 
@@ -94,7 +94,7 @@ scripts/build-app.sh                    # dist/tugime Dev.app を組み立てて
 
 | キー | 動き |
 |---|---|
-| 英字・記号 | 未確定の文字列に足す。打っている途中も変換して表示する。かなが 4 文字以上の日本語の区間は漢字にし、それより短い区間はかなのまま、英語の区間は英字で表示する |
+| 英字・記号 | 未確定の文字列に足す。打っている途中も変換して表示する。日本語の区間は変換し、英語の区間は英字で表示する |
 | Space | 打っている途中は空白を入れる。空白は英語の区間に入り、打ったまま残る。文節を選んでいる間は Shift+Space と同じ |
 | Shift+Space | 文節に区切って最初の文節を選ぶ。もう一度押すと候補の窓を出し、その後は次の候補へ進む |
 | ↓ / ↑ | 次の候補 / 前の候補 |
@@ -147,5 +147,6 @@ model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出
 
 - [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter)（MIT）と既定の辞書
 - [genmai-310M](https://huggingface.co/subdiox/genmai-310M)（CC BY-SA 4.0。[zenz-v2.5-medium](https://huggingface.co/Miwa-Keita/zenz-v2.5-medium) を元にしたモデル）と [llama.cpp](https://github.com/azooKey/llama.cpp)（MIT）
+- 既定のローマ字の綴り: [Mozc](https://github.com/google/mozc) の `src/data/preedit/romanji-hiragana.tsv`（BSD 3 条項。ライセンスの全文は `Sources/TugimeCore/Resources/romaji.tsv` の先頭）
 - 英語の語の頻度: [wordfreq](https://github.com/rspeer/wordfreq) の日本語データ（CC BY-SA 4.0）
 - 英語の綴りらしさを数える語表: macOS 同梱の Webster's Second International（1934 年、著作権切れ）と固有名詞表

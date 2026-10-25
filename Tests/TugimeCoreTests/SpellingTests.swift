@@ -13,22 +13,24 @@ import Testing
     }
 
     @Test(arguments: [
-        // ん は母音・y・n の前と語末で nn、それ以外の子音の前は n
-        ("けんさく", "kensaku"),
+        // ん は常に nn
+        ("けんさく", "kennsaku"),
         ("こんや", "konnya"),
-        ("ほんや", "honnya"),
-        ("かんい", "kanni"),
         ("ほん", "honn"),
         // っ は次の子音を重ねる。重ねられない文字の前は xtu
         ("きって", "kitte"),
         ("いっしょ", "issyo"),
         ("あっ", "axtu"),
         ("っな", "xtuna"),
-        // 短い綴りを選ぶ
+        // 同じかなの綴りは表で上の行（sha cha ca la より sya tya ka xa）
         ("しゃ", "sya"),
-        ("かれんだー", "karenda-"),
+        ("かれんだー", "karennda-"),
+        // 区切り方が複数あれば、使う行が表で上にある方（tcha より ttya、ye より ixe、ki xya より kya）
+        ("めっちゃ", "mettya"),
+        ("いぇ", "ixe"),
+        ("きゃ", "kya"),
     ])
-    func spellsWithTheShortestKeys(kana: String, expected: String) {
+    func spellsWithTheDefaultKeys(kana: String, expected: String) {
         #expect(keys(kana) == expected)
     }
 

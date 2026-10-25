@@ -41,7 +41,7 @@ func printStatus() -> Int32 {
 /// 組み立てたバンドルから綴りの表・語表・辞書・表示の変換のモデルを読み、1 文を表示の変換で変換して出す。読めなければ初期化の時点で止まる
 func check() -> Int32 {
     let input = "kyouhagoogledekensaku"
-    print("\(input)\t\(sharedSegmenter.displayText(input))")
+    print("\(input)\t\(sharedSegmenter.liveText(input))")
     return 0
 }
 
