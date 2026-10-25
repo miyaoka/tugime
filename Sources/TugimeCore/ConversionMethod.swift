@@ -16,6 +16,13 @@ public enum ConversionMethod: Sendable, Hashable {
     /// 基準の方式。検証はどの対象の方式にも、これの出力を並べて残す
     public static let baseline = ConversionMethod.azooKey
 
+    /// 入力メソッドが表示の変換に使うモデルのファイル名。入力メソッドは .app の Contents/Resources/model から、
+    /// CLI はリポジトリの .zenz/ から読む（どちらも scripts/fetch-genmai.sh が取得したもの）
+    public static let inputMethodModel = "genmai-310M-q8_0.gguf"
+
+    /// CLI の既定の方式。入力メソッドと同じ方式とモデルで、リポジトリの直下から実行する
+    public static let inputMethodSpec = "\(directPrefix).zenz/\(inputMethodModel)"
+
     /// 方式が読むモデルのファイル。nil ならモデルを使わない方式。
     /// モデルを使う方式の出力が基準と全件で一致したら、モデルが効いていないとみなす
     public var weight: URL? {

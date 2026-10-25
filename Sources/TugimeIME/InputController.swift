@@ -41,7 +41,7 @@ private enum KeyCode {
 /// 区切りと変換はプロセスに 1 つだけ持つ。辞書・語表・モデルの読み込みが重いので、入力源ごとに作らない
 let sharedSegmenter: Segmenter = {
     // 表示の変換のモデルはバンドルの Contents/Resources/model に同梱する
-    guard let model = Bundle.main.url(forResource: "genmai-310M-q8_0", withExtension: "gguf", subdirectory: "model") else {
+    guard let model = Bundle.main.url(forResource: ConversionMethod.inputMethodModel, withExtension: nil, subdirectory: "model") else {
         fatalError("tugime を初期化できない: 表示の変換のモデルが Contents/Resources/model に無い")
     }
     do {

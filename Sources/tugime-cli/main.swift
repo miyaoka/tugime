@@ -3,8 +3,10 @@ import TugimeCore
 
 let usage = """
     使い方（先頭に次を付けられる。--after <english|japanese> はカーソルの前にその文字がある状態として変換する。
-    --method <方式> は変換の方式。\(ConversionMethod.forms)（既定は azookey）。zenzai と direct は表示の変換にモデルを使う。zenzai は azooKey がモデルを動かし、direct は tugime が動かす。
-    入力メソッドと同じモデルは scripts/fetch-genmai.sh が、ほかのモデルは scripts/convert-hf-to-gguf.sh が出す）:
+    --method <方式> は変換の方式。\(ConversionMethod.forms)。既定は入力メソッドと同じ \(ConversionMethod.inputMethodSpec) で、
+    リポジトリの直下から実行し、モデルは scripts/fetch-genmai.sh で用意する。azooKey だけで変換するときは --method azookey。
+    zenzai と direct は表示の変換にモデルを使う。zenzai は azooKey がモデルを動かし、direct は tugime が動かす。ほかのモデルは scripts/convert-hf-to-gguf.sh が出す。
+    --explain と --lattice の出力の表記は、区切りを採点した azooKey の変換で、表示の変換ではない）:
       tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
@@ -28,7 +30,7 @@ func describe(_ segments: [Segment]) -> String {
 let leadings: [String: Segmenter.Leading] = ["english": .afterEnglish, "japanese": .afterJapanese]
 var args = Array(CommandLine.arguments.dropFirst())
 var leading = Segmenter.Leading.start
-var methodSpec = ConversionMethod.baseline.spec
+var methodSpec = ConversionMethod.inputMethodSpec
 while let option = args.first, ["--after", "--method"].contains(option) {
     guard args.count >= 2 else {
         print(usage)
