@@ -104,6 +104,38 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(read("") == "")
     }
 
+    /// 入力欄が前の文字列を返さないアプリでも、tugime で確定した文字列の続きは、入力欄を読めるアプリと同じ結果になる
+    @Test func continuesOwnCommitsWhenTheFieldReturnsNothing() {
+        var context = LeadingContext()
+        context.didCommit("API")
+        let leading = context.leading(field: .start)
+        #expect(leading == Segmenter.Leading("API"))
+        #expect(output(".", leading: leading) == ".")
+        // 続けて確定した文字列はつなげ、入力欄から読むときと同じ上限までにする
+        context.didCommit("今日")
+        #expect(context.leading(field: .start).text == "API今日")
+        context.didCommit(String(repeating: "あ", count: Segmenter.Leading.maxLength))
+        #expect(context.leading(field: .start).text == String(repeating: "あ", count: Segmenter.Leading.maxLength - 1))
+    }
+
+    /// 入力欄が返す前の文字列は確定した文字列より優先し、確定した文字列はアプリにキーを渡すと捨てる
+    @Test func forgetsOwnCommitsWhenTheFieldMayHaveChanged() {
+        var context = LeadingContext()
+        context.didCommit("API")
+        #expect(context.leading(field: Segmenter.Leading("今日")).text == "今日")
+        context.forgetCommits()
+        #expect(context.leading(field: .start) == .start)
+    }
+
+    /// 確定した文字列を返したことのある入力欄で前に何も無いのは、カーソルを先頭や別の欄へ動かしたときなので文頭にする
+    @Test func trustsAnEmptyFieldThatHasReturnedOwnCommits() {
+        var context = LeadingContext()
+        context.didCommit("API")
+        #expect(context.leading(field: Segmenter.Leading("README の API")).text == "README の API")
+        context.didCommit("です")
+        #expect(context.leading(field: .start) == .start)
+    }
+
     /// 入力欄の数字に続けて打っても、数字とまとめて打ったときと同じく数字に続く形で区切る
     @Test(arguments: [("3", "nin"), ("3", "kai"), ("1500", "ennharaimasu")])
     func continuesConfirmedDigitsLikeTypedDigits(digits: String, input: String) {
