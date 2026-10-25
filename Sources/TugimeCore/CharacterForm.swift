@@ -75,9 +75,9 @@ extension Segmenter {
     }
 
     /// 利用者の語を置き換える。未確定の文字列は終わる。投げたときは前の語のまま（JapaneseConverting.replaceUserWords）。
-    /// 綴りの表で最後まで読める打鍵は、そのかなの語としてかな漢字変換に入れる。どの打鍵も、英語の区間の綴りが打鍵とちょうど一致すれば、その表記にする
+    /// かな漢字変換に入れる語は UserDictionary.words が決める。どの打鍵も、英語の区間の綴りが打鍵とちょうど一致すれば、その表記にする
     public func replaceUserDictionary(_ dictionary: UserDictionary) throws {
-        try japaneseConverter.replaceUserWords(dictionary.words(readingWith: table))
+        try japaneseConverter.replaceUserWords(dictionary.words(readingWith: table, english: english))
         typedWords = Dictionary(grouping: dictionary.entries, by: \.keys).mapValues { $0.map(\.word) }
     }
 }

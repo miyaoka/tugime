@@ -16,6 +16,8 @@ import Testing
         ("\t一索", .malformedLine(1, "\t一索")),
         ("いーそう\t一索", .invalidKeys(1, "いーそう")),
         ("i sou\t一索", .invalidKeys(1, "i sou")),
+        ("zhang\t張", .unreachableKeys(1, "zhang")),
+        (",net\t.NET", .unreachableKeys(1, ",net")),
         ("i-sou\t一索\n\ni-sou\t一索", .duplicateEntry(3, "i-sou\t一索")),
     ])
     func rejectsTheWholeFileOnAnError(contents: String, error: UserDictionary.ParseError) {
@@ -117,9 +119,16 @@ import Testing
         #expect(first.candidates.prefix(2) == ["GitHub", "github"])
     }
 
-    /// 読めて英語の語でもある打鍵は、英語と判定された区間でも登録した表記になる
-    @Test func showsTheRegisteredSpellingOfAReadableEnglishWord() {
+    /// 読めて英語の語でもある打鍵は、英語の区間の表記にだけ使い、かな漢字変換には入れない。英語の語を割らない（nodes は Node.js と s にならない）
+    @Test func usesAnEnglishWordOnlyForEnglishSpans() {
         #expect(segmenter.liveText("nodewoinsuto-rusuru").hasPrefix("Node.js"))
+        #expect(segmenter.liveText("nodes") == "nodes")
+    }
+
+    /// 英語の後の句読点は英語区間に入るので、句読点で区切った綴りごとに引く
+    @Test func showsTheRegisteredSpellingBeforePunctuation() {
+        #expect(segmenter.liveText("github.") == "GitHub.")
+        #expect(segmenter.liveText("github,node") == "GitHub,Node.js")
     }
 
     /// 登録した綴りを含むだけの別の綴り（githubs）は替えない

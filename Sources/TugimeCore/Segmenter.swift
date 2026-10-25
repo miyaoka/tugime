@@ -35,9 +35,9 @@ public struct ScoredSpan: Sendable, Equatable {
 /// 読める箇所は、日本語として変換した評価値と英語の綴りとしての評価値を比べて決める。
 public final class Segmenter {
     let table: RomajiTable
-    private let english: EnglishModel
+    let english: EnglishModel
     let japaneseConverter: any JapaneseConverting
-    /// 利用者の辞書に英字の読みで登録した語。打った綴りごとの表記を、ファイルの行の順に持つ
+    /// 利用者の辞書に登録した打鍵ごとの表記。ファイルの行の順に持つ
     var typedWords: [String: [String]] = [:]
     /// 英語の綴りの評価値を、日本語の変換の評価値と同じ尺度に揃える倍率
     static let englishWeight = 1.4
@@ -278,7 +278,7 @@ public final class Segmenter {
     }
 
     /// i から始まる記号の打鍵のうち最も長いもの
-    private static func symbol(at i: Int, in chars: [Character]) -> (key: String, mark: String)? {
+    static func symbol(at i: Int, in chars: [Character]) -> (key: String, mark: String)? {
         for length in stride(from: min(maxSymbolLength, chars.count - i), through: 1, by: -1) {
             let key = String(chars[i..<(i + length)])
             if let mark = symbols[key] { return (key, mark) }
@@ -404,10 +404,27 @@ public final class Segmenter {
         return Segment(kind: .english, source: source, reading: source, output: englishOutput(source), score: score, context: context)
     }
 
-    /// 英語区間の表記。空白で区切った綴りのうち、利用者の辞書に英字の読みで登録したものを、最初に登録した表記にする。
-    /// 区切りの採点は打った綴りで行うので、登録は日英の判定に効かない
+    /// 英語区間の表記。空白で区切った綴りのうち、利用者の辞書に登録した打鍵と一致するものを、最初に登録した表記にする。
+    /// 区切りの採点は打った綴りで行うので、表記を替えても英語区間の判定は変わらない
     private func englishOutput(_ source: String) -> String {
-        source.split(separator: " ", omittingEmptySubsequences: false).map { typedWords[String($0)]?.first ?? String($0) }.joined(separator: " ")
+        source.split(separator: " ", omittingEmptySubsequences: false).map { registered(String($0)) }.joined(separator: " ")
+    }
+
+    /// 綴りをそのまま引き（node.js）、無ければ句読点で区切った綴りごとに引く。英語の後の句読点は英語区間に入るので（github, や github,gitlab）
+    private func registered(_ spelling: String) -> String {
+        if let word = typedWords[spelling]?.first { return word }
+        var shown = ""
+        var run = ""
+        for c in spelling {
+            guard Self.punctuation[c] != nil else {
+                run.append(c)
+                continue
+            }
+            shown += typedWords[run]?.first ?? run
+            shown.append(c)
+            run = ""
+        }
+        return shown + (typedWords[run]?.first ?? run)
     }
 
     /// 隣り合う日本語区間を 1 つにまとめ、まとめた読みを最初の区間の文脈で変換し直す。

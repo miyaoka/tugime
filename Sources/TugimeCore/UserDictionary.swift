@@ -13,12 +13,14 @@ public struct UserDictionary: Sendable, Equatable {
     public enum ParseError: Error, CustomStringConvertible, Equatable {
         case malformedLine(Int, String)
         case invalidKeys(Int, String)
+        case unreachableKeys(Int, String)
         case duplicateEntry(Int, String)
 
         public var description: String {
             switch self {
             case .malformedLine(let n, let line): "利用者の辞書 \(n) 行目を読めない（打鍵、タブ、表記の順に書く）: \(line)"
             case .invalidKeys(let n, let keys): "利用者の辞書 \(n) 行目の打鍵は、英数字と記号（空白を除く ASCII）で書く: \(keys)"
+            case .unreachableKeys(let n, let keys): "利用者の辞書 \(n) 行目の打鍵は、記号に変わる打鍵（zh / [ など）を含むか句読点で始まるので、打っても一致しない: \(keys)"
             case .duplicateEntry(let n, let line): "利用者の辞書 \(n) 行目は前の行にもある: \(line)"
             }
         }
@@ -58,21 +60,30 @@ public struct UserDictionary: Sendable, Equatable {
             guard fields.count == 2, !fields[0].isEmpty, !fields[1].isEmpty else { throw ParseError.malformedLine(index + 1, line) }
             let entry = Entry(keys: String(fields[0]), word: String(fields[1]))
             guard entry.keys.unicodeScalars.allSatisfy(Self.isKeyScalar) else { throw ParseError.invalidKeys(index + 1, entry.keys) }
+            guard Self.canBeTyped(entry.keys) else { throw ParseError.unreachableKeys(index + 1, entry.keys) }
             guard seen.insert(entry).inserted else { throw ParseError.duplicateEntry(index + 1, line) }
             entries.append(entry)
         }
         self.entries = entries
     }
 
-    /// かな漢字変換に入れる語。綴りの表で最後まで読める打鍵だけを、そのかなの語にする
-    public func words(readingWith table: RomajiTable) -> [UserWord] {
+    /// かな漢字変換に入れる語。綴りの表で最後まで読め、英語の語でない打鍵だけを、そのかなの語にする。
+    /// 英語の語でもある打鍵（node）を入れると、その読みが日本語の側に寄り、英語の語を割る（nodes が Node.js と s になる）ので、英語の区間の表記にだけ使う
+    public func words(readingWith table: RomajiTable, english: EnglishModel) -> [UserWord] {
         entries.compactMap { entry in
-            guard let kana = table.reading(of: entry.keys), Segmenter.canBeJapanese(kana) else { return nil }
+            guard !english.isWord(entry.keys), let kana = table.reading(of: entry.keys), Segmenter.canBeJapanese(kana) else { return nil }
             return UserWord(reading: kana, word: entry.word)
         }
     }
 
     private static let padding = CharacterSet.whitespaces.subtracting(CharacterSet(charactersIn: "\t"))
+
+    /// 打鍵が 1 つの区間の綴りになりうるか。区切りは記号の打鍵で入力を切り、句読点からは区間を始めない
+    private static func canBeTyped(_ keys: String) -> Bool {
+        let chars = Array(keys)
+        guard let first = chars.first, Segmenter.punctuation[first] == nil else { return false }
+        return chars.indices.allSatisfy { Segmenter.symbol(at: $0, in: chars) == nil }
+    }
 
     /// 空白を除く ASCII の印字できる文字。入力メソッドが打鍵列に足す文字と同じ
     private static func isKeyScalar(_ scalar: Unicode.Scalar) -> Bool {
