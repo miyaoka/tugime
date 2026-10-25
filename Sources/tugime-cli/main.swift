@@ -5,7 +5,7 @@ let usage = """
     使い方（先頭に次を付けられる。--after <english|japanese> はカーソルの前にその文字がある状態として変換する。
     --method <方式> は変換の方式。\(ConversionMethod.forms)（既定は azookey）。zenzai と direct は表示の変換にモデルを使う。zenzai は azooKey がモデルを動かし、direct は tugime が動かす。
     入力メソッドと同じモデルは scripts/fetch-genmai.sh が、ほかのモデルは scripts/convert-hf-to-gguf.sh が出す）:
-      tugime-cli <打鍵列>...                  打鍵列を変換した結果を出す
+      tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
       tugime-cli --lattice <打鍵列>...        区切りを決めた部分の採点で比べた区間の候補を出す。打鍵列ごとに == 打鍵列 の行の後、

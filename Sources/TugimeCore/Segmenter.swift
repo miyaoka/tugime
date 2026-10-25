@@ -82,7 +82,7 @@ public final class Segmenter {
         public var differsFromInput: Bool
     }
 
-    /// 打っている途中に見せる文字列。日本語区間は長さによらず変換し、英語区間は打ったまま
+    /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま
     public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
         let segments = segment(input, leading: leading)
         var differs = false
