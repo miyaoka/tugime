@@ -5,7 +5,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-revision=d79b9b71c2ff9a6debdb8d2f4670729a2043b5cb
+revision=e9a6ef124a7a893d3ba72dc564b1f3cc968dd7a3
 sha256=fa951e50aa42880d08ec24579e089ff7bb7c8057cf0a11b48d18b77b0468986b
 url="https://huggingface.co/miyaoka/genmai-310M-GGUF/resolve/$revision/genmai-310M-q8_0.gguf"
 model="$root/.zenz/genmai-310M-q8_0.gguf"
