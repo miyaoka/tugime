@@ -67,9 +67,16 @@ final class TugimeInputController: IMKInputController {
     private var mode: InputMode = .japanese
     /// 打ち始めたときにカーソルの前にあったもの
     private var leading: Segmenter.Leading = .start
+    /// 入力欄が前の文字列を返さないときの代わりに、tugime が確定した文字列を持つ
+    private var leadingContext = LeadingContext()
+
+    /// 入力欄のカーソルより前の文字列を読む。入力欄が返さなければ、tugime が続けて確定した文字列を使う
+    private func readLeading(of client: IMKTextInput) -> Segmenter.Leading {
+        leadingContext.leading(field: Self.fieldLeading(of: client))
+    }
 
     /// 入力欄のカーソルより前の文字列を読む。カーソルの位置が分からなければ前に何も無いとする
-    private static func leadingContext(of client: IMKTextInput) -> Segmenter.Leading {
+    private static func fieldLeading(of client: IMKTextInput) -> Segmenter.Leading {
         let selection = client.selectedRange()
         guard selection.location != NSNotFound else { return .start }
         return Segmenter.Leading(caret: selection.location) { client.attributedSubstring(from: $0)?.string }
@@ -109,9 +116,10 @@ final class TugimeInputController: IMKInputController {
     }
 
     nonisolated override func deactivateServer(_ sender: Any!) {
-        if let client = sender as? IMKTextInput {
-            nonisolated(unsafe) let target = client
-            onMain { commit(target) }
+        nonisolated(unsafe) let client = sender as? IMKTextInput
+        onMain {
+            if let client { commit(client) }
+            leadingContext.forgetCommits()
         }
         super.deactivateServer(sender)
     }
@@ -164,7 +172,12 @@ final class TugimeInputController: IMKInputController {
         guard let event, event.type == .keyDown, let client = sender as? IMKTextInput else { return false }
         nonisolated(unsafe) let keyEvent = event
         nonisolated(unsafe) let target = client
-        return onMain { handleKeyDown(keyEvent, client: target) }
+        return onMain {
+            let handled = handleKeyDown(keyEvent, client: target)
+            // アプリに渡したキーは入力欄を変えうる
+            if !handled { leadingContext.forgetCommits() }
+            return handled
+        }
     }
 
     // MARK: 状態
@@ -399,7 +412,7 @@ final class TugimeInputController: IMKInputController {
             return false
         }
         if keys.isEmpty {
-            leading = Self.leadingContext(of: client)
+            leading = readLeading(of: client)
             // 辞書を替えるのは未確定の文字列の始まりだけにする。打っている途中に替えると、同じ打鍵列の表示が途中で変わる
             userDictionaryFile.refresh(into: sharedSegmenter)
         }
@@ -458,12 +471,12 @@ final class TugimeInputController: IMKInputController {
             return
         }
         candidatePanel.hide()
-        client.insertText(result.text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        insert(result.text, client: client)
         keys = result.keys
         self.clauses = result.rest
         focus = 0
         // 残りを打っている途中の表示に戻したときは、確定した文字列の後ろとして区切る
-        leading = Self.leadingContext(of: client)
+        leading = readLeading(of: client)
         showMarkedText(client)
     }
 
@@ -471,11 +484,15 @@ final class TugimeInputController: IMKInputController {
     private func commit(_ client: IMKTextInput) {
         candidatePanel.hide()
         guard !keys.isEmpty else { return }
-        let text = clauses?.map(\.output).joined() ?? liveText
-        client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        insert(clauses?.map(\.output).joined() ?? liveText, client: client)
         keys = ""
         clauses = nil
         focus = 0
         sharedSegmenter.endComposition()
+    }
+
+    private func insert(_ text: String, client: IMKTextInput) {
+        client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+        leadingContext.didCommit(text)
     }
 }
