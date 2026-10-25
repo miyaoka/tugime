@@ -17,12 +17,15 @@ public struct RomajiTable: Sendable {
     }
 
     let entries: [String: String]
+    /// 綴りごとの、表の中で何番目の行か。同じかなの綴りは上の行が既定の打ち方
+    let rank: [String: Int]
     let maxKeyLength: Int
     let sokuonLetters: Set<Character>
     let nBeforeLetters: Set<Character>
 
     public init(contents: String) throws {
         var entries: [String: String] = [:]
+        var rank: [String: Int] = [:]
         var sokuon: Set<Character> = []
         var nBefore: Set<Character> = []
         for (index, raw) in contents.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
@@ -34,6 +37,7 @@ public struct RomajiTable: Sendable {
             let value = String(fields[1])
             guard key.hasPrefix("@") else {
                 entries[key] = value
+                rank[key] = rank[key] ?? rank.count
                 continue
             }
             switch key {
@@ -43,6 +47,7 @@ public struct RomajiTable: Sendable {
             }
         }
         self.entries = entries
+        self.rank = rank
         self.maxKeyLength = entries.keys.map(\.count).max() ?? 0
         self.sokuonLetters = sokuon
         self.nBeforeLetters = nBefore
@@ -56,7 +61,8 @@ public struct RomajiTable: Sendable {
     }
 
     /// start から読み始めて、読み切れる終端ごとのかなを返す。
-    /// 「っ」と単独の「ん」は後ろに綴りが続くときだけ読むので、それで終わる位置は終端にならない。
+    /// 「っ」と、@n の文字の前の単独の「ん」は後ろに綴りが続くときだけ読むので、それで終わる位置は終端にならない。
+    /// input の末尾の単独の n は「ん」と読み、終端にする。
     public func readings(from start: Int, in input: [Character]) -> [(end: Int, kana: String)] {
         // 位置ごとに、そこまで読んだかなと、そこで区間を終えてよいか
         var reached: [Int: (kana: String, canEnd: Bool)] = [start: ("", false)]
@@ -103,10 +109,10 @@ public struct RomajiTable: Sendable {
         return nil
     }
 
-    /// 綴りの表の 1 項目だけで 1 つのかな（が・と・で・の など）になる綴りか。長音記号は含めない
+    /// 綴りの表の 1 項目だけで 1 つのかな（が・と・で・の など）になる綴りか。長音記号と、2 文字になる項目（the → てぇ、who → うぉ）は含めない
     public func isSingleKana(_ text: some StringProtocol) -> Bool {
         guard let kana = entries[String(text)] else { return false }
-        return kana != "ー"
+        return kana.count == 1 && kana != "ー"
     }
 
     private struct Edge {
@@ -123,6 +129,9 @@ public struct RomajiTable: Sendable {
         }
         if input[pos] == "n", let next, nBeforeLetters.contains(next) {
             edges.append(Edge(end: pos + 1, kana: "ん", canEnd: false))
+        }
+        if input[pos] == "n", next == nil {
+            edges.append(Edge(end: pos + 1, kana: "ん", canEnd: true))
         }
         for length in 1...maxKeyLength where pos + length <= input.count {
             if let kana = entries[String(input[pos..<(pos + length)])] {

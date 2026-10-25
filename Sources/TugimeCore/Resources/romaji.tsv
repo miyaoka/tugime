@@ -3,22 +3,18 @@
 # @ で始まる行は表で書けない規則を指定する。
 #   @sokuon  同じ文字を 2 つ重ねると前の 1 文字を「っ」と読む文字の集合
 #   @n       この文字の前に置いた単独の n を「ん」と読む文字の集合
-# 「っ」と単独の「ん」は、後ろに表の綴りが続くときだけ読む。区間の末尾では読まない。
+# 「っ」と、@n の文字の前の単独の「ん」は、後ろに表の綴りが続くときだけ読む。
+# 句読点・記号の打鍵の前と入力の末尾にある単独の n は「ん」と読む。
 #
-# 既定の表は、一般のローマ字の幅を利用者 1 人の綴りに絞ったものである。表に無い綴りは、
-# 一般にはローマ字でも日本語として読まず、その綴りを含む区間は英語になる。既定の綴りの方針:
-#   長音      省かずに母音で書く（とう = tou、りゅう = ryuu）。ー は -
-#   ん        母音・y・n の前と語末は nn。それ以外の子音の前は単独の n でもよい
-#   し ち つ ふ じ  si ti tu hu ji。shi chi tsu fu zi は使わない
-#   拗音      sya tya ja。sha cha jya zya は使わない
-#   っ        n 以外の子音を重ねるか xtu
-#   小さい文字  x で始める（xa xya xtu）。l は使わない
-#   ぢ づ      di du
-#   外来語    fa fi fe fo、thi dhi、va vi vu ve vo、wi we、tye je sye
-#   c l q     使わない
+# 同じかなに綴りが複数あるときは、上の行を既定の打ち方とする。
+#
+# 既定の表は、Mozc のローマ字の表（src/data/preedit/romanji-hiragana.tsv）の綴りを読む。
+# ただし c を k や s の代わりに使う綴り（ca ci cu ce co cya など）は読まない。ch で始まる綴りは読む。
+# 既定の打ち方は si ti tu hu ji、sya tya ja、xa xtu で、「ん」は nn と打つ。
+# 表に無い綴りを含む区間は英語になる。
 
-@sokuon	bdfghjkmprstvwyz
-@n	bdfghjkmprstvwz
+@sokuon	bcdfghjklmpqrstvwxyz
+@n	bcdfghjklmpqrstvwxz
 
 a	あ
 i	い
@@ -151,3 +147,156 @@ xyo	ょ
 xtu	っ
 xwa	ゎ
 -	ー
+zh	←
+zj	↓
+zk	↑
+zl	→
+vya	ゔゃ
+vyi	ゔぃ
+vyu	ゔゅ
+vye	ゔぇ
+vyo	ゔょ
+kyi	きぃ
+kye	きぇ
+gyi	ぎぃ
+gye	ぎぇ
+syi	しぃ
+sha	しゃ
+shi	し
+shu	しゅ
+she	しぇ
+sho	しょ
+zya	じゃ
+zyi	じぃ
+zyu	じゅ
+zye	じぇ
+zyo	じょ
+tyi	ちぃ
+cha	ちゃ
+chi	ち
+chu	ちゅ
+che	ちぇ
+cho	ちょ
+dya	ぢゃ
+dyi	ぢぃ
+dyu	ぢゅ
+dye	ぢぇ
+dyo	ぢょ
+tsa	つぁ
+tsi	つぃ
+tse	つぇ
+tso	つぉ
+tha	てゃ
+t'i	てぃ
+thu	てゅ
+the	てぇ
+tho	てょ
+t'yu	てゅ
+dha	でゃ
+d'i	でぃ
+dhu	でゅ
+dhe	でぇ
+dho	でょ
+d'yu	でゅ
+twa	とぁ
+twi	とぃ
+twu	とぅ
+twe	とぇ
+two	とぉ
+t'u	とぅ
+dwa	どぁ
+dwi	どぃ
+dwu	どぅ
+dwe	どぇ
+dwo	どぉ
+d'u	どぅ
+nyi	にぃ
+nye	にぇ
+hyi	ひぃ
+hye	ひぇ
+byi	びぃ
+bye	びぇ
+pyi	ぴぃ
+pye	ぴぇ
+fu	ふ
+fya	ふゃ
+fyu	ふゅ
+fyo	ふょ
+hwa	ふぁ
+hwi	ふぃ
+hwe	ふぇ
+hwo	ふぉ
+hwyu	ふゅ
+myi	みぃ
+mye	みぇ
+ryi	りぃ
+rye	りぇ
+n'	ん
+xn	ん
+wu	う
+la	ぁ
+li	ぃ
+lu	ぅ
+le	ぇ
+lo	ぉ
+lyi	ぃ
+xyi	ぃ
+lye	ぇ
+xye	ぇ
+ye	いぇ
+xka	ヵ
+xke	ヶ
+lka	ヵ
+lke	ヶ
+qa	くぁ
+qi	くぃ
+qu	く
+qe	くぇ
+qo	くぉ
+kwa	くぁ
+kwi	くぃ
+kwu	くぅ
+kwe	くぇ
+kwo	くぉ
+gwa	ぐぁ
+gwi	ぐぃ
+gwu	ぐぅ
+gwe	ぐぇ
+gwo	ぐぉ
+swa	すぁ
+swi	すぃ
+swu	すぅ
+swe	すぇ
+swo	すぉ
+zwa	ずぁ
+zwi	ずぃ
+zwu	ずぅ
+zwe	ずぇ
+zwo	ずぉ
+zi	じ
+jya	じゃ
+jyi	じぃ
+jyu	じゅ
+jye	じぇ
+jyo	じょ
+tsu	つ
+xtsu	っ
+ltu	っ
+ltsu	っ
+fu	ふ
+lya	ゃ
+wyi	ゐ
+lyu	ゅ
+wye	ゑ
+lyo	ょ
+lwa	ゎ
+wha	うぁ
+whi	うぃ
+whu	う
+whe	うぇ
+who	うぉ
+tcha	っちゃ
+tchi	っち
+tchu	っちゅ
+tche	っちぇ
+tcho	っちょ
