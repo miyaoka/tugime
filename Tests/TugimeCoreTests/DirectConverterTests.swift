@@ -88,6 +88,34 @@ private final class FixedGenerator: DirectDisplayGenerating {
         #expect(!shown.matchesReading)
     }
 
+    /// 採点が利用者の語を使った文節で、出力がその語を含まなければ、その文節だけを採点の表記にする。ほかの文節は出力のまま
+    @Test func replacesClausesThatMissAUserWord() throws {
+        scorer.clauses["まーじゃんのまんず"] = [
+            ScoredClause(JapaneseClause(reading: "まーじゃんの", text: "麻雀の")),
+            ScoredClause(JapaneseClause(reading: "まんず", text: "萬子"), userWords: ["萬子"]),
+        ]
+        generator.outputs["まーじゃんのまんず"] = "マージャンのマンズ"
+        let shown = try #require(converter.display(kana: "まーじゃんのまんず", context: .start, left: ""))
+        #expect(shown.text == "マージャンの萬子")
+        #expect(shown.clauses == [JapaneseClause(reading: "まーじゃんの", text: "マージャンの"), JapaneseClause(reading: "まんず", text: "萬子")])
+    }
+
+    /// 出力が利用者の語を含んでいれば、送り仮名などが採点と違っても出力のまま
+    @Test func keepsAnOutputThatHasTheUserWord() throws {
+        scorer.clauses["いーそうをきる"] = [ScoredClause(JapaneseClause(reading: "いーそうをきる", text: "一索を切る"), userWords: ["一索"])]
+        generator.outputs["いーそうをきる"] = "一索をきる"
+        let shown = try #require(converter.display(kana: "いーそうをきる", context: .start, left: ""))
+        #expect(shown.text == "一索をきる")
+    }
+
+    /// 出力が読みに対応づかなければ、全体が 1 文節になり、利用者の語を含まなければ全体を採点の表記にする
+    @Test func replacesTheWholeOutputWhenItDoesNotFollowTheReading() throws {
+        scorer.clauses["いーそう"] = [ScoredClause(JapaneseClause(reading: "いーそう", text: "一索"), userWords: ["一索"])]
+        generator.outputs["いーそう"] = "いーそお"
+        let shown = try #require(converter.display(kana: "いーそう", context: .start, left: ""))
+        #expect(shown.clauses == [JapaneseClause(reading: "いーそう", text: "一索")])
+    }
+
     /// 確定・取り消しで、採点と生成の両方が覚えたものを捨てる（JapaneseConverting.endComposition の約束）
     @Test func endCompositionDropsWhatTheConvertersRemembered() {
         generator.outputs["きょうはいいてんき"] = "今日はいい天気"
