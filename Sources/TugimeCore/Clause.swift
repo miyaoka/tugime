@@ -393,10 +393,11 @@ extension Segmenter {
     }
 
     private func japaneseCandidates(reading: String, best: String?, context: JapaneseContext, span: ClauseSpan) -> [String] {
-        var list = (best.map { [$0] } ?? []) + japaneseConverter.alternatives(kana: reading, context: context)
-        list += [reading, Self.katakana(reading)]
-        // 区間全体の文節なら、打ったままの綴りも選べるようにする
+        var list = best.map { [$0] } ?? []
+        // 区間全体の文節なら、打ったままの綴りを最良のすぐ後に置く。英語の区間でかなを 2 番目に置くのと同じく、日英の判定が外れたときに 1 つ下で戻せる
         if reading == span.reading { list.append(span.source) }
+        list += japaneseConverter.alternatives(kana: reading, context: context)
+        list += [reading, Self.katakana(reading)]
         return Self.unique(list)
     }
 
