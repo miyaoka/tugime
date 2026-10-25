@@ -1,9 +1,10 @@
 import Cocoa
 import InputMethodKit
 
-/// 打っている途中の表示が打った読みと合わないときと、利用者の辞書を読めないときに、未確定の文字列の下に出す小さな窓
-final class RewriteWarning {
-    static let message = "入力と違う変換"
+/// 未確定の文字列の下に出して、利用者に知らせる小さな窓。打っている途中の表示が打った読みと合わないときと、利用者の辞書を読めないときに出す
+final class CompositionNotice {
+    /// 打っている途中の表示が打った読みと合わないときの文言
+    static let rewriteMessage = "入力と違う変換"
     /// 窓の中の文字の余白と、行から窓までの間
     private static let padding = NSSize(width: 12, height: 8)
     private static let gap: CGFloat = 6

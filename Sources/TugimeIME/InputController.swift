@@ -388,9 +388,9 @@ final class TugimeInputController: IMKInputController {
 
     // MARK: 表示と確定
 
-    /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示し、それが打った読みと合わなければ警告の窓を出す。
+    /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示し、それが打った読みと合わなければ知らせの窓に出す。
     /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。読み違いの警告は出さない。
-    /// 利用者の辞書を読めなければ、どちらの間も、直すまでその理由を警告の窓に出す
+    /// 利用者の辞書を読めなければ、どちらの間も、直すまでその理由を同じ窓に並べて出す
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
         var differs = false
@@ -410,10 +410,11 @@ final class TugimeInputController: IMKInputController {
             selectionRange: NSRange(location: marked.length, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
-        if let notice = userDictionaryFile.rejection ?? (differs ? RewriteWarning.message : nil) {
-            rewriteWarning.show(notice, below: client)
+        let notices = [differs ? CompositionNotice.rewriteMessage : nil, userDictionaryFile.rejection].compactMap { $0 }
+        if notices.isEmpty {
+            compositionNotice.hide()
         } else {
-            rewriteWarning.hide()
+            compositionNotice.show(notices.joined(separator: "／"), below: client)
         }
     }
 
@@ -457,7 +458,7 @@ final class TugimeInputController: IMKInputController {
     /// 未確定の文字列を、表示しているとおりに確定する
     private func commit(_ client: IMKTextInput) {
         candidatePanel.hide()
-        rewriteWarning.hide()
+        compositionNotice.hide()
         guard !keys.isEmpty else { return }
         let text = clauses?.map(\.output).joined() ?? liveText
         client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))

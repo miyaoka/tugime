@@ -31,20 +31,20 @@ final class UserDictionaryFile {
         } catch CocoaError.fileReadNoSuchFile {
             modified = nil
         } catch {
+            // 次に更新時刻を読めたときは、前と同じ時刻でも読み直して、理由を決め直す
+            seen = nil
             rejection = "利用者の辞書の更新時刻を読めない: \(error.localizedDescription)"
             return
         }
         guard seen != .some(modified) else { return }
         seen = modified
-        guard modified != nil else {
-            segmenter.replaceUserDictionary(.empty)
-            rejection = nil
-            return
-        }
         do {
-            segmenter.replaceUserDictionary(try UserDictionary(contents: String(contentsOf: url, encoding: .utf8)))
+            let dictionary = try modified.map { _ in try UserDictionary(contents: String(contentsOf: url, encoding: .utf8)) } ?? .empty
+            try segmenter.replaceUserDictionary(dictionary)
             rejection = nil
         } catch let error as UserDictionary.ParseError {
+            rejection = error.description
+        } catch let error as UserDictionary.ImportError {
             rejection = error.description
         } catch {
             rejection = "利用者の辞書を読めない: \(error.localizedDescription)"
