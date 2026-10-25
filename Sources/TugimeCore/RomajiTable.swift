@@ -5,12 +5,14 @@ public struct RomajiTable: Sendable {
     public enum ParseError: Error, CustomStringConvertible {
         case malformedLine(Int, String)
         case unknownDirective(Int, String)
+        case duplicateSpelling(Int, String)
         case missingResource
 
         public var description: String {
             switch self {
             case .malformedLine(let n, let line): "綴りの表 \(n) 行目を読めない: \(line)"
             case .unknownDirective(let n, let line): "綴りの表 \(n) 行目の指定が分からない: \(line)"
+            case .duplicateSpelling(let n, let key): "綴りの表 \(n) 行目の綴り \(key) は前の行にもある"
             case .missingResource: "既定の綴りの表がバンドルに無い"
             }
         }
@@ -36,8 +38,8 @@ public struct RomajiTable: Sendable {
             let key = String(fields[0])
             let value = String(fields[1])
             guard key.hasPrefix("@") else {
-                entries[key] = value
-                rank[key] = rank[key] ?? rank.count
+                guard entries.updateValue(value, forKey: key) == nil else { throw ParseError.duplicateSpelling(index + 1, key) }
+                rank[key] = rank.count
                 continue
             }
             switch key {

@@ -9,7 +9,8 @@
 # 同じかなに綴りが複数あるときは、上の行を既定の打ち方とする。
 #
 # 既定の表は、Mozc のローマ字の表（src/data/preedit/romanji-hiragana.tsv）の綴りを読む。
-# ただし c を k や s の代わりに使う綴り（ca ci cu ce co cya など）は読まない。ch で始まる綴りは読む。
+# ただし c を k・s・t の代わりに使う綴り（ca ci cu ce co と cya など）は読まない。ch で始まる綴りは読む。
+# 記号の打鍵（zh z/ [ など）は綴りの表ではなく入力メソッドが受け持つ。
 # 既定の打ち方は si ti tu hu ji、sya tya ja、xa xtu で、「ん」は nn と打つ。
 # 表に無い綴りを含む区間は英語になる。
 
@@ -147,10 +148,6 @@ xyo	ょ
 xtu	っ
 xwa	ゎ
 -	ー
-zh	←
-zj	↓
-zk	↑
-zl	→
 vya	ゔゃ
 vyi	ゔぃ
 vyu	ゔゅ
@@ -283,7 +280,6 @@ tsu	つ
 xtsu	っ
 ltu	っ
 ltsu	っ
-fu	ふ
 lya	ゃ
 wyi	ゐ
 lyu	ゅ
