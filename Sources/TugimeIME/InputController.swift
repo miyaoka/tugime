@@ -120,6 +120,30 @@ final class TugimeInputController: IMKInputController {
         onMain { currentCandidates }
     }
 
+    /// 入力メニュー（メニューバーの入力ソースのメニュー）に足す項目。選ぶと IMK がこのコントローラの action を呼ぶ
+    nonisolated override func menu() -> NSMenu! {
+        nonisolated(unsafe) var menu: NSMenu?
+        MainActor.assumeIsolated {
+            let built = NSMenu()
+            built.addItem(NSMenuItem(title: "利用者の辞書を開く", action: #selector(openUserDictionary(_:)), keyEquivalent: ""))
+            menu = built
+        }
+        return menu
+    }
+
+    @objc nonisolated func openUserDictionary(_ sender: Any?) {
+        onMain {
+            do {
+                try userDictionaryFile.openInEditor()
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "利用者の辞書を開けない"
+                alert.informativeText = "\(userDictionaryFile.url.path)\n\(error.localizedDescription)"
+                alert.runModal()
+            }
+        }
+    }
+
     /// マウスで候補を選んだとき。自分で窓を動かしている間の通知は反映済みなので無視する
     nonisolated override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
         let text = candidateString?.string

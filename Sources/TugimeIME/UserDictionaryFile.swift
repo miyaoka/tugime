@@ -1,5 +1,6 @@
-import Foundation
+import Cocoa
 import TugimeCore
+import UniformTypeIdentifiers
 
 /// 入力メソッドが読む利用者の辞書のファイルと、最後に読んだときの状態。
 /// 置き場所は Application Support で、Sandbox の中（~/Library/Containers/<bundle id>/Data/Library/Application Support）になるので、
@@ -20,6 +21,29 @@ final class UserDictionaryFile {
             fatalError("tugime を初期化できない: Application Support の場所が分からない")
         }
         return UserDictionaryFile(url: support.appendingPathComponent("tugime/dictionary.tsv"))
+    }
+
+    /// ファイルが無いときに作る中身。書式と例をコメントの行に書く
+    static let template = """
+        # tugime の利用者の辞書。1 行 1 語で、打鍵、タブ、表記の順に書く。# で始まる行は読まない
+        # 打鍵は日本語モードで打つとおりの綴り。保存すると、次に打ち始めたときから効く
+        # mannzu\t萬子
+        # github\tGitHub
+
+        """
+
+    /// ファイルを、プレーンテキストの既定のアプリで開く。無ければ template で作ってから開く。
+    /// 拡張子の .tsv に結び付いた表計算のアプリではなく、テキストとして編集させる
+    func openInEditor() throws {
+        let manager = FileManager.default
+        if !manager.fileExists(atPath: url.path) {
+            try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Self.template.write(to: url, atomically: true, encoding: .utf8)
+        }
+        guard let editor = NSWorkspace.shared.urlForApplication(toOpen: .plainText) else {
+            throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "プレーンテキストを開くアプリが無い"])
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
     }
 
     /// 更新時刻が前に見たときと違えば読み直し、読めたら segmenter の利用者の語を置き換える。ファイルが無いのは語が無い状態で、誤りではない。
