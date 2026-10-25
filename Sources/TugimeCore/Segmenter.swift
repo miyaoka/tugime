@@ -35,7 +35,7 @@ public struct ScoredSpan: Sendable, Equatable {
 /// 読める箇所は、日本語として変換した評価値と英語の綴りとしての評価値を比べて決める。
 public final class Segmenter {
     let table: RomajiTable
-    private let english: EnglishModel
+    let english: EnglishModel
     let japaneseConverter: any JapaneseConverting
     /// 英語の綴りの評価値を、日本語の変換の評価値と同じ尺度に揃える倍率
     static let englishWeight = 1.4
