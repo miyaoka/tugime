@@ -74,8 +74,8 @@ extension Segmenter {
         japaneseConverter.endComposition()
     }
 
-    /// 利用者の語を置き換える。未確定の文字列は終わる（JapaneseConverting.replaceUserDictionary）
-    public func replaceUserDictionary(_ dictionary: UserDictionary) {
-        japaneseConverter.replaceUserDictionary(dictionary)
+    /// 利用者の語を置き換える。未確定の文字列は終わる。投げたときは前の語のまま（JapaneseConverting.replaceUserDictionary）
+    public func replaceUserDictionary(_ dictionary: UserDictionary) throws {
+        try japaneseConverter.replaceUserDictionary(dictionary)
     }
 }

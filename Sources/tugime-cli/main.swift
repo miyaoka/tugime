@@ -58,7 +58,7 @@ do {
     /// 方式の区切りに利用者の語を入れたもの
     func makeSegmenter() throws -> Segmenter {
         let segmenter = try method.makeSegmenter()
-        segmenter.replaceUserDictionary(dictionary)
+        try segmenter.replaceUserDictionary(dictionary)
         return segmenter
     }
     switch args.first {
@@ -66,7 +66,7 @@ do {
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
         let japanese = method.make()
-        japanese.replaceUserDictionary(dictionary)
+        try japanese.replaceUserDictionary(dictionary)
         for arg in args.dropFirst() {
             let isKana = arg.unicodeScalars.contains { $0.value > 0x3000 }
             if isKana {

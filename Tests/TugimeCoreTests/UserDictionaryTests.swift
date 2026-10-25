@@ -29,26 +29,50 @@ import Testing
 
     /// 入力全体が利用者の語 1 つでも、カタカナにしただけの候補と同じ品詞なのに捨てない
     @Test func convertsAndListsTheUserWord() throws {
-        converter.replaceUserDictionary(try UserDictionary(contents: "いーそう\t一索"))
+        try converter.replaceUserDictionary(try UserDictionary(contents: "いーそう\t一索"))
         let reading = try #require(converter.convert(kana: "いーそう", context: .start))
         #expect(reading.text == "一索")
-        #expect(reading.clauses.map(\.userWords) == [["一索"]])
+        #expect(reading.clauses.map(\.userWords) == [[["一索"]]])
         #expect(converter.alternatives(kana: "いーそう", context: .start).contains("一索"))
     }
 
     /// 前に名詞を置いて読む文脈でも、利用者の語は前に置いたものを外した文節に付く
     @Test func marksTheUserWordAfterAStandIn() throws {
-        converter.replaceUserDictionary(try UserDictionary(contents: "いーそう\t一索"))
+        try converter.replaceUserDictionary(try UserDictionary(contents: "いーそう\t一索"))
         let reading = try #require(converter.convert(kana: "いーそうをきる", context: .afterWord))
-        #expect(reading.clauses.flatMap(\.userWords) == ["一索"])
+        #expect(reading.clauses.flatMap(\.userWords) == [["一索"]])
         #expect(reading.text.hasPrefix("一索"))
+    }
+
+    /// 使った語には、同じ読みに登録した表記をすべて添える。表示はそのどれかを含めばよい
+    @Test func listsEverySpellingOfTheReading() throws {
+        try converter.replaceUserDictionary(try UserDictionary(contents: "まんず\t萬子\nまんず\tマンズ"))
+        let reading = try #require(converter.convert(kana: "まんず", context: .start))
+        #expect(reading.clauses.flatMap(\.userWords) == [["萬子", "マンズ"]])
+        let listed = converter.alternatives(kana: "まんず", context: .start)
+        #expect(listed.contains("萬子") && listed.contains("マンズ"))
+    }
+
+    /// ゕ ゖ の読みも、打った読みと同じ規則でカタカナにして引く（azooKey は ゕ を ヵ にして辞書を引く）
+    @Test func findsAReadingWithSmallKa() throws {
+        try converter.replaceUserDictionary(try UserDictionary(contents: "いっゕげつ\t壱ヶ月"))
+        #expect(converter.alternatives(kana: "いっゕげつ", context: .start).contains("壱ヶ月"))
+    }
+
+    /// 5000 語の辞書でも組み立てられ、入れた語を引ける
+    @Test func findsWordsInALargeDictionary() throws {
+        let digits = Array("あいうえおかきくけこ")
+        let lines = (0..<5000).map { n in "ゆーざー" + String(String(n).map { digits[$0.wholeNumberValue!] }) + "\t語\(n)" } + ["いーそう\t一索"]
+        try converter.replaceUserDictionary(try UserDictionary(contents: lines.joined(separator: "\n")))
+        #expect(converter.convert(kana: "いーそう", context: .start)?.text == "一索")
+        #expect(converter.alternatives(kana: "ゆーざーいおう", context: .start).contains("語142"))
     }
 
     /// 置き換えると前の語は消える。採点のセッションが前の辞書の途中の計算を使い回さない
     @Test func replacingDropsThePreviousWords() throws {
-        converter.replaceUserDictionary(try UserDictionary(contents: "いーそう\t一索"))
+        try converter.replaceUserDictionary(try UserDictionary(contents: "いーそう\t一索"))
         #expect(converter.convert(kana: "いーそう", context: .start)?.text == "一索")
-        converter.replaceUserDictionary(.empty)
+        try converter.replaceUserDictionary(.empty)
         let reading = try #require(converter.convert(kana: "いーそう", context: .start))
         #expect(reading.text != "一索")
         #expect(reading.clauses.flatMap(\.userWords).isEmpty)

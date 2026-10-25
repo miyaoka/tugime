@@ -51,10 +51,10 @@ public struct JapaneseClause: Sendable, Equatable {
 /// 利用者の語を使ったかは採点の変換だけが知るので、表示の文節（JapaneseClause）には持たせない
 public struct ScoredClause: Sendable, Equatable {
     public var clause: JapaneseClause
-    /// この文節の読みの中で、変換エンジンが語の列に使った利用者の語の表記
-    public var userWords: [String]
+    /// この文節の読みの中で、変換エンジンが語の列に使った利用者の語ごとの、その語と同じ読みに利用者が登録した表記（使った表記を含む）
+    public var userWords: [[String]]
 
-    public init(_ clause: JapaneseClause, userWords: [String] = []) {
+    public init(_ clause: JapaneseClause, userWords: [[String]] = []) {
         self.clause = clause
         self.userWords = userWords
     }
@@ -85,8 +85,9 @@ public protocol JapaneseConverting: AnyObject {
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
     func endComposition()
     /// 利用者の語を dictionary に丸ごと置き換える。endComposition で捨てるものに加え、変換エンジンが未確定の文字列をまたいで持つ
-    /// 途中の計算も捨てるので、呼ぶと未確定の文字列が終わる。作った直後の変換器は利用者の語を持たない
-    func replaceUserDictionary(_ dictionary: UserDictionary)
+    /// 途中の計算も捨てるので、呼ぶと未確定の文字列が終わる。作った直後の変換器は利用者の語を持たない。
+    /// 投げたときは、前の語のまま変わらない
+    func replaceUserDictionary(_ dictionary: UserDictionary) throws
 }
 
 /// AzooKeyKanaKanjiConverter による変換。学習は使わないので、同じかなには常に同じ結果を返す。
@@ -108,6 +109,15 @@ final class AzooKeyConverter: JapaneseConverting {
     private var cache: [CacheKey: JapaneseReading?] = [:]
     /// 前に置くものだけを変換した評価値。未確定の文字列の寿命だけ持つ
     private var prefixValues: [String: Double?] = [:]
+    /// 利用者の語を LOUDS に組み立てて置くディレクトリ。変換エンジンは ConvertRequestOptions.sharedContainerURL の
+    /// user.louds を利用者の辞書として読む。置き換えるたびに作り直し、変換器を捨てるときに消す。まだ置き換えていなければ無い
+    private var userDictionaryDirectory = newUserDictionaryDirectory()
+
+    private static func newUserDictionaryDirectory() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("tugime-user-dictionary-\(UUID().uuidString)", isDirectory: true)
+    }
+    /// 利用者の語の読み（カタカナ）ごとの、登録した表記
+    private var userSpellings: [String: [String]] = [:]
 
     /// かなの前に置いて文脈にするもの。input は変換エンジンに渡す形、shown は変換結果の先頭に現れる形
     private struct Prefix {
@@ -150,6 +160,10 @@ final class AzooKeyConverter: JapaneseConverting {
         self.zenzaiWeight = zenzaiWeight
     }
 
+    deinit {
+        try? FileManager.default.removeItem(at: userDictionaryDirectory)
+    }
+
     /// 採点のセッションを選ぶ。前に渡した読みが text の先頭と一致するセッションがあればそれを使い、
     /// 無ければ一番長く使っていないセッションを作り直して使う
     private func scoringSession(for text: String) -> KanaKanjiConverter.ConversionSessionID {
@@ -171,8 +185,8 @@ final class AzooKeyConverter: JapaneseConverting {
         return scoringSessions[index].id
     }
 
-    private static func options(nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode) -> ConvertRequestOptions {
-        // 学習しないので書き込み先は使われないが、引数として要る
+    private func options(nBest: Int, zenzai: ConvertRequestOptions.ZenzaiMode) -> ConvertRequestOptions {
+        // 学習しないので学習の書き込み先は使われないが、引数として要る。利用者の辞書は sharedContainerURL から読まれる
         let unused = FileManager.default.temporaryDirectory
         return ConvertRequestOptions(
             N_best: nBest,
@@ -181,7 +195,7 @@ final class AzooKeyConverter: JapaneseConverting {
             keyboardLanguage: .ja_JP,
             learningType: .nothing,
             memoryDirectoryURL: unused,
-            sharedContainerURL: unused,
+            sharedContainerURL: userDictionaryDirectory,
             textReplacer: .empty,
             specialCandidateProviders: [],
             zenzaiMode: zenzai,
@@ -213,7 +227,7 @@ final class AzooKeyConverter: JapaneseConverting {
 
     private func convertAtStart(_ kana: String) -> JapaneseReading? {
         candidates(kana, nBest: Self.scoringBest, scoring: true).first.map {
-            JapaneseReading(text: $0.text, value: Double($0.value), clauses: Self.clauses(of: $0, after: nil, kana: kana, text: $0.text), context: .start)
+            JapaneseReading(text: $0.text, value: Double($0.value), clauses: self.clauses(of: $0, after: nil, kana: kana, text: $0.text), context: .start)
         }
     }
 
@@ -252,12 +266,12 @@ final class AzooKeyConverter: JapaneseConverting {
                 .first { Self.drop(prefix, from: $0) != nil }
                 .flatMap { candidate in
                     Self.drop(prefix, from: candidate).map { text in
-                        JapaneseDisplay(text: text, clauses: Self.clauses(of: candidate, after: prefix, kana: kana, text: text).map(\.clause))
+                        JapaneseDisplay(text: text, clauses: self.clauses(of: candidate, after: prefix, kana: kana, text: text).map(\.clause))
                     }
                 }
         } else {
             result = candidates(kana, nBest: Self.scoringBest, zenzai: zenzai).first.map {
-                JapaneseDisplay(text: $0.text, clauses: Self.clauses(of: $0, after: nil, kana: kana, text: $0.text).map(\.clause))
+                JapaneseDisplay(text: $0.text, clauses: self.clauses(of: $0, after: nil, kana: kana, text: $0.text).map(\.clause))
             }
         }
         // Zenzai の候補が表示に使えないときは、採点の変換を表示にする。使えないのは、前に置いたものを含む候補が無いときと、
@@ -295,20 +309,48 @@ final class AzooKeyConverter: JapaneseConverting {
     /// 利用者の語の評価値。品詞（固有名詞・一般）とともに、azooKey-Desktop が利用者の語に付けるものと同じ
     private static let userWordValue: PValue = -5
 
-    public func replaceUserDictionary(_ dictionary: UserDictionary) {
+    /// 既定の辞書のバンドルの名前と、その中の文字の表。利用者の辞書の LOUDS は、変換エンジンが既定の辞書を引くのと同じ文字の番号で組み立てる
+    private static let defaultDictionaryBundle = "AzooKeyKanaKanjiConverter_KanaKanjiConverterModuleWithDefaultDictionary.bundle"
+    private static let characterTablePath = "Dictionary/louds/charID.chid"
+
+    /// 変換エンジンの既定の辞書のバンドルは、withDefaultDictionary で読み込まれた後、Bundle.allBundles に載る
+    private static let characterTable: Result<String, UserDictionary.ImportError> = {
+        guard let bundle = Bundle.allBundles.first(where: { $0.bundleURL.lastPathComponent == defaultDictionaryBundle }),
+              let url = bundle.resourceURL?.appendingPathComponent(characterTablePath),
+              let table = try? String(contentsOf: url, encoding: .utf8)
+        else { return .failure(.missingCharacterTable) }
+        return .success(table)
+    }()
+
+    /// azooKey-Desktop と同じく、利用者の語を LOUDS に組み立てて変換エンジンに読ませる。
+    /// 変換エンジンの動的な利用者辞書は、引くたびに全語を順に見るので、語が多いと打鍵ごとの変換が遅くなる
+    public func replaceUserDictionary(_ dictionary: UserDictionary) throws {
+        let elements = dictionary.entries.map {
+            DicdataElement(word: $0.word, ruby: Kana.katakana($0.reading), cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: Self.userWordValue)
+        }
+        let table = try Self.characterTable.get()
+        let supported = Set(table)
+        if let unsupported = elements.first(where: { !$0.ruby.allSatisfy(supported.contains) }) {
+            throw UserDictionary.ImportError.unsupportedCharacter(reading: unsupported.ruby)
+        }
+        // 新しいディレクトリに組み立て終えてから差し替え、前のディレクトリを消す。途中で投げても前の辞書は残る
+        let manager = FileManager.default
+        let next = Self.newUserDictionaryDirectory()
+        try manager.createDirectory(at: next, withIntermediateDirectories: true)
+        if !elements.isEmpty {
+            let ids = Dictionary(uniqueKeysWithValues: table.enumerated().map { ($0.element, UInt8($0.offset)) })
+            try DictionaryBuilder.exportDictionary(entries: elements, to: next, baseName: "user", shardByFirstCharacter: false, char2UInt8: ids)
+        }
         endComposition()
         // 採点のセッションは、前の辞書で組んだ途中の計算を未確定の文字列をまたいで持つ
         for session in scoringSessions { converter.removeSession(session.id) }
         scoringSessions = []
-        converter.importDynamicUserDictionary(dictionary.entries.map {
-            DicdataElement(
-                word: $0.word,
-                ruby: $0.reading.applyingTransform(.hiraganaToKatakana, reverse: false)!,
-                cid: CIDData.固有名詞.cid,
-                mid: MIDData.一般.mid,
-                value: Self.userWordValue
-            )
-        })
+        let previous = userDictionaryDirectory
+        userDictionaryDirectory = next
+        converter.updateUserDictionaryURL(next, forceReload: true)
+        userSpellings = Dictionary(grouping: elements, by: \.ruby).mapValues { $0.map(\.word) }
+        // 差し替えは済んでいるので、前のディレクトリを消せなくても変換は新しい辞書で動く。消せなかったものは一時ディレクトリに残るだけ
+        try? manager.removeItem(at: previous)
     }
 
     /// 変換エンジンは直前の入力との差分で計算する。採点は前に渡した読みの続きを同じセッションに渡して途中の計算を使い回す。
@@ -318,7 +360,7 @@ final class AzooKeyConverter: JapaneseConverting {
         var composing = ComposingText()
         composing.insertAtCursorPosition(kana, inputStyle: .direct)
         let kanaCount = kana.count
-        let request = { self.converter.requestCandidates(composing, options: Self.options(nBest: nBest, zenzai: zenzai)) }
+        let request = { self.converter.requestCandidates(composing, options: self.options(nBest: nBest, zenzai: zenzai)) }
         let result: ConversionResult
         if scoring {
             // セッションは採点が作ったものだけなので、見つからないことは無い
@@ -352,7 +394,7 @@ final class AzooKeyConverter: JapaneseConverting {
     /// 候補の語の列を、変換エンジンが文節の境目とする位置で切り、文節ごとに使った利用者の語を添える。prefix は候補の前に置いたもので、その語を外して切る。
     /// 語の列が text と読みに一致しない（前に置いたものと 1 語にまとまった、表記を書き換える語を含む）ときは、境目が分からないので全体を 1 文節にし、
     /// 前に置いたものより後ろから始まる利用者の語をその文節に添える
-    private static func clauses(of candidate: Candidate, after prefix: Prefix?, kana: String, text: String) -> [ScoredClause] {
+    private func clauses(of candidate: Candidate, after prefix: Prefix?, kana: String, text: String) -> [ScoredClause] {
         let prefixCount = prefix?.input.count ?? 0
         let whole = [ScoredClause(JapaneseClause(reading: kana, text: text), userWords: userWords(in: candidate.data, from: prefixCount))]
         let words: ArraySlice<DicdataElement>? = if let prefix { Self.words(after: prefix, in: candidate) } else { candidate.data[...] }
@@ -370,12 +412,15 @@ final class AzooKeyConverter: JapaneseConverting {
         return clauses.map(\.clause.text).joined() == text ? clauses : whole
     }
 
-    /// 語の列のうち、読みの位置 start 以降から始まる利用者の語の表記
-    private static func userWords(in words: [DicdataElement], from start: Int) -> [String] {
+    /// 語の列のうち、読みの位置 start 以降から始まる利用者の語ごとの、同じ読みに登録した表記
+    private func userWords(in words: [DicdataElement], from start: Int) -> [[String]] {
         var position = 0
-        var found: [String] = []
+        var found: [[String]] = []
         for word in words {
-            if position >= start, word.metadata.contains(.isFromUserDictionary) { found.append(word.word) }
+            if position >= start, word.metadata.contains(.isFromUserDictionary) {
+                guard let spellings = userSpellings[word.ruby] else { preconditionFailure("変換エンジンが登録していない利用者の語を返した: \(word.ruby) \(word.word)") }
+                found.append(spellings)
+            }
             position += word.ruby.count
         }
         return found
@@ -414,7 +459,7 @@ final class AzooKeyConverter: JapaneseConverting {
               let combined = candidates(prefix.input + kana, nBest: Self.scoringBest, scoring: true).first(where: { Self.drop(prefix, from: $0) != nil }),
               let text = Self.drop(prefix, from: combined)
         else { return nil }
-        let clauses = Self.clauses(of: combined, after: prefix, kana: kana, text: text)
+        let clauses = self.clauses(of: combined, after: prefix, kana: kana, text: text)
         return JapaneseReading(text: text, value: Double(combined.value) - prefixOnly, clauses: clauses, context: context)
     }
 }
