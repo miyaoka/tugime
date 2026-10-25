@@ -4,7 +4,7 @@ import Foundation
 /// 打鍵は、入力メソッドで打つとおりの綴り（空白を除く ASCII）。読みは利用者の綴りの表で決まるので、辞書には書かない。
 /// 3 つ目の欄は、打鍵の区間を日本語区間と英語区間のどちらにするか（Entry.Kind）。登録した語は、かな漢字変換に入れた利用者の語 1 つと同じ強さで区切りと変換に加わる。
 /// 同じ打鍵に別の表記を何語でも置けるが、同じ打鍵と表記の組は 2 回書けない。
-/// 1 行でも読めなければ全体を読まない（一部だけ入った辞書を作らない）
+/// 読めない行は飛ばして残りを使う（macSKK・librime・Mozc と同じ）。飛ばした行は skipped に持つ
 public struct UserDictionary: Sendable, Equatable {
     public struct Entry: Sendable, Hashable {
         /// 登録した打鍵の区間の種類
@@ -57,37 +57,50 @@ public struct UserDictionary: Sendable, Equatable {
         }
     }
 
-    public static let empty = UserDictionary(entries: [])
+    public static let empty = UserDictionary(entries: [], skipped: [])
 
     /// ファイルの行の順
     public let entries: [Entry]
+    /// 読めずに飛ばした行。ファイルの行の順
+    public let skipped: [ParseError]
 
-    private init(entries: [Entry]) {
+    private init(entries: [Entry], skipped: [ParseError]) {
         self.entries = entries
+        self.skipped = skipped
     }
 
-    public init(contents: String) throws {
+    public init(contents: String) {
         var entries: [Entry] = []
+        var skipped: [ParseError] = []
         var seen: Set<[String]> = []
         // CRLF の改行は 1 文字なので、"\n" ではなく改行の文字で分ける
         for (index, raw) in contents.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).enumerated() {
             // タブは区切りなので、前後の空白を除くときも残す
             let line = raw.trimmingCharacters(in: Self.padding)
             if line.isEmpty || line.hasPrefix("#") { continue }
-            let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-            guard (2...3).contains(fields.count), !fields[0].isEmpty, !fields[1].isEmpty else { throw ParseError.malformedLine(index + 1, line) }
-            var kind: Entry.Kind?
-            if fields.count == 3 {
-                guard let declared = Entry.Kind(rawValue: fields[2]) else { throw ParseError.unknownKind(index + 1, fields[2]) }
-                kind = declared
+            do {
+                entries.append(try Self.entry(line, number: index + 1, seen: &seen))
+            } catch {
+                skipped.append(error)
             }
-            let entry = Entry(keys: fields[0], word: fields[1], declaredKind: kind)
-            guard entry.keys.unicodeScalars.allSatisfy(Self.isKeyScalar) else { throw ParseError.invalidKeys(index + 1, entry.keys) }
-            guard Self.canBeTyped(entry.keys) else { throw ParseError.unreachableKeys(index + 1, entry.keys) }
-            guard seen.insert([entry.keys, entry.word]).inserted else { throw ParseError.duplicateEntry(index + 1, line) }
-            entries.append(entry)
         }
         self.entries = entries
+        self.skipped = skipped
+    }
+
+    private static func entry(_ line: String, number: Int, seen: inout Set<[String]>) throws(ParseError) -> Entry {
+        let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        guard (2...3).contains(fields.count), !fields[0].isEmpty, !fields[1].isEmpty else { throw .malformedLine(number, line) }
+        var kind: Entry.Kind?
+        if fields.count == 3 {
+            guard let declared = Entry.Kind(rawValue: fields[2]) else { throw .unknownKind(number, fields[2]) }
+            kind = declared
+        }
+        let entry = Entry(keys: fields[0], word: fields[1], declaredKind: kind)
+        guard entry.keys.unicodeScalars.allSatisfy(isKeyScalar) else { throw .invalidKeys(number, entry.keys) }
+        guard canBeTyped(entry.keys) else { throw .unreachableKeys(number, entry.keys) }
+        guard seen.insert([entry.keys, entry.word]).inserted else { throw .duplicateEntry(number, line) }
+        return entry
     }
 
     /// 種類ごとの、打鍵ごとの表記。ファイルの行の順に持つ

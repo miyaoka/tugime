@@ -54,7 +54,10 @@ if args.first == nil || ["-h", "--help"].contains(args.first) {
 }
 do {
     let method = try ConversionMethod(spec: methodSpec)
-    let dictionary = try dictionaryPath.map { try UserDictionary(contents: String(contentsOfFile: $0, encoding: .utf8)) } ?? .empty
+    let dictionary = try dictionaryPath.map { UserDictionary(contents: try String(contentsOfFile: $0, encoding: .utf8)) } ?? .empty
+    for line in dictionary.skipped {
+        FileHandle.standardError.write(Data("\(line)\n".utf8))
+    }
     /// 方式の区切りに利用者の語を入れたもの
     func makeSegmenter() throws -> Segmenter {
         let segmenter = try method.makeSegmenter()

@@ -5,17 +5,17 @@ import Testing
 @Suite struct UserDictionaryTests {
     /// 空行と # の行は読まず、同じ打鍵に別の表記を置ける。CRLF の改行でも同じに読む
     @Test func readsKeysAndWordPerLine() throws {
-        let dictionary = try UserDictionary(contents: "# 麻雀\r\ni-sou\t一索\r\n\r\nmannzu\t萬子\r\nmannzu\tマンズ\r\ngithub\tGitHub\r\n")
+        let dictionary = UserDictionary(contents: "# 麻雀\r\ni-sou\t一索\r\n\r\nmannzu\t萬子\r\nmannzu\tマンズ\r\ngithub\tGitHub\r\n")
         #expect(dictionary.entries.map { [$0.keys, $0.word] } == [["i-sou", "一索"], ["mannzu", "萬子"], ["mannzu", "マンズ"], ["github", "GitHub"]])
     }
 
     /// 種類を書かなければ、表記が ASCII だけなら英語、それ以外は日本語にする。書けばそれに従う
     @Test func decidesTheKindFromTheWordUnlessWritten() throws {
-        let dictionary = try UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js™\ncafe\tCafé\nsake\tSAKE\tja\nkara\t唐\ten\n")
+        let dictionary = UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js™\ncafe\tCafé\nsake\tSAKE\tja\nkara\t唐\ten\n")
         #expect(dictionary.entries.map(\.kind) == [.japanese, .english, .japanese, .japanese, .japanese, .english])
     }
 
-    /// 誤りは 1 始まりの行番号で返し、一部だけの辞書を作らない
+    /// 読めない行は 1 始まりの行番号の誤りとして残し、飛ばしたほかの行を使う
     @Test(arguments: [
         ("i-sou\t一索\nryannsou", UserDictionary.ParseError.malformedLine(2, "ryannsou")),
         ("i-sou\t一索\t牌", .unknownKind(1, "牌")),
@@ -27,8 +27,10 @@ import Testing
         (",net\t.NET", .unreachableKeys(1, ",net")),
         ("i-sou\t一索\n\ni-sou\t一索", .duplicateEntry(3, "i-sou\t一索")),
     ])
-    func rejectsTheWholeFileOnAnError(contents: String, error: UserDictionary.ParseError) {
-        #expect(throws: error) { try UserDictionary(contents: contents) }
+    func skipsLinesItCannotRead(contents: String, error: UserDictionary.ParseError) {
+        let dictionary = UserDictionary(contents: contents + "\nmannzu\t萬子")
+        #expect(dictionary.skipped == [error])
+        #expect(dictionary.entries.last == UserDictionary.Entry(keys: "mannzu", word: "萬子", declaredKind: nil))
     }
 }
 
