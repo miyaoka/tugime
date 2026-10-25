@@ -3,14 +3,27 @@ import TugimeCore
 
 /// 打鍵の性能を測る 1 文。読みを利用者の綴りの表で逆にたどった打鍵列と、打鍵ごとの打ち終えた読みの文字数を持つ
 public struct KeystrokeScript: Sendable {
+    /// 入力欄でこの文の前に何を置くか
+    public enum Context: Sendable, CaseIterable {
+        /// 問題の left。空の問題もある
+        case problem
+        /// 問題の left の前に別の文をつないだ入力欄から、入力メソッドと同じく上限の長さまで読んだもの
+        case full
+    }
+
     public var id: String
+    public var context: Context
+    /// 打ち始めに入力欄のカーソルより前にあるもの
+    public var leading: Segmenter.Leading
     public var reading: String
     public var spelled: [SpelledKana]
     /// spelled の keys を繋いだもの
     public var keys: String
 
-    init(id: String, reading: String, spelled: [SpelledKana]) {
+    init(id: String, context: Context, field: String, reading: String, spelled: [SpelledKana]) {
         self.id = id
+        self.context = context
+        leading = Segmenter.Leading(field: field)
         self.reading = reading
         self.spelled = spelled
         keys = spelled.map(\.keys).joined()
@@ -22,17 +35,23 @@ public struct KeystrokeScript: Sendable {
         public var skipped: [Problem]
     }
 
-    /// AJIMEE-Bench の問題のうち left が空のもの（入力欄の前に文字の無い打ち始め）を、問題ファイルの順に全部使う。
+    /// AJIMEE-Bench の問題を、問題ファイルの順に全部使う。left は入力欄のカーソルより前の文字列として、入力メソッドと同じく読んで渡す。
+    /// まず各問題を問題の left で打ち、続けて同じ問題を left の前に全問題の left をつないで上限の長さにした文字列で打つ（id の末尾に @full）。
     /// 綴りで書けない文字を含む問題は外して返す。外した数は呼び出し元が出す
     public static func select(from problems: [Problem], table: RomajiTable) -> Selection {
         var selection = Selection(scripts: [], skipped: [])
-        for problem in problems where problem.set == AJIMEE.set && problem.left.isEmpty {
+        let ajimee = problems.filter { $0.set == AJIMEE.set }
+        let filler = ajimee.map(\.left).joined()
+        var full: [KeystrokeScript] = []
+        for problem in ajimee {
             guard let spelled = Segmenter.spelling(of: problem.kana, table: table) else {
                 selection.skipped.append(problem)
                 continue
             }
-            selection.scripts.append(KeystrokeScript(id: problem.id, reading: problem.kana, spelled: spelled))
+            selection.scripts.append(KeystrokeScript(id: problem.id, context: .problem, field: problem.left, reading: problem.kana, spelled: spelled))
+            full.append(KeystrokeScript(id: problem.id + "@full", context: .full, field: filler + problem.left, reading: problem.kana, spelled: spelled))
         }
+        selection.scripts += full
         return selection
     }
 
@@ -57,6 +76,9 @@ public enum KeystrokeBench {
         /// 何打鍵目か（1 始まり）
         public var keystroke: Int
         public var kanaCount: Int
+        /// 文の前の文字列の置き方と、それが空でないか
+        public var context: KeystrokeScript.Context
+        public var hasLeft: Bool
         public var seconds: Double
     }
 
@@ -69,7 +91,8 @@ public enum KeystrokeBench {
         public var peakBytes: Int
         public var skipped: Int
         public var samples: [Sample]
-        /// 文ごとの打鍵列と最後の liveText。`tugime-cli --live <打鍵列>` と一致するはずのもの
+        /// 問題の left で打った文ごとの打鍵列と最後の liveText。`tugime-cli --before <left> --live <打鍵列>` と一致するはずのもの。
+        /// 上限の長さの文脈で打った文は時間を測るためのもので、含めない
         public var finalTexts: [(keys: String, liveText: String)]
     }
 
@@ -84,7 +107,7 @@ public enum KeystrokeBench {
     }
 
     /// 不変条件:
-    /// - 文ごとに、打鍵列の先頭 1 文字から全体まで 1 打鍵ずつ伸ばして liveText(prefix, leading: .start) を呼ぶ。入力メソッドが打鍵ごとに呼ぶのと同じ
+    /// - 文ごとに、打鍵列の先頭 1 文字から全体まで 1 打鍵ずつ伸ばして liveText(prefix, leading: leading) を呼ぶ。入力メソッドが打鍵ごとに呼ぶのと同じ
     /// - 文の前に endComposition を呼ぶ。文の中では呼ばない（入力メソッドは打ち終えるまで覚えを持ち越す）
     public static func run(
         selection: KeystrokeScript.Selection,
@@ -112,12 +135,12 @@ public enum KeystrokeBench {
             for i in 1...keys.count {
                 watchdog.arm(item: "\(script.id) の \(i) 打鍵目")
                 let start = clock.now
-                last = segmenter.liveText(String(keys[..<i]), leading: .start)
+                last = segmenter.liveText(String(keys[..<i]), leading: script.leading)
                 let elapsed = seconds(clock.now - start)
                 slowest = max(slowest, elapsed)
-                samples.append(Sample(scriptID: script.id, keystroke: i, kanaCount: kanaCounts[i - 1], seconds: elapsed))
+                samples.append(Sample(scriptID: script.id, keystroke: i, kanaCount: kanaCounts[i - 1], context: script.context, hasLeft: !script.leading.text.isEmpty, seconds: elapsed))
             }
-            finalTexts.append((script.keys, last))
+            if script.context == .problem { finalTexts.append((script.keys, last)) }
             progress("[\(n + 1)/\(selection.scripts.count)] \(script.id) \(keys.count) 打鍵 最大 \(String(format: "%.1f", slowest * 1000))ms")
         }
         segmenter.endComposition()
@@ -153,7 +176,7 @@ extension KeystrokeBench.Report {
     /// 読みの長さの区切り。打ち終えた読みの文字数を、この幅でまとめる
     public static let kanaBucketWidth = 10
 
-    /// 先頭に 方式・読み込み秒・最大常駐量・文と打鍵の数。続いて列の名前と、全体の行と読みの文字数の区切りごとの行。
+    /// 先頭に 方式・読み込み秒・最大常駐量・文と打鍵の数。続いて列の名前と、全体の行、文脈の有無ごとの行、読みの文字数の区切りごとの行。
     /// 列: 区切り 打鍵数 中央値 90% 99% 最大（ms）
     public var lines: [String] {
         let mib = { (bytes: Int) in String(format: "%.1fMiB", Double(bytes) / 1_048_576) }
@@ -161,7 +184,7 @@ extension KeystrokeBench.Report {
             "方式\t\(method)",
             "読み込み\t\(String(format: "%.2f", loadSeconds))s",
             "最大常駐量\t読み込み直後 \(mib(peakBytesAfterLoad))\t全打鍵の後 \(mib(peakBytes))",
-            "文\t\(finalTexts.count) 件（外した文 \(skipped) 件）",
+            "文\t\(finalTexts.count) 件 × 文脈 \(KeystrokeScript.Context.allCases.count) 通り（外した文 \(skipped) 件）",
             "打鍵\t\(samples.count) 回",
             ["読みの文字数", "打鍵数", "中央値ms", "90%ms", "99%ms", "最大ms"].joined(separator: "\t"),
         ]
@@ -171,6 +194,15 @@ extension KeystrokeBench.Report {
             return [label, String(s.count), ms(s.median), ms(s.p90), ms(s.p99), ms(s.max)].joined(separator: "\t")
         }
         lines.append(row("全体", samples))
+        let groups: [(label: String, matches: (KeystrokeBench.Sample) -> Bool)] = [
+            ("文脈なし", { $0.context == .problem && !$0.hasLeft }),
+            ("問題の文脈", { $0.context == .problem && $0.hasLeft }),
+            ("文脈\(Segmenter.Leading.maxLength)字", { $0.context == .full }),
+        ]
+        for group in groups {
+            let matched = samples.filter(group.matches)
+            if !matched.isEmpty { lines.append(row(group.label, matched)) }
+        }
         let width = Self.kanaBucketWidth
         let buckets = Dictionary(grouping: samples) { $0.kanaCount / width }
         for bucket in buckets.keys.sorted() {
@@ -179,7 +211,7 @@ extension KeystrokeBench.Report {
         return lines
     }
 
-    /// 文ごとに 打鍵列 \t 最後の liveText。`tugime-cli --live` の出力と同じ形なので diff できる
+    /// 文ごとに 打鍵列 \t 最後の liveText。`tugime-cli --live` の出力と同じ形なので diff できる（文脈のある文は --before に left を渡す）
     public var finalTextLines: [String] {
         finalTexts.map { "\($0.keys)\t\($0.liveText)" }
     }

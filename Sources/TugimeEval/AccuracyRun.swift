@@ -196,7 +196,7 @@ public enum AccuracyRun {
     /// 不変条件:
     /// - 精度は問題の読みを打ったときに確定する文字列で測る。読みを同梱の綴りの表で打鍵列に逆にたどり、
     ///   ConversionMethod.makeSegmenter() で作った区切りの liveText に渡す
-    /// - Problem.left は、入力欄のカーソルより前の文字列として Segmenter.Leading に渡す
+    /// - Problem.left は、入力欄のカーソルより前の文字列として、入力メソッドと同じく Segmenter.Leading(field:) で読んで渡す
     /// - 問題ごとに両方の区切りの endComposition を呼ぶ
     /// - 打鍵列に逆にたどれない問題は打たずに outcome を untypable にし、どちらの方式も不正解とする。打てる問題が無ければ変換器を作る前に止める
     /// - 対象が基準なら区切りは 1 つだけ作り、baselineOutput = output とする
@@ -233,7 +233,7 @@ public enum AccuracyRun {
                 progress("\(count) 打てない")
                 continue
             }
-            let leading = Segmenter.Leading(problem.left)
+            let leading = Segmenter.Leading(field: problem.left)
             let (output, outputSeconds) = type(keys, leading: leading, with: targetSegmenter, clock: clock)
             let (baselineOutput, baselineSeconds) = baselineSegmenter.map { type(keys, leading: leading, with: $0, clock: clock) } ?? (output, outputSeconds)
             let result = AccuracyRecord.Result(problem: problem, outcome: .typed(AccuracyRecord.Typed(
