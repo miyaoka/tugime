@@ -37,16 +37,21 @@ final class UserDictionaryFile {
             return
         }
         guard seen != .some(modified) else { return }
-        seen = modified
+        // 書式の誤りは同じ中身なら何度読んでも同じなので、時刻を覚えて読み直さない。
+        // 読み込みと組み立ての失敗は一時のこともあるので、時刻を覚えず、次の打ち始めにまた読む
         do {
             let dictionary = try modified.map { _ in try UserDictionary(contents: String(contentsOf: url, encoding: .utf8)) } ?? .empty
             try segmenter.replaceUserDictionary(dictionary)
+            seen = modified
             rejection = nil
         } catch let error as UserDictionary.ParseError {
+            seen = modified
             rejection = error.description
         } catch let error as UserDictionary.ImportError {
+            seen = nil
             rejection = error.description
         } catch {
+            seen = nil
             rejection = "利用者の辞書を読めない: \(error.localizedDescription)"
         }
     }
