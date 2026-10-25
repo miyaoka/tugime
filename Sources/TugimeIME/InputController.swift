@@ -53,6 +53,9 @@ let sharedSegmenter: Segmenter = {
     }
 }()
 
+/// 利用者の辞書のファイル。区切りと同じくプロセスに 1 つ
+let userDictionaryFile = UserDictionaryFile.inputMethod()
+
 @objc(TugimeInputController)
 final class TugimeInputController: IMKInputController {
     /// 未確定の打鍵列
@@ -115,6 +118,28 @@ final class TugimeInputController: IMKInputController {
 
     nonisolated override func candidates(_ sender: Any!) -> [Any]! {
         onMain { currentCandidates }
+    }
+
+    /// 入力メニュー（メニューバーの入力ソースのメニュー）に足す項目。選ぶと IMK がこのコントローラの action を呼ぶ
+    nonisolated override func menu() -> NSMenu! {
+        nonisolated(unsafe) var menu: NSMenu?
+        MainActor.assumeIsolated {
+            let built = NSMenu()
+            built.addItem(NSMenuItem(title: "tugime の辞書を編集…", action: #selector(openUserDictionary(_:)), keyEquivalent: ""))
+            menu = built
+        }
+        return menu
+    }
+
+    @objc nonisolated func openUserDictionary(_ sender: Any?) {
+        onMain {
+            userDictionaryFile.openInEditor { error in
+                let alert = NSAlert()
+                alert.messageText = "tugime の辞書を開けない"
+                alert.informativeText = "\(userDictionaryFile.url.path)\n\(error.localizedDescription)"
+                alert.runModal()
+            }
+        }
     }
 
     /// マウスで候補を選んだとき。自分で窓を動かしている間の通知は反映済みなので無視する
@@ -375,6 +400,8 @@ final class TugimeInputController: IMKInputController {
         }
         if keys.isEmpty {
             leading = Self.leadingContext(of: client)
+            // 辞書を替えるのは未確定の文字列の始まりだけにする。打っている途中に替えると、同じ打鍵列の表示が途中で変わる
+            userDictionaryFile.refresh(into: sharedSegmenter)
         }
         keys.append(text)
         showMarkedText(client)
@@ -383,20 +410,17 @@ final class TugimeInputController: IMKInputController {
 
     // MARK: 表示と確定
 
-    /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示し、それが打った読みと合わなければ警告の窓を出す。
-    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。警告の窓は出さない
+    /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示する。
+    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
-        var differs = false
         if let clauses {
             for (index, clause) in clauses.enumerated() {
                 let style = index == focus ? kTSMHiliteSelectedConvertedText : kTSMHiliteConvertedText
                 marked.append(styled(clause.output, style: style, at: marked.length))
             }
         } else {
-            let live = sharedSegmenter.liveDisplay(keys, leading: leading)
-            marked.append(styled(live.text, style: kTSMHiliteRawText, at: 0))
-            differs = live.differsFromInput
+            marked.append(styled(liveText, style: kTSMHiliteRawText, at: 0))
         }
         // カーソルは常に末尾に置く。ターミナル（xterm.js）はカーソルの位置を未確定の文字列の終わりとして読むので、途中に置くと確定する文字列が欠ける
         client.setMarkedText(
@@ -404,11 +428,6 @@ final class TugimeInputController: IMKInputController {
             selectionRange: NSRange(location: marked.length, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
-        if differs {
-            rewriteWarning.show(below: client)
-        } else {
-            rewriteWarning.hide()
-        }
     }
 
     /// 下線の種類と太さはクライアントが決めるので、文節の状態だけを IMK に渡して属性を受け取る
@@ -451,7 +470,6 @@ final class TugimeInputController: IMKInputController {
     /// 未確定の文字列を、表示しているとおりに確定する
     private func commit(_ client: IMKTextInput) {
         candidatePanel.hide()
-        rewriteWarning.hide()
         guard !keys.isEmpty else { return }
         let text = clauses?.map(\.output).joined() ?? liveText
         client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))

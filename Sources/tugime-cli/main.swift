@@ -6,6 +6,7 @@ let usage = """
     --method <方式> は変換の方式。\(ConversionMethod.forms)。既定は入力メソッドと同じ方式で、作業ディレクトリの .zenz/\(ConversionMethod.inputMethodModel) を読む。
     リポジトリの直下から実行し、モデルは scripts/fetch-genmai.sh で用意する。azooKey だけで変換するときは --method azookey。
     zenzai と direct は表示の変換にモデルを使う。zenzai は azooKey がモデルを動かし、direct は tugime が動かす。ほかのモデルは scripts/convert-hf-to-gguf.sh が出す。
+    --dictionary <ファイル> は利用者の辞書（書式は入力メソッドと同じ）。渡さなければ利用者の語は無く、入力メソッドの辞書は読まない。
     --explain・--lattice・--span の出力の表記は、区切りを採点した azooKey の変換で、表示の変換ではない）:
       tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す
@@ -18,8 +19,8 @@ let usage = """
       tugime-cli --span <英字|かな>...        英字は英語として、かなは日本語として評価値を出す
     """
 
-let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P"]
-let clauseTag: [Clause.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .whole: "W"]
+let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .word: "U"]
+let clauseTag: [Clause.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .word: "U", .whole: "W"]
 
 func describe(_ segments: [Segment]) -> String {
     segments.map { s in
@@ -30,15 +31,19 @@ func describe(_ segments: [Segment]) -> String {
 var args = Array(CommandLine.arguments.dropFirst())
 var leading = Segmenter.Leading.start
 var methodSpec = ConversionMethod.inputMethod(modelDirectory: URL(fileURLWithPath: ".zenz")).spec
-while let option = args.first, ["--before", "--method"].contains(option) {
+var dictionaryPath: String?
+while let option = args.first, ["--before", "--method", "--dictionary"].contains(option) {
     guard args.count >= 2 else {
         print(usage)
         exit(2)
     }
-    if option == "--before" {
+    switch option {
+    case "--before":
         leading = Segmenter.Leading(field: args[1])
-    } else {
+    case "--method":
         methodSpec = args[1]
+    default:
+        dictionaryPath = args[1]
     }
     args.removeFirst(2)
 }
@@ -49,11 +54,22 @@ if args.first == nil || ["-h", "--help"].contains(args.first) {
 }
 do {
     let method = try ConversionMethod(spec: methodSpec)
+    let dictionary = try dictionaryPath.map { UserDictionary(contents: try String(contentsOfFile: $0, encoding: .utf8)) } ?? .empty
+    for line in dictionary.skipped {
+        FileHandle.standardError.write(Data("\(line)\n".utf8))
+    }
+    /// 方式の区切りに利用者の語を入れたもの
+    func makeSegmenter() throws -> Segmenter {
+        let segmenter = try method.makeSegmenter()
+        try segmenter.replaceUserDictionary(dictionary)
+        return segmenter
+    }
     switch args.first {
     case "--span":
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
         let japanese = method.make()
+        try Segmenter(table: .bundled(), english: english, japanese: japanese).replaceUserDictionary(dictionary)
         for arg in args.dropFirst() {
             let isKana = arg.unicodeScalars.contains { $0.value > 0x3000 }
             if isKana {
@@ -66,13 +82,13 @@ do {
         }
     case "--whole":
         // F6〜F10 の全体の変換を並べる
-        let segmenter = try method.makeSegmenter()
+        let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
             print("\(input)\t" + CharacterForm.allCases.map { segmenter.convertWhole(input, to: $0, leading: leading) }.joined(separator: " / "))
         }
     case "--clauses":
         // IME の候補の窓に並ぶものを区間ごとに出す
-        let segmenter = try method.makeSegmenter()
+        let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
             print("== \(input)")
             for clause in segmenter.clauses(input, leading: leading) {
@@ -84,7 +100,7 @@ do {
             print(usage)
             exit(2)
         }
-        let segmenter = try method.makeSegmenter()
+        let segmenter = try makeSegmenter()
         var clauses = segmenter.clauses(args[1], leading: leading)
         var focus = 0
         func show(_ label: String) {
@@ -105,18 +121,18 @@ do {
             show(String(op))
         }
     case "--live":
-        let segmenter = try method.makeSegmenter()
+        let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
             print("\(input)\t\(segmenter.liveText(input, leading: leading))")
         }
     case "--explain":
-        let segmenter = try method.makeSegmenter()
+        let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
             let segments = segmenter.segment(input, leading: leading)
             print("\(segments.map(\.output).joined())\t\(describe(segments))")
         }
     case "--lattice":
-        let segmenter = try method.makeSegmenter()
+        let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
             print("== \(input)\t\(describe(segmenter.segment(input, leading: leading)))")
             for span in segmenter.candidates(input, leading: leading) {
@@ -126,7 +142,7 @@ do {
             }
         }
     default:
-        let segmenter = try method.makeSegmenter()
+        let segmenter = try makeSegmenter()
         for input in args {
             print(segmenter.liveText(input, leading: leading))
         }

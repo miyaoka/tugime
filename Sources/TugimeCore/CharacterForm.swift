@@ -18,7 +18,7 @@ extension Segmenter {
         segment(input, leading: leading).map { segment in
             switch segment.kind {
             case .japanese, .punctuation: segment.reading
-            case .english: englishReading(of: segment.source) ?? segment.source
+            case .english, .word: englishReading(of: segment.source) ?? segment.source
             }
         }.joined()
     }
@@ -41,7 +41,7 @@ extension Segmenter {
     public func convertClause(_ clauses: [Clause], at index: Int, to form: CharacterForm) -> String? {
         let clause = clauses[index]
         guard form.usesKeystrokes else {
-            let kana = clause.kind == .english ? englishReading(of: clause.span.source) ?? clause.span.source : clause.reading
+            let kana = clause.kind == .english || clause.kind == .word ? englishReading(of: clause.span.source) ?? clause.span.source : clause.reading
             return Self.text(kana, form)
         }
         return typedSource(of: clauses, at: index).map { Self.text($0, form) }
@@ -72,5 +72,23 @@ extension Segmenter {
     /// 未確定の文字列を確定・取り消ししたときに呼ぶ
     public func endComposition() {
         japaneseConverter.endComposition()
+    }
+
+    /// 利用者の語を置き換える。未確定の文字列は終わる。投げたときは前の語のまま（JapaneseConverting.replaceUserWords）。
+    /// 日本語の語は、打鍵をかなに読めればその読みでかな漢字変換に入れ、読めなければ打鍵とちょうど一致する区間をその語にする。
+    /// 英語の語は、打鍵とちょうど一致する英語の区間の表記にする
+    public func replaceUserDictionary(_ dictionary: UserDictionary) throws {
+        var converted: [UserWord] = []
+        var typed: [String: [String]] = [:]
+        for (keys, words) in dictionary.words(of: .japanese) {
+            guard let kana = table.reading(of: keys), Self.canBeJapanese(kana) else {
+                typed[keys] = words
+                continue
+            }
+            converted += words.map { UserWord(reading: kana, word: $0) }
+        }
+        try japaneseConverter.replaceUserWords(converted)
+        typedWords = dictionary.words(of: .english)
+        typedJapaneseWords = typed
     }
 }

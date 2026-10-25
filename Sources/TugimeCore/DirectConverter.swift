@@ -12,9 +12,13 @@ protocol DirectDisplayGenerating: AnyObject {
 /// 表示の変換だけを zenz 形式のモデルの出力にし、区切りの採点と候補の窓は azooKey（Zenzai なし）に任せる変換器。
 ///
 /// 不変条件:
-/// - 表示の text はモデルの出力そのもの。読みと食い違っても azooKey の変換に差し替えない
+/// - 表示の文節は、採点の変換がその文節の読みの中で使った利用者の語を、その語と同じ読みに登録したどれかの表記で含む。
+///   モデルは利用者の語を知らないので、これは azooKey の変換が守る
+/// - その上で、表示の文節の表記はモデルの出力を切ったものそのもの。読みと食い違っても azooKey の変換に差し替えない。
+///   前の条件を出力が満たさない文節だけ、その文節の読みに当たる採点の文節の表記を繋いだものにする
 /// - 表示の clauses は、読みを繋ぐと kana、表記を繋ぐと text。文節の境目の読みの位置は採点の変換から借り、
-///   ReadingAlignment で出力の側の位置が確定した境目でだけ切る。対応づかない出力は 1 文節（kana, text）にする
+///   ReadingAlignment で出力の側の位置が確定した境目でだけ切る。対応づかない出力は 1 文節（kana, 出力）にする。
+///   どの境目も採点の文節の境目なので、表示の文節は採点の文節をちょうど何個か束ねたものになる
 /// - convert が変換を返すかなと文脈には、display も必ず返す
 final class DirectConverter: JapaneseConverting {
     private let scorer: any JapaneseConverting
@@ -47,16 +51,42 @@ final class DirectConverter: JapaneseConverting {
         let shown = scorer.convert(kana: kana, context: context).map { scored in
             let text = generator.generate(left: ZenzPrompt.leftContext(context: context, left: left), kana: kana)
             var cuts: [Int] = []
-            for clause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + clause.reading.count) }
-            let clauses = ReadingAlignment(text: text, reading: kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: kana, text: text)]
-            return JapaneseDisplay(text: text, clauses: clauses)
+            for scoredClause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + scoredClause.clause.reading.count) }
+            let output = ReadingAlignment(text: text, reading: kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: kana, text: text)]
+            let clauses = Self.keepingUserWords(output, scored: scored.clauses)
+            return JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses)
         }
         displays[key] = shown
         return shown
     }
 
+    /// 出力の文節のうち、束ねる採点の文節が使った利用者の語のどれかを、同じ読みに登録したどの表記でも含まないものを、採点の文節の表記を繋いだものにする。
+    /// 語の有無は表記に語の文字列が含まれるかで見る。語の読みの位置で差し替えると、出力の漢字の連なりに語の境目が埋もれたときに差し替えられない
+    private static func keepingUserWords(_ output: [JapaneseClause], scored: [ScoredClause]) -> [JapaneseClause] {
+        var rest = scored[...]
+        return output.map { clause in
+            var covered: [ScoredClause] = []
+            var reading = ""
+            while reading.count < clause.reading.count, let next = rest.popFirst() {
+                covered.append(next)
+                reading += next.clause.reading
+            }
+            precondition(reading == clause.reading, "表示の文節が採点の文節の境目で切られていない: \(clause.reading) \(reading)")
+            let words = covered.flatMap(\.userWords)
+            guard !words.allSatisfy({ spellings in spellings.contains { clause.text.contains($0) } }) else { return clause }
+            return JapaneseClause(reading: clause.reading, text: covered.map(\.clause.text).joined())
+        }
+    }
+
     func endComposition() {
         scorer.endComposition()
+        generator.reset()
+        displays = [:]
+    }
+
+    /// 生成するものは辞書を知らないが、未確定の文字列が終わるので、覚えた生成も捨てる
+    func replaceUserWords(_ words: [UserWord]) throws {
+        try scorer.replaceUserWords(words)
         generator.reset()
         displays = [:]
     }

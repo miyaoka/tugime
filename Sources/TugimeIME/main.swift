@@ -1,6 +1,7 @@
 import Carbon
 import Cocoa
 import InputMethodKit
+import TugimeCore
 
 /// バンドルを入力源として登録する。有効化はしない（利用者がシステム設定の「+」で追加する）
 func register() -> Int32 {
@@ -38,11 +39,21 @@ func printStatus() -> Int32 {
     return 0
 }
 
-/// 組み立てたバンドルから綴りの表・語表・辞書・表示の変換のモデルを読み、1 文を表示の変換で変換して出す。読めなければ初期化の時点で止まる
+/// 組み立てたバンドルから綴りの表・語表・辞書・表示の変換のモデルを読み、1 文を表示の変換で変換して出す。読めなければ初期化の時点で止まる。
+/// 続けて、利用者の辞書を組み立てる文字の表もバンドルから読めるかを、1 語の辞書で変換して確かめる。利用者の辞書のファイルは読まない
 func check() -> Int32 {
     let input = "kyouhagoogledekensaku"
     print("\(input)\t\(sharedSegmenter.liveText(input))")
-    return 0
+    let word = (keys: "i-sou", entry: "i-sou\t一索", text: "一索")
+    do {
+        try sharedSegmenter.replaceUserDictionary(UserDictionary(contents: word.entry))
+    } catch {
+        print("利用者の辞書を入れられない: \(error)")
+        return 1
+    }
+    let shown = sharedSegmenter.liveText(word.keys)
+    print("\(word.keys)\t\(shown)")
+    return shown == word.text ? 0 : 1
 }
 
 switch CommandLine.arguments.dropFirst().first {
@@ -67,8 +78,6 @@ let candidatePanel: IMKCandidates = {
     panel.setAttributes([IMKCandidatesSendServerKeyEventFirst: true])
     return panel
 }()
-// 表示が打った読みと合わないときの警告の窓もプロセスに 1 つ
-let rewriteWarning = RewriteWarning()
-// 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる
-_ = sharedSegmenter
+// 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる。利用者の辞書も読んでおく
+userDictionaryFile.refresh(into: sharedSegmenter)
 NSApplication.shared.run()

@@ -30,7 +30,7 @@ enum ZenzPrompt {
 
     static func text(left: String, kana: String) -> String {
         let context = String(String.UnicodeScalarView(left.unicodeScalars.suffix(maxContextLength)))
-        return preprocess((context.isEmpty ? "" : contextMark + context) + inputMark + katakana(kana) + outputMark)
+        return preprocess((context.isEmpty ? "" : contextMark + context) + inputMark + Kana.katakana(kana) + outputMark)
     }
 
     /// モデルの出力の全角の空白を、入力の空白に戻す
@@ -88,12 +88,6 @@ enum ZenzPrompt {
             let half = scalars.count / 2
             return halving([String(String.UnicodeScalarView(scalars.prefix(half))), String(String.UnicodeScalarView(scalars.dropFirst(half)))], until: fits)
         }
-    }
-
-    private static func katakana(_ s: String) -> String {
-        String(String.UnicodeScalarView(s.unicodeScalars.map {
-            (0x3041...0x3096).contains($0.value) ? Unicode.Scalar($0.value + 0x60)! : $0
-        }))
     }
 
     private static func preprocess(_ s: String) -> String {

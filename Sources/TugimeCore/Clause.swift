@@ -6,6 +6,8 @@ public struct Clause: Sendable, Equatable {
         case japanese
         case english
         case punctuation
+        /// 利用者の辞書で日本語にした、かなに読めない打鍵（Segment.Kind.word）
+        case word
         /// 未確定の文字列全体を 1 つの文字種にした文節（F6〜F10）。読みは全体の読み（`wholeReading`）
         case whole
 
@@ -14,6 +16,7 @@ public struct Clause: Sendable, Equatable {
             case .japanese: self = .japanese
             case .english: self = .english
             case .punctuation: self = .punctuation
+            case .word: self = .word
             }
         }
     }
@@ -93,7 +96,7 @@ extension Segmenter {
             let resized = resize(segmented, at: 0, by: delta, leading: leading)
             return resized == segmented ? clauses : resized
         }
-        guard clause.kind != .punctuation else { return clauses }
+        guard clause.kind != .punctuation, clause.kind != .word else { return clauses }
         let spans = keySpans(of: clauses)
         let keys = Array(spans.map(\.span.source).joined())
         guard let own = spans.first(where: { $0.span == clause.span }) else { return clauses }
@@ -233,7 +236,7 @@ extension Segmenter {
         let rest = self.clauses(
             of: segment(
                 String(keys[end...]),
-                after: fixed.kind == .japanese ? .afterJapanese : .afterEnglish,
+                after: fixed.kind == .english ? .afterEnglish : .afterJapanese,
                 context: context(after: resized, keys: keys[..<end], leading: leading)
             ),
             left: left + resized.output,
@@ -274,7 +277,7 @@ extension Segmenter {
     private func unitEnd(from position: Int, in spans: [KeySpan]) -> Int? {
         guard let next = spans.first(where: { $0.start <= position && position < $0.end }) else { return nil }
         switch next.kind {
-        case .punctuation, .whole:
+        case .punctuation, .word, .whole:
             return nil
         case .english:
             return position + 1
@@ -288,7 +291,7 @@ extension Segmenter {
     private func unitStart(before position: Int, in spans: [KeySpan]) -> Int? {
         guard let span = spans.first(where: { $0.start < position && position <= $0.end }) else { return nil }
         switch span.kind {
-        case .punctuation, .whole:
+        case .punctuation, .word, .whole:
             return nil
         case .english:
             return position - 1
@@ -304,7 +307,7 @@ extension Segmenter {
         switch previous.kind {
         case .english:
             return Self.context(after: keys)
-        case .japanese:
+        case .japanese, .word:
             return .afterWord
         case .punctuation:
             return Self.continuation(after: previous.span.source).japaneseContext
@@ -410,9 +413,13 @@ extension Segmenter {
         switch segment.kind {
         case .punctuation:
             list.append(segment.source)
+        case .word:
+            list += (typedJapaneseWords[segment.source] ?? []) + [segment.source]
         case .japanese:
             preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
         case .english:
+            // 利用者の辞書で表記を替えたときは、打ったままの綴りをすぐ後に置く
+            list.append(segment.source)
             // 英語と判定した区間も、`englishReading` で読めればかなを選べるようにする
             if let kana = englishReading(of: segment.source) {
                 list += [kana, Self.katakana(kana)]
