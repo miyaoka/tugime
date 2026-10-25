@@ -25,7 +25,7 @@ import Testing
         // 同じかなの綴りは表で上の行（sha cha ca la より sya tya ka xa）
         ("しゃ", "sya"),
         ("かれんだー", "karennda-"),
-        // 区切り方が複数あれば、使う行が表で上にある方（tcha より ttya、ye より ixe）。同じなら短い方（ki xya より kya）
+        // 区切り方が複数あれば、使う行が表で上にある方（tcha より ttya、ye より ixe、ki xya より kya）
         ("めっちゃ", "mettya"),
         ("いぇ", "ixe"),
         ("きゃ", "kya"),
