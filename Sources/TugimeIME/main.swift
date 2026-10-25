@@ -69,6 +69,6 @@ let candidatePanel: IMKCandidates = {
 }()
 // 表示が打った読みと合わないときの警告の窓もプロセスに 1 つ
 let rewriteWarning = RewriteWarning()
-// 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる
-_ = sharedSegmenter
+// 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる。利用者の辞書も読んでおく
+userDictionaryFile.refresh(into: sharedSegmenter)
 NSApplication.shared.run()

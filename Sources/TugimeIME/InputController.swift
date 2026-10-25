@@ -53,6 +53,9 @@ let sharedSegmenter: Segmenter = {
     }
 }()
 
+/// 利用者の辞書のファイル。区切りと同じくプロセスに 1 つ
+let userDictionaryFile = UserDictionaryFile.inputMethod()
+
 @objc(TugimeInputController)
 final class TugimeInputController: IMKInputController {
     /// 未確定の打鍵列
@@ -375,6 +378,8 @@ final class TugimeInputController: IMKInputController {
         }
         if keys.isEmpty {
             leading = Self.leadingContext(of: client)
+            // 辞書を替えるのは未確定の文字列の始まりだけにする。打っている途中に替えると、同じ打鍵列の表示が途中で変わる
+            userDictionaryFile.refresh(into: sharedSegmenter)
         }
         keys.append(text)
         showMarkedText(client)
@@ -384,7 +389,8 @@ final class TugimeInputController: IMKInputController {
     // MARK: 表示と確定
 
     /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示し、それが打った読みと合わなければ警告の窓を出す。
-    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。警告の窓は出さない
+    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。読み違いの警告は出さない。
+    /// 利用者の辞書を読めなければ、どちらの間も、直すまでその理由を警告の窓に出す
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
         var differs = false
@@ -404,8 +410,8 @@ final class TugimeInputController: IMKInputController {
             selectionRange: NSRange(location: marked.length, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
-        if differs {
-            rewriteWarning.show(below: client)
+        if let notice = userDictionaryFile.rejection ?? (differs ? RewriteWarning.message : nil) {
+            rewriteWarning.show(notice, below: client)
         } else {
             rewriteWarning.hide()
         }
