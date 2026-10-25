@@ -66,7 +66,7 @@ public protocol JapaneseConverting: AnyObject {
     /// 候補の窓に並べる変換結果。評価値の高い順で、重複は除く。件数は変換エンジンが決める。context に afterCaret は渡さず、convert が返した context を渡す
     func alternatives(kana: String, context: JapaneseContext) -> [String]
     /// 区切りが決まった区間を表示するための変換。採点のように何百回も呼ばないので、重くて質の高い変換を使ってよい。
-    /// left は入力の中でこの区間より前に表示している文字列。context は afterCaret を渡さず、convert が返した context を渡す。
+    /// left は入力欄のカーソルより前の文字列に、入力の中でこの区間より前に表示している文字列をつないだもの。context は afterCaret を渡さず、convert が返した context を渡す。
     /// convert が変換を返すかなと文脈には、必ず変換を返す
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay?
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
@@ -224,7 +224,7 @@ final class AzooKeyConverter: JapaneseConverting {
         case .afterWord: prefix = left.isEmpty ? Self.standIn : nil
         case .afterCaret: preconditionFailure("afterCaret は convert で文頭か前の語に続く形に決めてから渡す")
         case .afterNumber(let digits):
-            // 数字は、未確定の文字列の中にあれば left の末尾にある。確定して入力欄に出ていれば、left は空になる
+            // 数字は、入力欄のカーソルより前にあっても未確定の文字列の中にあっても、left の末尾にある
             precondition(left.isEmpty || left.hasSuffix(digits), "数字に続く区間の左の文字列が、その数字で終わっていない: \(left) \(digits)")
             prefix = Prefix(input: digits, shown: digits)
             leftContext = String(left.dropLast(digits.count))

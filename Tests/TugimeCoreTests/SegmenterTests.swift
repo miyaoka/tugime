@@ -91,6 +91,26 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(output("~", leading: Segmenter.Leading("API")) == "~")
     }
 
+    /// 入力欄のカーソルより前は UTF-16 で上限まで読み、途中から読んだときは割れうる先頭の 1 文字を捨てる
+    @Test func readsTheTextBeforeTheCaretUpToTheLimit() {
+        func read(_ field: String) -> String {
+            Segmenter.Leading(field: field).text
+        }
+        #expect(read("横浜から奈良") == "横浜から奈良")
+        // 絵文字は UTF-16 で 2 単位なので、上限から 1 単位あふれると範囲の先頭が絵文字の途中に当たる
+        let emoji = String(repeating: "😀", count: Segmenter.Leading.maxLength / 2)
+        #expect(read(emoji + "y") == String(emoji.dropFirst()) + "y")
+        #expect(read("") == "")
+    }
+
+    /// 入力欄の数字に続けて打っても、数字とまとめて打ったときと同じく数字に続く形で区切る
+    @Test(arguments: [("3", "nin"), ("3", "kai"), ("1500", "ennharaimasu")])
+    func continuesConfirmedDigitsLikeTypedDigits(digits: String, input: String) {
+        let leading = Segmenter.Leading(digits)
+        #expect(segmenter.segment(input, leading: leading).map(\.kind) == segmenter.segment(digits + input).dropFirst().map(\.kind))
+        #expect(digits + output(input, leading: leading) == output(digits + input))
+    }
+
     @Test func symbolKeysAreSymbolsWhateverSurroundsThem() {
         #expect(output("[google]wokensaku") == "「google」を検索")
         #expect(output("google/apple") == "google・apple")
@@ -218,6 +238,13 @@ private final class RewritingConverter: JapaneseConverting {
         try Shared.segmenter.get().liveText("kawa") + "cwd"
     }
 
+    /// 入力欄のカーソルより前の文字列を、最初の区間の左の文脈にし、後ろの区間の左の文脈の前にも置く
+    @Test func liveTextPassesTheTextBeforeTheCaretToEverySpan() throws {
+        let left = try convertedLeft()
+        _ = segmenter.liveText(input, leading: Segmenter.Leading("奈良"))
+        #expect(recorder.lefts == ["奈良", "奈良" + left])
+    }
+
     @Test func liveTextPassesTheConvertedSpanToTheRight() throws {
         let left = try convertedLeft()
         #expect(segmenter.segment(input).map(\.kind) == [.japanese, .english, .japanese])
@@ -229,6 +256,8 @@ private final class RewritingConverter: JapaneseConverting {
         let left = try convertedLeft()
         _ = segmenter.clauses(input)
         #expect(recorder.lefts == ["", left])
+        _ = segmenter.clauses(input, leading: Segmenter.Leading("奈良"))
+        #expect(recorder.lefts.suffix(2) == ["奈良", "奈良" + left])
     }
 
     @Test func resizingRedisplaysTheLaterSpansWithTheNewLeft() {
@@ -237,6 +266,15 @@ private final class RewritingConverter: JapaneseConverting {
         let resized = segmenter.resize(clauses, at: 0, by: -1)
         #expect(readings(resized) == ["きょうはい", "い", "cwd", "で"])
         #expect(recorder.lefts.last == resized.dropLast().map(\.output).joined())
+    }
+
+    /// 伸縮した後の表示も、入力欄のカーソルより前の文字列に続けて変換する
+    @Test func resizingKeepsTheTextBeforeTheCaretInTheLeft() {
+        let leading = Segmenter.Leading("奈良")
+        let clauses = segmenter.clauses("kyouhaiicwdde", leading: leading)
+        let resized = segmenter.resize(clauses, at: 0, by: -1, leading: leading)
+        #expect(readings(resized) == ["きょうはい", "い", "cwd", "で"])
+        #expect(recorder.lefts.last == "奈良" + resized.dropLast().map(\.output).joined())
     }
 
     private func readings(_ clauses: [Clause]) -> [String] {

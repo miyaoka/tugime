@@ -65,11 +65,11 @@ final class TugimeInputController: IMKInputController {
     /// 打ち始めたときにカーソルの前にあったもの
     private var leading: Segmenter.Leading = .start
 
-    /// 入力欄のカーソルの直前の 1 文字を読む。読めなければ前に何も無いとする
+    /// 入力欄のカーソルより前の文字列を読む。カーソルの位置が分からなければ前に何も無いとする
     private static func leadingContext(of client: IMKTextInput) -> Segmenter.Leading {
         let selection = client.selectedRange()
-        guard selection.location != NSNotFound, selection.location > 0 else { return .start }
-        return Segmenter.Leading(client.attributedSubstring(from: NSRange(location: selection.location - 1, length: 1))?.string ?? "")
+        guard selection.location != NSNotFound else { return .start }
+        return Segmenter.Leading(caret: selection.location) { client.attributedSubstring(from: $0)?.string }
     }
 
     // MARK: InputMethodKit からの呼び出し

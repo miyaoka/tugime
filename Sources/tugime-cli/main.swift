@@ -36,7 +36,7 @@ while let option = args.first, ["--before", "--method"].contains(option) {
         exit(2)
     }
     if option == "--before" {
-        leading = Segmenter.Leading(args[1])
+        leading = Segmenter.Leading(field: args[1])
     } else {
         methodSpec = args[1]
     }
