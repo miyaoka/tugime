@@ -29,11 +29,6 @@ public struct JapaneseDisplay: Sendable, Equatable {
         self.text = text
         self.clauses = clauses
     }
-
-    /// text のかなが、変換した読みのかなと同じ順に並ぶか（ReadingAlignment で対応づくか）。漢字の中の読みは見ない
-    public var matchesReading: Bool {
-        ReadingAlignment(text: text, reading: clauses.map(\.reading).joined()) != nil
-    }
 }
 
 /// 変換結果の 1 文節

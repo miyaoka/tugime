@@ -9,8 +9,6 @@ final class UserDictionaryFile {
     let url: URL
     /// 最後に見たファイルの更新時刻。ファイルが無ければ内側が nil、まだ見ていなければ外側が nil
     private var seen: Date??
-    /// ファイルを読めなかった理由。読めた辞書に替えるか、ファイルを消すまで残る。残っている間も、前に読めた辞書で変換を続ける
-    private(set) var rejection: String?
 
     init(url: URL) {
         self.url = url
@@ -56,7 +54,8 @@ final class UserDictionaryFile {
         }
     }
 
-    /// 更新時刻が前に見たときと違えば読み直し、読めたら segmenter の利用者の語を置き換える。ファイルが無いのは語が無い状態で、誤りではない。
+    /// 更新時刻が前に見たときと違えば読み直し、読めたら segmenter の利用者の語を置き換える。読めなければ前に読めた辞書で変換を続ける。
+    /// ファイルが無いのは語が無い状態で、誤りではない。
     /// 置き換えると未確定の文字列が終わるので、未確定の文字列の外でだけ呼ぶ
     func refresh(into segmenter: Segmenter) {
         let modified: Date?
@@ -65,9 +64,8 @@ final class UserDictionaryFile {
         } catch CocoaError.fileReadNoSuchFile {
             modified = nil
         } catch {
-            // 次に更新時刻を読めたときは、前と同じ時刻でも読み直して、理由を決め直す
+            // 次に更新時刻を読めたときは、前と同じ時刻でも読み直す
             seen = nil
-            rejection = "tugime の辞書の更新時刻を読めない: \(error.localizedDescription)"
             return
         }
         guard seen != .some(modified) else { return }
@@ -77,16 +75,12 @@ final class UserDictionaryFile {
             let dictionary = try modified.map { _ in try UserDictionary(contents: String(contentsOf: url, encoding: .utf8)) } ?? .empty
             try segmenter.replaceUserDictionary(dictionary)
             seen = modified
-            rejection = nil
-        } catch let error as UserDictionary.ParseError {
+        } catch is UserDictionary.ParseError {
             seen = modified
-            rejection = error.description
         } catch let error as UserDictionary.ImportError {
             if case .unsupportedCharacter = error { seen = modified } else { seen = nil }
-            rejection = error.description
         } catch {
             seen = nil
-            rejection = "tugime の辞書を読めない: \(error.localizedDescription)"
         }
     }
 }

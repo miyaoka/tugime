@@ -196,34 +196,6 @@ private final class LeftRecorder: JapaneseConverting {
     }
 }
 
-/// 本物の変換器に処理を任せ、表示の変換の末尾に読みに無いかなを足して、読みと合わない表示にする
-private final class RewritingConverter: JapaneseConverting {
-    private let base: JapaneseConverting = Shared.converter
-
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { base.convert(kana: kana, context: context) }
-
-    func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
-
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
-        base.display(kana: kana, context: context, left: left).map { shown in
-            var clauses = shown.clauses
-            clauses[clauses.count - 1].text += "ゑ"
-            return JapaneseDisplay(text: shown.text + "ゑ", clauses: clauses)
-        }
-    }
-
-    func endComposition() { base.endComposition() }
-    func replaceUserWords(_ words: [UserWord]) throws { try base.replaceUserWords(words) }
-}
-
-/// 打っている途中の表示が、変換して見せた区間で読みと合わないかを返す
-@Suite struct LiveDisplayTests {
-    @Test func flagsAConvertedSpanThatDoesNotFollowTheReading() throws {
-        let segmenter = try Shared.make(RewritingConverter())
-        #expect(segmenter.liveDisplay("kawacwdkyouhaii").differsFromInput)
-    }
-}
-
 /// 後ろの区間の表示の変換に、前の区間の表示を左の文脈として渡す
 @Suite struct LeftContextTests {
     fileprivate let recorder = LeftRecorder()

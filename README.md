@@ -140,7 +140,7 @@ sake	鮭	ja
 ~/Library/Containers/io.github.miyaoka.inputmethod.tugime/Data/Library/Application Support/tugime/dictionary.tsv
 ```
 
-保存すると、次に打ち始めたときから効く。読めない行があると、打っている間、未確定の文字列の下にその行番号を出し、直すまで前に読めた辞書で変換する。
+保存すると、次に打ち始めたときから効く。読めない行があると、直すまで前に読めた辞書で変換する。
 
 ## 綴りの表
 

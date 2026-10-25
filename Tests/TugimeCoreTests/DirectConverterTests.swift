@@ -81,13 +81,12 @@ private final class FixedGenerator: DirectDisplayGenerating {
         converter = DirectConverter(scorer: scorer, generator: generator)
     }
 
-    /// 読みに対応づかない出力も差し替えず、全体を 1 文節にする。読みと合わない表示として扱う
+    /// 読みに対応づかない出力も差し替えず、全体を 1 文節にする
     @Test func keepsAnOutputThatDoesNotFollowTheReading() throws {
         generator.outputs["きょうはいいてんき"] = "今日はええ天気"
         let shown = try #require(converter.display(kana: "きょうはいいてんき", context: .start, left: ""))
         #expect(shown.text == "今日はええ天気")
         #expect(shown.clauses == [JapaneseClause(reading: "きょうはいいてんき", text: "今日はええ天気")])
-        #expect(!shown.matchesReading)
     }
 
     /// 採点が利用者の語を使った文節で、出力がその語を含まなければ、その文節だけを採点の表記にする。ほかの文節は出力のまま

@@ -136,30 +136,13 @@ public final class Segmenter {
         return digits.isEmpty ? .afterWord : .afterNumber(digits)
     }
 
-    /// liveDisplay の文字列
-    public func liveText(_ input: String, leading: Leading = .start) -> String {
-        liveDisplay(input, leading: leading).text
-    }
-
-    /// 打っている途中に見せる文字列と、それが打った読みと合わない変換を含むか
-    public struct LiveDisplay: Sendable, Equatable {
-        /// Enter で確定するのもこれ
-        public var text: String
-        /// 変換して見せた日本語区間のどれかが、読みと対応づかない（JapaneseDisplay.matchesReading が偽）
-        public var differsFromInput: Bool
-    }
-
-    /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま。
+    /// 打っている途中に見せる文字列。Enter で確定するのもこれ。日本語区間は変換し、英語区間は打ったまま。
     /// 前の文字列は、区切りの評価と、表示の変換の左の文脈に使う
-    public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
+    public func liveText(_ input: String, leading: Leading = .start) -> String {
         let segments = segment(input, leading: leading)
-        var differs = false
-        let text = zip(segments, displays(of: segments.map(ShownSpan.init), left: leading.text)).map { segment, display in
-            guard let display else { return segment.output }
-            if !display.matchesReading { differs = true }
-            return display.text
+        return zip(segments, displays(of: segments.map(ShownSpan.init), left: leading.text)).map { segment, display in
+            display?.text ?? segment.output
         }.joined()
-        return LiveDisplay(text: text, differsFromInput: differs)
     }
 
     /// 表示する 1 区間。日本語区間は表示の変換で表記を決め、それ以外は決まった文字列を表示する

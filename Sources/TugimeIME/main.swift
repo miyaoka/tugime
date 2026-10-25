@@ -78,8 +78,6 @@ let candidatePanel: IMKCandidates = {
     panel.setAttributes([IMKCandidatesSendServerKeyEventFirst: true])
     return panel
 }()
-// 未確定の文字列の下に出す知らせの窓もプロセスに 1 つ
-let compositionNotice = CompositionNotice()
 // 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる。利用者の辞書も読んでおく
 userDictionaryFile.refresh(into: sharedSegmenter)
 NSApplication.shared.run()

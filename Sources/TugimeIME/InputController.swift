@@ -410,21 +410,17 @@ final class TugimeInputController: IMKInputController {
 
     // MARK: 表示と確定
 
-    /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示し、それが打った読みと合わなければ知らせの窓に出す。
-    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。読み違いの警告は出さない。
-    /// 利用者の辞書を読めなければ、どちらの間も、直すまでその理由を同じ窓に並べて出す
+    /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示する。
+    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
-        var differs = false
         if let clauses {
             for (index, clause) in clauses.enumerated() {
                 let style = index == focus ? kTSMHiliteSelectedConvertedText : kTSMHiliteConvertedText
                 marked.append(styled(clause.output, style: style, at: marked.length))
             }
         } else {
-            let live = sharedSegmenter.liveDisplay(keys, leading: leading)
-            marked.append(styled(live.text, style: kTSMHiliteRawText, at: 0))
-            differs = live.differsFromInput
+            marked.append(styled(liveText, style: kTSMHiliteRawText, at: 0))
         }
         // カーソルは常に末尾に置く。ターミナル（xterm.js）はカーソルの位置を未確定の文字列の終わりとして読むので、途中に置くと確定する文字列が欠ける
         client.setMarkedText(
@@ -432,12 +428,6 @@ final class TugimeInputController: IMKInputController {
             selectionRange: NSRange(location: marked.length, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
-        let notices = [differs ? CompositionNotice.rewriteMessage : nil, userDictionaryFile.rejection].compactMap { $0 }
-        if notices.isEmpty {
-            compositionNotice.hide()
-        } else {
-            compositionNotice.show(notices.joined(separator: "／"), below: client)
-        }
     }
 
     /// 下線の種類と太さはクライアントが決めるので、文節の状態だけを IMK に渡して属性を受け取る
@@ -480,7 +470,6 @@ final class TugimeInputController: IMKInputController {
     /// 未確定の文字列を、表示しているとおりに確定する
     private func commit(_ client: IMKTextInput) {
         candidatePanel.hide()
-        compositionNotice.hide()
         guard !keys.isEmpty else { return }
         let text = clauses?.map(\.output).joined() ?? liveText
         client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
