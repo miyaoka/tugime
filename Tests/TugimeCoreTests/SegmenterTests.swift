@@ -82,11 +82,13 @@ private final class LeftRecorder: JapaneseConverting {
     }
 
     @Test func leadingPunctuationFollowsTheTextBeforeTheCaret() {
-        #expect(output(".", leading: .afterEnglish) == ".")
-        #expect(output(".", leading: .afterJapanese) == "。")
+        #expect(output(".", leading: Segmenter.Leading("API")) == ".")
+        #expect(output(".", leading: Segmenter.Leading("今日")) == "。")
         #expect(output(".", leading: .start) == "。")
-        #expect(output("~", leading: .afterJapanese) == "〜")
-        #expect(output("~", leading: .afterEnglish) == "~")
+        #expect(output(".", leading: Segmenter.Leading("Hello ")) == "。")
+        #expect(output(".", leading: Segmenter.Leading("Hello.")) == "。")
+        #expect(output("~", leading: Segmenter.Leading("今日")) == "〜")
+        #expect(output("~", leading: Segmenter.Leading("API")) == "~")
     }
 
     @Test func symbolKeysAreSymbolsWhateverSurroundsThem() {

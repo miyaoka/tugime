@@ -232,7 +232,7 @@ extension Segmenter {
         let rest = self.clauses(
             of: segment(
                 String(keys[end...]),
-                leading: fixed.kind == .japanese ? .afterJapanese : .afterEnglish,
+                after: fixed.kind == .japanese ? .afterJapanese : .afterEnglish,
                 context: context(after: resized, keys: keys[..<end], leading: leading)
             ),
             left: left + resized.output,
@@ -299,14 +299,14 @@ extension Segmenter {
     /// 文節を変換する文脈。英語の後は前の語に続く形（数字の後は助数詞）、日本語の後は前の文節に続く形、
     /// 句読点と記号の後は区切りの選択と同じ形
     private func context(after previous: Clause?, keys: ArraySlice<Character>, leading: Leading) -> JapaneseContext {
-        guard let previous else { return leading.japaneseContext }
+        guard let previous else { return leading.continuation.japaneseContext }
         switch previous.kind {
         case .english:
             return Self.context(after: keys)
         case .japanese:
             return .afterWord
         case .punctuation:
-            return Self.leading(after: previous.span.source).japaneseContext
+            return Self.continuation(after: previous.span.source).japaneseContext
         case .whole:
             preconditionFailure("全体の変換の文節は 1 つだけで、後ろに文節を持たない")
         }

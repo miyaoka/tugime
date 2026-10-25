@@ -2,7 +2,7 @@ import Foundation
 import TugimeCore
 
 let usage = """
-    使い方（先頭に次を付けられる。--after <english|japanese> はカーソルの前にその文字がある状態として変換する。
+    使い方（先頭に次を付けられる。--before <文字列> は入力欄のカーソルの前にその文字列がある状態として変換する。
     --method <方式> は変換の方式。\(ConversionMethod.forms)。既定は入力メソッドと同じ方式で、作業ディレクトリの .zenz/\(ConversionMethod.inputMethodModel) を読む。
     リポジトリの直下から実行し、モデルは scripts/fetch-genmai.sh で用意する。azooKey だけで変換するときは --method azookey。
     zenzai と direct は表示の変換にモデルを使う。zenzai は azooKey がモデルを動かし、direct は tugime が動かす。ほかのモデルは scripts/convert-hf-to-gguf.sh が出す。
@@ -27,21 +27,16 @@ func describe(_ segments: [Segment]) -> String {
     }.joined(separator: " ")
 }
 
-let leadings: [String: Segmenter.Leading] = ["english": .afterEnglish, "japanese": .afterJapanese]
 var args = Array(CommandLine.arguments.dropFirst())
 var leading = Segmenter.Leading.start
 var methodSpec = ConversionMethod.inputMethod(modelDirectory: URL(fileURLWithPath: ".zenz")).spec
-while let option = args.first, ["--after", "--method"].contains(option) {
+while let option = args.first, ["--before", "--method"].contains(option) {
     guard args.count >= 2 else {
         print(usage)
         exit(2)
     }
-    if option == "--after" {
-        guard let value = leadings[args[1]] else {
-            print(usage)
-            exit(2)
-        }
-        leading = value
+    if option == "--before" {
+        leading = Segmenter.Leading(args[1])
     } else {
         methodSpec = args[1]
     }
