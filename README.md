@@ -120,8 +120,8 @@ scripts/build-app.sh                    # dist/tugime Dev.app を組み立てて
 
 ```bash
 swift build --product tugime-cli
-model=$(scripts/fetch-genmai.sh)                                                  # 表示の変換のモデルを用意してパスを出す
-.build/debug/tugime-cli --method "direct:$model" nodewosakujosite,sitewokoukaisuru # 変換結果
+scripts/fetch-genmai.sh                                                           # 入力メソッドと同じモデルを .zenz/ に用意する
+.build/debug/tugime-cli nodewosakujosite,sitewokoukaisuru                         # 入力メソッドと同じ方式で変換した結果
 .build/debug/tugime-cli --explain sitewokoukaisuru                                # 区間と評価値（採点の変換）
 swift test
 bun scripts/make-readme-figures.ts                                                # README の図を tugime-cli の出力から作り直す（Chrome が要る）

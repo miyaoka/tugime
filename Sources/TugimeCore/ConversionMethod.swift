@@ -16,6 +16,14 @@ public enum ConversionMethod: Sendable, Hashable {
     /// 基準の方式。検証はどの対象の方式にも、これの出力を並べて残す
     public static let baseline = ConversionMethod.azooKey
 
+    /// 入力メソッドが表示の変換に使うモデルのファイル名
+    public static let inputMethodModel = "genmai-310M-q8_0.gguf"
+
+    /// 入力メソッドが使う方式。modelDirectory は inputMethodModel を置いたディレクトリ
+    public static func inputMethod(modelDirectory: URL) -> ConversionMethod {
+        .direct(weight: modelDirectory.appendingPathComponent(inputMethodModel))
+    }
+
     /// 方式が読むモデルのファイル。nil ならモデルを使わない方式。
     /// モデルを使う方式の出力が基準と全件で一致したら、モデルが効いていないとみなす
     public var weight: URL? {

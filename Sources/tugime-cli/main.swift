@@ -3,8 +3,10 @@ import TugimeCore
 
 let usage = """
     使い方（先頭に次を付けられる。--after <english|japanese> はカーソルの前にその文字がある状態として変換する。
-    --method <方式> は変換の方式。\(ConversionMethod.forms)（既定は azookey）。zenzai と direct は表示の変換にモデルを使う。zenzai は azooKey がモデルを動かし、direct は tugime が動かす。
-    入力メソッドと同じモデルは scripts/fetch-genmai.sh が、ほかのモデルは scripts/convert-hf-to-gguf.sh が出す）:
+    --method <方式> は変換の方式。\(ConversionMethod.forms)。既定は入力メソッドと同じ方式で、作業ディレクトリの .zenz/\(ConversionMethod.inputMethodModel) を読む。
+    リポジトリの直下から実行し、モデルは scripts/fetch-genmai.sh で用意する。azooKey だけで変換するときは --method azookey。
+    zenzai と direct は表示の変換にモデルを使う。zenzai は azooKey がモデルを動かし、direct は tugime が動かす。ほかのモデルは scripts/convert-hf-to-gguf.sh が出す。
+    --explain・--lattice・--span の出力の表記は、区切りを採点した azooKey の変換で、表示の変換ではない）:
       tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
@@ -28,7 +30,7 @@ func describe(_ segments: [Segment]) -> String {
 let leadings: [String: Segmenter.Leading] = ["english": .afterEnglish, "japanese": .afterJapanese]
 var args = Array(CommandLine.arguments.dropFirst())
 var leading = Segmenter.Leading.start
-var methodSpec = ConversionMethod.baseline.spec
+var methodSpec = ConversionMethod.inputMethod(modelDirectory: URL(fileURLWithPath: ".zenz")).spec
 while let option = args.first, ["--after", "--method"].contains(option) {
     guard args.count >= 2 else {
         print(usage)
@@ -45,11 +47,14 @@ while let option = args.first, ["--after", "--method"].contains(option) {
     }
     args.removeFirst(2)
 }
+// 使い方は方式を作らずに出す。既定の方式はモデルのファイルを要するので、モデルが無くても使い方を読めるようにする
+if args.first == nil || ["-h", "--help"].contains(args.first) {
+    print(usage)
+    exit(0)
+}
 do {
     let method = try ConversionMethod(spec: methodSpec)
     switch args.first {
-    case nil, "-h", "--help":
-        print(usage)
     case "--span":
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
