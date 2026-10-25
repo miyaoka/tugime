@@ -386,7 +386,7 @@ public final class Segmenter {
 
     /// 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
     /// 日本語として採れるなら英語にしない
-    private func prefersJapanese(_ source: String, readable: Bool) -> Bool {
+    func prefersJapanese(_ source: String, readable: Bool) -> Bool {
         table.isSingleKana(source) || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
     }
 
