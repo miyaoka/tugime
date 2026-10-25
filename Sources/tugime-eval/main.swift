@@ -13,7 +13,7 @@ let usage = """
       tugime-eval compare <記録.jsonl> <記録.jsonl>
           片方だけが正解した問題を 1 件 1 行で出す
       tugime-eval keystrokes --method <方式> --problems <dir> --out <最後の表示.tsv>
-          AJIMEE-Bench の文脈の無い文を 1 打鍵ずつ打ち、1 打鍵の時間・読み込み時間・最大常駐量を出す。
+          AJIMEE-Bench の文を、問題の文脈と、上限の長さまで文をつないだ文脈の後に 1 打鍵ずつ打ち、1 打鍵の時間・読み込み時間・最大常駐量を出す。
           --out には 打鍵列 と最後の表示 をタブ区切りで書く（tugime-cli --live の出力と同じ形）
     方式: \(ConversionMethod.forms)
     問題の dir は scripts/fetch-eval.sh が出す。入力メソッドと同じモデルは scripts/fetch-genmai.sh が、ほかのモデルは scripts/convert-hf-to-gguf.sh が出す

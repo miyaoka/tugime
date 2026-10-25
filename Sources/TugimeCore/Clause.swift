@@ -62,9 +62,9 @@ public struct ClauseSpan: Sendable, Equatable {
 
 extension Segmenter {
     /// 区切りを選び、日本語区間を文節に分けて、文節ごとに候補の一覧を付ける。
-    /// 日本語区間は、前の区間の表示を左の文脈にして表示の変換で文節に分ける
+    /// 日本語区間は、前の文字列と前の区間の表示を左の文脈にして表示の変換で文節に分ける
     public func clauses(_ input: String, leading: Leading = .start) -> [Clause] {
-        clauses(of: segment(input, leading: leading), left: "", firstIndex: 0)
+        clauses(of: segment(input, leading: leading), left: leading.text, firstIndex: 0)
     }
 
     /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る
@@ -85,6 +85,7 @@ extension Segmenter {
     /// （`unitEnd`、`unitStart`）、文節の打鍵を 1 区間として日英を判定して、後ろの打鍵は日英判定と変換をやり直す（`rebuild`）。
     /// 句読点と記号の文節は伸縮しない。全体を 1 つの文字種にした文節は、区切りから文節を作り直して最初の文節を伸縮する。
     /// 伸縮できなければ元のまま返す
+    /// leading は clauses より前にある、入力欄のカーソルより前の文字列
     public func resize(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading = .start) -> [Clause] {
         let clause = clauses[index]
         if clause.kind == .whole {
@@ -97,13 +98,13 @@ extension Segmenter {
         let keys = Array(spans.map(\.span.source).joined())
         guard let own = spans.first(where: { $0.span == clause.span }) else { return clauses }
         guard let range = keyRange(of: clauses, at: index, from: own.start) else {
-            return resizeInsideSpan(clauses, at: index, by: delta) ?? clauses
+            return resizeInsideSpan(clauses, at: index, by: delta, leading: leading) ?? clauses
         }
         if clause.kind == .japanese, !clause.span.resized {
             let length = clause.reading.count + delta
             guard length >= 1 else { return clauses }
             if kanaStart(of: clauses, at: index) + length <= clause.span.reading.count {
-                return resizeInsideSpan(clauses, at: index, by: delta) ?? clauses
+                return resizeInsideSpan(clauses, at: index, by: delta, leading: leading) ?? clauses
             }
         }
         var end = range.upperBound
@@ -148,7 +149,7 @@ extension Segmenter {
     /// 日本語の文節を、区間の読みのかなの上で 1 かなずつ伸縮する。区間の外へは伸ばさず、1 かなより短くしない。
     /// 伸縮した文節の後ろにある同じ区間の残りは、日本語のまま文節に分け直して変換する。後ろの区間は、伸縮した区間の表示を左の文脈にして
     /// 表示の変換をし直す。伸縮できなければ nil
-    private func resizeInsideSpan(_ clauses: [Clause], at index: Int, by delta: Int) -> [Clause]? {
+    private func resizeInsideSpan(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading) -> [Clause]? {
         let clause = clauses[index]
         guard clause.kind == .japanese else { return nil }
         let span = clause.span
@@ -159,7 +160,7 @@ extension Segmenter {
 
         let reading = String(span.reading.dropFirst(start).prefix(length))
         let context = start == 0 ? span.context : .afterWord
-        let left = clauses[..<index].map(\.output).joined()
+        let left = leading.text + clauses[..<index].map(\.output).joined()
         let resized = Clause(
             kind: .japanese,
             reading: reading,
@@ -196,7 +197,7 @@ extension Segmenter {
         for i in before.indices where before[i].span == clause.span {
             before[i].span = head
         }
-        let left = before.map(\.output).joined()
+        let left = leading.text + before.map(\.output).joined()
         let fixed = singleSpan(String(keys[range.lowerBound..<end]), context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading))
         let span: ClauseSpan
         if let (segmented, count) = segmentedSpan(fixed, before: before, start: range.lowerBound, end: end, keys: keys, leading: leading) {
@@ -299,7 +300,7 @@ extension Segmenter {
     /// 文節を変換する文脈。英語の後は前の語に続く形（数字の後は助数詞）、日本語の後は前の文節に続く形、
     /// 句読点と記号の後は区切りの選択と同じ形
     private func context(after previous: Clause?, keys: ArraySlice<Character>, leading: Leading) -> JapaneseContext {
-        guard let previous else { return leading.continuation.japaneseContext }
+        guard let previous else { return leading.japaneseContext }
         switch previous.kind {
         case .english:
             return Self.context(after: keys)

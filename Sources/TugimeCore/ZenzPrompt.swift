@@ -16,8 +16,8 @@ enum ZenzPrompt {
     static let outputMargin = 8
     private static let chunkEnds: Set<Unicode.Scalar> = ["、", "。", "，", "．", "！", "？", "!", "?"]
 
-    /// 左の文脈。left が空でなければ left。left が空で数字に続くなら、その数字（入力欄に確定済みの数字で、未確定の文字列の中に無いとき）。
-    /// それ以外は空。afterWord で left が空なのは、前の語が未確定の文字列の外にあるとき（入力欄に確定済みの英語、またはカーソルの前の文字）で、
+    /// 左の文脈。left が空でなければ left。left が空で数字に続くなら、その数字。
+    /// それ以外は空。afterWord で left が空なのは、前の語がある入力欄のカーソルより前の文字列を読めなかったときで、
     /// その語を tugime は知らないので、仮の語を置かずに文脈なしで変換する
     static func leftContext(context: JapaneseContext, left: String) -> String {
         guard left.isEmpty else { return left }

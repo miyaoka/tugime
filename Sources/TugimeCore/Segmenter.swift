@@ -61,8 +61,38 @@ public final class Segmenter {
         /// 前に何も無い
         public static let start = Leading("")
 
+        /// 入力欄から読む、カーソルより前の文字列の長さの上限（UTF-16 の単位）。表示の変換が左の文脈に使う長さ（ZenzPrompt.maxContextLength）を超えない。
+        /// 未確定の文字列の最初の表示の変換は左の文脈をすべてモデルに通すので、長くするほど打ち始めの打鍵が遅くなる
+        public static let maxLength = 200
+
+        /// 入力欄のカーソルより前の文字列を、UTF-16 で maxLength 単位まで読む。caret はカーソルの UTF-16 の位置、
+        /// substring は入力欄の UTF-16 の範囲の文字列を返すもので、読めなければ nil を返す。読めなければ前に何も無いとする。
+        /// 途中から読んだときは、範囲の先頭がサロゲートペアや結合文字の途中に当たりうるので、先頭の 1 文字を捨てる
+        public init(caret: Int, substring: (NSRange) -> String?) {
+            let length = min(caret, Self.maxLength)
+            guard length > 0, let text = substring(NSRange(location: caret - length, length: length)) else {
+                self = .start
+                return
+            }
+            self.init(length < caret ? String(text.dropFirst()) : text)
+        }
+
+        /// 入力欄の文字列が field で、カーソルがその末尾にあるとき。入力メソッドと同じく init(caret:substring:) で読む
+        public init(field: String) {
+            let text = field as NSString
+            self.init(caret: text.length) { text.substring(with: $0) }
+        }
+
         /// 入力が前の文字列のどこに続くか
         var continuation: Continuation { Continuation(after: text.last) }
+
+        /// 入力の最初の日本語区間の評価のしかた。前の文字列が数字で終わるなら、未確定の文字列の中の数字の後と同じく、その数字に続く形にする。
+        /// 確定してから続きを打っても、まとめて打ったときと同じ評価になる
+        var japaneseContext: JapaneseContext {
+            let afterText = Segmenter.context(after: text)
+            if case .afterNumber = afterText { return afterText }
+            return continuation.japaneseContext
+        }
     }
 
     /// 入力が前の文字列のどこに続くか
@@ -106,11 +136,12 @@ public final class Segmenter {
         public var differsFromInput: Bool
     }
 
-    /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま
+    /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま。
+    /// 前の文字列は、区切りの評価と、表示の変換の左の文脈に使う
     public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
         let segments = segment(input, leading: leading)
         var differs = false
-        let text = zip(segments, displays(of: segments.map(ShownSpan.init))).map { segment, display in
+        let text = zip(segments, displays(of: segments.map(ShownSpan.init), left: leading.text)).map { segment, display in
             guard let display else { return segment.output }
             if !display.matchesReading { differs = true }
             return display.text
@@ -131,7 +162,7 @@ public final class Segmenter {
     /// 区間を前から順に表示の変換にする。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
     /// 返す配列は spans と同じ順で、日本語区間の要素だけが表示の変換を持つ。
     /// 日本語区間は採点の変換があるときだけ選ばれ、表示の変換は採点の変換があれば必ず返すので、日本語区間の表示の変換は必ずある
-    func displays(of spans: [ShownSpan], left: String = "") -> [JapaneseDisplay?] {
+    func displays(of spans: [ShownSpan], left: String) -> [JapaneseDisplay?] {
         var shown = left
         return spans.map { span in
             switch span {
@@ -195,13 +226,13 @@ public final class Segmenter {
     /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
     /// 日本語の記号の位置で入力を切る。句読点の後は文頭として、記号の打鍵の後は文の途中かもしれないものとして次の部分を評価する
     public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
-        segment(input, after: leading.continuation, context: leading.continuation.japaneseContext)
+        segment(input, after: leading.continuation, context: leading.japaneseContext)
     }
 
     /// 区切りを決めた部分の採点で比べた区間の候補を返す。句読点の前で英語に続くと分かって採点し直す部分の候補は含めない。診断用
     public func candidates(_ input: String, leading: Leading = .start) -> [ScoredSpan] {
         var spans: [ScoredSpan] = []
-        _ = segment(input, after: leading.continuation, context: leading.continuation.japaneseContext) { spans.append($0) }
+        _ = segment(input, after: leading.continuation, context: leading.japaneseContext) { spans.append($0) }
         return spans
     }
 
