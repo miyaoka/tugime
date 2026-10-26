@@ -85,6 +85,9 @@ jobs:
 
       - uses: $/.github/actions/setup-environment
 
+      - name: Install dependencies
+        run: bun install --cwd scripts --frozen-lockfile
+
       - name: Typecheck
         run: bun run --cwd scripts typecheck
 

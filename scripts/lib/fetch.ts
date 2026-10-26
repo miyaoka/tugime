@@ -3,7 +3,9 @@ import { $ } from "bun";
 import { mkdir, rename } from "node:fs/promises";
 import { dirname } from "node:path";
 
-/// 1 ファイルの取得にかけてよい秒数（curl の --max-time）
+/// 止まったとみなして打ち切るまでの秒数（curl の --speed-time。この間 1 B/s を下回れば打ち切る）
+const STALL_SECONDS = 30;
+/// 1 回の転送の上限（curl の --max-time）。最初の転送から、再試行を始めてよい期間（curl の --retry-max-time）にも使う
 const MAX_TIME_SECONDS = 600;
 /// 一時的な失敗のときに取り直す回数（curl の --retry）
 const RETRIES = 3;
@@ -25,7 +27,7 @@ export async function fetchPinned(files: Pinned[]) {
     await mkdir(dirname(path), { recursive: true });
     console.error(`== 取得 ${url}`);
     const part = `${path}.part`;
-    await $`curl -fL --retry ${RETRIES} --max-time ${MAX_TIME_SECONDS} -o ${part} ${url}`;
+    await $`curl -fL --retry ${RETRIES} --retry-max-time ${MAX_TIME_SECONDS} --max-time ${MAX_TIME_SECONDS} --speed-time ${STALL_SECONDS} -o ${part} ${url}`;
     const actual = await sha256Of(part);
     if (actual !== sha256)
       throw new Error(`${url} の SHA-256 が ${sha256} でなく ${actual}`);

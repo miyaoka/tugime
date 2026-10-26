@@ -48,13 +48,13 @@ export type Fonts = { bold: opentype.Font; regular: opentype.Font };
 /// 表示の変換のモデルとフォントを用意し、tugime-cli を組み立てる
 export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
   const model = await step("表示の変換のモデルの用意", genmai);
-  const fontDir = await step("フォントの用意", fetchFonts);
+  const fontPaths = await step("フォントの用意", fetchFonts);
   await step("tugime-cli の組み立て", () =>
     run(["swift", "build", "-c", "release", "--product", "tugime-cli"]),
   );
   const fonts = {
-    bold: opentype.loadSync(join(fontDir, "LINESeedJP-Bold.ttf")),
-    regular: opentype.loadSync(join(fontDir, "LINESeedJP-Regular.ttf")),
+    bold: opentype.loadSync(fontPaths.bold),
+    regular: opentype.loadSync(fontPaths.regular),
   };
   return { model, fonts };
 }
