@@ -12,9 +12,8 @@ import llama
 /// まとめて decode した位置と 1 つずつ decode した位置では浮動小数の丸めが違うので、argmax が並ぶ所では、
 /// 同じ入力でもそれまでの打鍵によって出力が変わることがある
 final class ZenzGenerator: DirectDisplayGenerating {
-    /// KV キャッシュの型。単精度より軽い型で出力が変わらないことを tugime-eval で確かめたモデルだけを、GGUF の general.name で書く
-    private static let kvTypes: [String: ggml_type] = ["Genmai 310M": GGML_TYPE_BF16]
-    private static let defaultKVType = GGML_TYPE_F32
+    /// KV キャッシュの型。genmai-310M の元のモデルの型（単精度）に合わせる。F16 は genmai-310M で桁があふれ、BF16 は丸めで出力が変わる
+    private static let kvType = GGML_TYPE_F32
     /// モデルの全層を GPU に載せる。llama.cpp はモデルの層数を超える値を全層として扱う
     private static let allLayersOnGPU: Int32 = 999
     /// 文字にするときに最初に用意する、1 トークンあたりのバイト数。足りなければ llama.cpp が要る大きさを返す
@@ -22,9 +21,9 @@ final class ZenzGenerator: DirectDisplayGenerating {
 
     private static let backend: Void = llama_backend_init()
 
-    private let model: OpaquePointer
+    private let resources: LlamaResources
+    private var context: OpaquePointer { resources.context }
     private let vocab: OpaquePointer
-    private let context: OpaquePointer
     private var batch: llama_batch
     private let bos: llama_token
     private let eos: llama_token
@@ -44,24 +43,19 @@ final class ZenzGenerator: DirectDisplayGenerating {
         var modelParams = llama_model_default_params()
         modelParams.n_gpu_layers = Self.allLayersOnGPU
         guard let model = llama_model_load_from_file(weight.path, modelParams) else { fatalError("モデルを読めない: \(weight.path)") }
-        self.model = model
         vocab = llama_model_get_vocab(model)!
         maxPositions = Int(llama_model_n_ctx_train(model))
-        var nameBuffer = [CChar](repeating: 0, count: 256)
-        let name = llama_model_meta_val_str(model, "general.name", &nameBuffer, nameBuffer.count) >= 0
-            ? String(decoding: nameBuffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
-            : ""
-        let kvType = Self.kvTypes[name] ?? Self.defaultKVType
         var contextParams = llama_context_default_params()
         contextParams.n_ctx = UInt32(maxPositions)
         contextParams.n_batch = UInt32(maxPositions)
-        contextParams.type_k = kvType
-        contextParams.type_v = kvType
+        contextParams.type_k = Self.kvType
+        contextParams.type_v = Self.kvType
         contextParams.no_perf = true
-        // genmai-310M は半精度の KV キャッシュで flash attention を使うと logits が有限でなくなる。使わなければ半精度でも壊れない
-        contextParams.flash_attn = false
+        // flash attention は、genmai-310M の単精度の KV キャッシュでは出力を変えずに 1 打鍵の表示を遅くする
+        contextParams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED
         guard let context = llama_init_from_model(model, contextParams) else { fatalError("llama.cpp のコンテキストを作れない: \(weight.path)") }
-        self.context = context
+        resources = LlamaResources(model: model, context: context)
+        LiveLlamaResources.add(resources)
         batch = llama_batch_init(Int32(maxPositions), 0, 1)
         bos = llama_vocab_bos(vocab)
         eos = llama_vocab_eos(vocab)
@@ -70,8 +64,8 @@ final class ZenzGenerator: DirectDisplayGenerating {
 
     deinit {
         llama_batch_free(batch)
-        llama_free(context)
-        llama_model_free(model)
+        LiveLlamaResources.remove(resources)
+        resources.release()
     }
 
     func generate(left: String, kana: String) -> String {
@@ -141,7 +135,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
 
     private func truncate(_ count: Int) {
         guard resident.count > count else { return }
-        guard llama_kv_cache_seq_rm(context, 0, Int32(count), -1) else { fatalError("KV キャッシュを消せない") }
+        guard llama_memory_seq_rm(llama_get_memory(context), 0, Int32(count), -1) else { fatalError("KV キャッシュを消せない") }
         resident.removeLast(resident.count - count)
         next.removeLast(next.count - count)
     }
@@ -198,5 +192,49 @@ final class ZenzGenerator: DirectDisplayGenerating {
         }
         guard count >= 0 else { fatalError("トークンを文字にする領域が足りない: \(tokens)") }
         return String(decoding: buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+}
+
+/// llama.cpp のモデルとコンテキスト。Metal の GPU の資源を持つ。解放は 1 回だけ行う
+private final class LlamaResources: @unchecked Sendable {
+    let model: OpaquePointer
+    let context: OpaquePointer
+    private var released = false
+
+    init(model: OpaquePointer, context: OpaquePointer) {
+        self.model = model
+        self.context = context
+    }
+
+    func release() {
+        guard !released else { return }
+        released = true
+        llama_free(context)
+        llama_model_free(model)
+    }
+}
+
+/// 解放されていない llama.cpp の資源。llama.cpp の Metal は、GPU の資源を残したままプロセスが終わると
+/// ggml_metal_rsets_free の検査で止まる。入力メソッドは生成器をグローバルに持ち、解放しないまま終わるので、終わるときに残りを解放する
+private enum LiveLlamaResources {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var live: [ObjectIdentifier: LlamaResources] = [:]
+    /// 最初の資源を足すとき（Metal を初期化した後）に登録する。atexit の関数と C++ の静的な後片付けは登録の逆順に走るので、Metal の後片付けより先に走る
+    private static let releaseAtExit: Void = { atexit { LiveLlamaResources.releaseAll() } }()
+
+    static func add(_ resources: LlamaResources) {
+        _ = releaseAtExit
+        lock.withLock { live[ObjectIdentifier(resources)] = resources }
+    }
+
+    static func remove(_ resources: LlamaResources) {
+        _ = lock.withLock { live.removeValue(forKey: ObjectIdentifier(resources)) }
+    }
+
+    private static func releaseAll() {
+        lock.withLock {
+            live.values.forEach { $0.release() }
+            live = [:]
+        }
     }
 }

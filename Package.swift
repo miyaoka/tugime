@@ -11,11 +11,11 @@ let package = Package(
         .executable(name: "tugime", targets: ["TugimeIME"]),
     ],
     targets: [
-        // 表示の変換のモデルを動かす llama.cpp。azooKey/llama.cpp の b4846 のビルド済みフレームワーク
+        // 表示の変換のモデルを動かす llama.cpp
         .binaryTarget(
             name: "llama",
-            url: "https://github.com/azooKey/llama.cpp/releases/download/b4846/signed-llama.xcframework.zip",
-            checksum: "db3b13169df8870375f212e6ac21194225f1c85f7911d595ab64c8c790068e0a"
+            url: "https://github.com/ggml-org/llama.cpp/releases/download/b11899/llama-b11899-xcframework.zip",
+            checksum: "500a6b8953d10542514daccccd8261e4522e3275692984aa53a380475ee0e625"
         ),
         .target(name: "SystemDictionaryLayout"),
         // システム辞書を組み立てる道具。scripts/fetch-dictionary.ts が呼ぶ

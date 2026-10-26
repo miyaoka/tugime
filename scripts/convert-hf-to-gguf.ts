@@ -22,11 +22,18 @@ const uvRun = [
   join(root, "scripts/convert-env"),
   "--locked",
 ];
-// azooKey の llama.cpp のフォークで、tugime が binaryTarget に載せる llama.cpp と同じ版。前処理の名前の表がこの版のもの
-const LLAMA_REPO = "https://github.com/azooKey/llama.cpp";
-const LLAMA_COMMIT = "10131b23ee0dbd9d03dfc618cec9fe3402919277"; // タグ b4846
-// zenz 形式のモデルの前処理の名前。convert_hf_to_gguf.py がトークナイザーから判別した結果がこれでなければ止める
-const PRE_TOKENIZER = "gpt2-small-japanese-char";
+// tugime が binaryTarget に載せる llama.cpp と同じ版
+const LLAMA_REPO = "https://github.com/ggml-org/llama.cpp";
+const LLAMA_COMMIT = "c6fb3b5be2209f6c12339833198190f6f6829581"; // タグ b11899
+// 変換はトークナイザーで決まった文字列を区切った結果のハッシュから前処理の名前を決め、表に無いハッシュでは止まる。
+// zenz 形式のモデルのトークナイザーは表に無いので、同じ正規表現で前処理する gpt-2 として表に足す。
+// 足し方は convert_hf_to_gguf_update.py が表を生成する形と同じ
+const ZENZ_TOKENIZER_HASH =
+  "acded0362f57dcca1fbdada8d4c87dd782c798cb4c510a70f12a9de6aea57857";
+const PRE_TOKENIZER = "gpt-2";
+// 表の終わり。ここの直前に足す
+const TABLE_END = "\n        if res is None:\n";
+const CONVERTER = "conversion/base.py";
 // 設定とトークナイザーのファイル（リポジトリの直下のもの）。トークナイザーの形（tokenizer.json か vocab.json と merges.txt か）は
 // モデルごとに違うので、在るものを全部取る
 const META_FILES = [
@@ -115,6 +122,19 @@ if (head.exitCode !== 0 || head.text().trim() !== LLAMA_COMMIT) {
   await $`git -C ${llama} fetch -q --depth 1 ${LLAMA_REPO} ${LLAMA_COMMIT}`;
   await $`git -C ${llama} checkout -q FETCH_HEAD`;
 }
+// 前回足した表の行を消してから足し直す
+await $`git -C ${llama} checkout -q -- ${CONVERTER}`;
+const converter = join(llama, CONVERTER);
+const source = await Bun.file(converter).text();
+if (source.split(TABLE_END).length !== 2)
+  throw new Error(`${converter} に前処理の表の終わりが 1 つだけあるのではない`);
+await Bun.write(
+  converter,
+  source.replace(
+    TABLE_END,
+    `\n        if chkhsh == "${ZENZ_TOKENIZER_HASH}":\n            res = "${PRE_TOKENIZER}"${TABLE_END}`,
+  ),
+);
 
 const out = join(root, ".zenz", `${name}.gguf`);
 await mkdir(join(root, ".zenz"), { recursive: true });
