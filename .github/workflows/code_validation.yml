@@ -80,7 +80,7 @@ jobs:
           persist-credentials: false
           show-progress: false
 
-      - uses: ./.github/actions/setup-environment
+      - uses: $/.github/actions/setup-environment
 
       - name: Typecheck
         run: bun run --cwd scripts typecheck
