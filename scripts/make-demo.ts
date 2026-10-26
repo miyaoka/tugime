@@ -1,7 +1,18 @@
 // README の冒頭のデモを作る。docs/images/demo.svg は打鍵列を 1 打鍵ずつ tugime-cli に渡した表示を順に見せるアニメーション、
 // docs/images/demo-compare.svg は同じ打鍵列をほかの方式で打った結果と並べた静止画。
 // 使い方: bun install --cwd scripts && bun scripts/make-demo.ts
-import { Glyphs, assertAlt, cli, kindOf, prepare, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
+import {
+  Glyphs,
+  assertAlt,
+  cli,
+  kindOf,
+  prepare,
+  readLive,
+  run,
+  step,
+  svgDocument,
+  writeImage,
+} from "./lib/svg";
 
 const SOURCE = "scripts/make-demo.ts";
 
@@ -10,7 +21,8 @@ const input = "slackdetodoitazipwokaitousitara,logniijougaatta.";
 /// 最後まで打ったときに tugime が表示するはずの文
 const expected = "slackで届いたzipを解凍したら、logに異常があった。";
 /// 人間が macOS 27 の日本語入力（ライブ変換）で input を打って確定した文。CLI では再現できないので、打って確かめた値を書く
-const liveConversionResult = "sぁckで届いた自pを解凍したら、ぉgに異常があった。";
+const liveConversionResult =
+  "sぁckで届いた自pを解凍したら、ぉgに異常があった。";
 
 const KEY_INTERVAL = 0.14;
 /// 打ち終えた文を見せておく秒数
@@ -27,10 +39,15 @@ const COMPARE_SIZE = 22;
 function wrongPositions(other: string, right: string): Set<number> {
   const a = [...other];
   const b = [...right];
-  const lcs = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  const lcs = Array.from({ length: a.length + 1 }, () =>
+    new Array<number>(b.length + 1).fill(0),
+  );
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {
-      lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+      lcs[i][j] =
+        a[i] === b[j]
+          ? lcs[i + 1][j + 1] + 1
+          : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
     }
   }
   const wrong = new Set<number>();
@@ -47,22 +64,46 @@ function wrongPositions(other: string, right: string): Set<number> {
 }
 
 /// 時刻 start から end（秒、end が無ければ最後まで）だけ見せる。全体は total 秒で繰り返す
-function visible(start: number, end: number | undefined, total: number): string {
+function visible(
+  start: number,
+  end: number | undefined,
+  total: number,
+): string {
   const t = (s: number) => (s / total).toFixed(4);
   const values = end === undefined ? "0;1;1" : "0;1;0;0";
-  const keyTimes = end === undefined ? `0;${t(start)};1` : `0;${t(start)};${t(end)};1`;
+  const keyTimes =
+    end === undefined ? `0;${t(start)};1` : `0;${t(start)};${t(end)};1`;
   return `<animate attributeName="opacity" calcMode="discrete" values="${values}" keyTimes="${keyTimes}" dur="${total}s" repeatCount="indefinite"/>`;
 }
 
 const { model, fonts } = await prepare();
 const prefixes = [...input].map((_, i) => input.slice(0, i + 1));
-const frames = await step("1 打鍵ごとの表示", async () => readLive(await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]), prefixes));
+const frames = await step("1 打鍵ごとの表示", async () =>
+  readLive(
+    await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]),
+    prefixes,
+  ),
+);
 const final = frames[frames.length - 1];
-if (final !== expected) throw new Error(`最後まで打ったときの表示 ${final} が期待する文 ${expected} と違う`);
-const [dictionaryResult] = await step("英語を見分けて辞書と統計で変換", async () => readLive(await run([cli, "--method", "azookey", "--live", input]), [input]));
-if (dictionaryResult === expected) throw new Error(`英語を見分けて辞書と統計で変換しても ${expected} になり、比べる意味が無い`);
+if (final !== expected)
+  throw new Error(
+    `最後まで打ったときの表示 ${final} が期待する文 ${expected} と違う`,
+  );
+const [dictionaryResult] = await step(
+  "英語を見分けて辞書と統計で変換",
+  async () =>
+    readLive(await run([cli, "--method", "azookey", "--live", input]), [input]),
+);
+if (dictionaryResult === expected)
+  throw new Error(
+    `英語を見分けて辞書と統計で変換しても ${expected} になり、比べる意味が無い`,
+  );
 await assertAlt("README.md", "demo.svg", [input, expected]);
-await assertAlt("README.md", "demo-compare.svg", [expected, liveConversionResult, dictionaryResult]);
+await assertAlt("README.md", "demo-compare.svg", [
+  expected,
+  liveConversionResult,
+  dictionaryResult,
+]);
 
 // アニメーション: 打鍵列と、1 打鍵ごとの tugime の表示
 {
@@ -71,7 +112,12 @@ await assertAlt("README.md", "demo-compare.svg", [expected, liveConversionResult
   const keysY = 82;
   const shownY = 150;
   // 打ち終えたときの打鍵列の幅を、表示の文の幅にそろえる。字の大きさは全コマで同じにする
-  const keysSize = g.sizeFor(input, "bold", g.width(expected, "bold", SHOWN_SIZE), KEYS_TRACKING);
+  const keysSize = g.sizeFor(
+    input,
+    "bold",
+    g.width(expected, "bold", SHOWN_SIZE),
+    KEYS_TRACKING,
+  );
   const frameXml = frames
     .map((shown, i) => {
       const start = i * KEY_INTERVAL;
@@ -82,7 +128,10 @@ await assertAlt("README.md", "demo-compare.svg", [expected, liveConversionResult
     .join("");
   const title = g.draw("tugime", "bold", LEFT, 36, LABEL_SIZE, "sub");
   const label = `${input} を 1 打鍵ずつ打つと、tugime は打つそばから変換して ${expected} と表示する`;
-  await writeImage("demo.svg", svgDocument(SOURCE, WIDTH, 190, label, g, title + frameXml));
+  await writeImage(
+    "demo.svg",
+    svgDocument(SOURCE, WIDTH, 190, label, g, title + frameXml),
+  );
 }
 
 // 静止画: 同じ打鍵列を打った最終結果を方式ごとに並べ、tugime の結果と違う文字を強調する
@@ -94,17 +143,46 @@ await assertAlt("README.md", "demo-compare.svg", [expected, liveConversionResult
   };
   const rows: [string, string, ReturnType<typeof marked> | typeof kindOf][] = [
     ["tugime", expected, kindOf],
-    ["日本語モードのライブ変換", liveConversionResult, marked(liveConversionResult)],
-    ["英語を見分けて辞書と統計で変換", dictionaryResult, marked(dictionaryResult)],
+    [
+      "日本語モードのライブ変換",
+      liveConversionResult,
+      marked(liveConversionResult),
+    ],
+    [
+      "英語を見分けて辞書と統計で変換",
+      dictionaryResult,
+      marked(dictionaryResult),
+    ],
   ];
   const keysY = 40;
   const top = 92;
   const rowGap = 74;
-  const keysSize = g.sizeFor(input, "bold", g.width(expected, "bold", COMPARE_SIZE), KEYS_TRACKING);
+  const keysSize = g.sizeFor(
+    input,
+    "bold",
+    g.width(expected, "bold", COMPARE_SIZE),
+    KEYS_TRACKING,
+  );
   const body =
     g.draw(input, "bold", LEFT, keysY, keysSize, "key", KEYS_TRACKING) +
-    rows.map(([name, text, paint], row) => g.draw(name, "bold", LEFT, top + row * rowGap, LABEL_SIZE, "sub") + g.draw(text, "bold", LEFT, top + row * rowGap + 32, COMPARE_SIZE, paint)).join("");
+    rows
+      .map(
+        ([name, text, paint], row) =>
+          g.draw(name, "bold", LEFT, top + row * rowGap, LABEL_SIZE, "sub") +
+          g.draw(
+            text,
+            "bold",
+            LEFT,
+            top + row * rowGap + 32,
+            COMPARE_SIZE,
+            paint,
+          ),
+      )
+      .join("");
   const height = top + (rows.length - 1) * rowGap + 32 + 30;
   const label = `${input} と打った結果。tugime は ${expected}、日本語モードのライブ変換は ${liveConversionResult}、英語を見分けて辞書と統計で変換すると ${dictionaryResult}`;
-  await writeImage("demo-compare.svg", svgDocument(SOURCE, WIDTH, height, label, g, body));
+  await writeImage(
+    "demo-compare.svg",
+    svgDocument(SOURCE, WIDTH, height, label, g, body),
+  );
 }

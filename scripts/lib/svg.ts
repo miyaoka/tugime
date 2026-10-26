@@ -12,16 +12,29 @@ const started = Date.now();
 export const elapsed = () => `${((Date.now() - started) / 1000).toFixed(1)}秒`;
 
 export async function run(command: string[]): Promise<string> {
-  const proc = Bun.spawn(command, { cwd: root, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(command, {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const timer = setTimeout(() => proc.kill(), COMMAND_TIMEOUT_MS);
-  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
   const code = await proc.exited;
   clearTimeout(timer);
-  if (code !== 0) throw new Error(`失敗 (${code}): ${command.join(" ")}\n${stderr.slice(-2000)}`);
+  if (code !== 0)
+    throw new Error(
+      `失敗 (${code}): ${command.join(" ")}\n${stderr.slice(-2000)}`,
+    );
   return stdout;
 }
 
-export async function step<T>(name: string, task: () => Promise<T>): Promise<T> {
+export async function step<T>(
+  name: string,
+  task: () => Promise<T>,
+): Promise<T> {
   console.error(`${name} 開始 ${elapsed()}`);
   const result = await task();
   console.error(`${name} 完了 ${elapsed()}`);
@@ -37,9 +50,15 @@ export type Fonts = { bold: opentype.Font; regular: opentype.Font };
 
 /// 表示の変換のモデルとフォントを用意し、tugime-cli を組み立てる
 export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
-  const model = await step("表示の変換のモデルの用意", () => pathFrom("fetch-genmai.sh"));
-  const fontDir = await step("フォントの用意", () => pathFrom("fetch-fonts.sh"));
-  await step("tugime-cli の組み立て", () => run(["swift", "build", "-c", "release", "--product", "tugime-cli"]));
+  const model = await step("表示の変換のモデルの用意", () =>
+    pathFrom("fetch-genmai.sh"),
+  );
+  const fontDir = await step("フォントの用意", () =>
+    pathFrom("fetch-fonts.sh"),
+  );
+  await step("tugime-cli の組み立て", () =>
+    run(["swift", "build", "-c", "release", "--product", "tugime-cli"]),
+  );
   const fonts = {
     bold: opentype.loadSync(join(fontDir, "LINESeedJP-Bold.ttf")),
     regular: opentype.loadSync(join(fontDir, "LINESeedJP-Regular.ttf")),
@@ -63,7 +82,14 @@ export function readLive(stdout: string, inputs: string[]): string[] {
 
 export type Kind = "J" | "E" | "P";
 export type Segment = { kind: Kind; s: number; e: number; output: string };
-export type Span = { s: number; e: number; after: string; kind: "J" | "E"; output: string; score: number };
+export type Span = {
+  s: number;
+  e: number;
+  after: string;
+  kind: "J" | "E";
+  output: string;
+  score: number;
+};
 
 /// --explain と --lattice の区間の表記 K[打鍵→出力 点]
 const segmentPattern = /([JEP])\[(.*?)→(.*?) (-?[\d.]+)\]/g;
@@ -72,7 +98,12 @@ const segmentPattern = /([JEP])\[(.*?)→(.*?) (-?[\d.]+)\]/g;
 export function parseSegments(described: string): Segment[] {
   let pos = 0;
   return [...described.matchAll(segmentPattern)].map((m) => {
-    const segment = { kind: m[1] as Kind, s: pos, e: pos + m[2].length, output: m[3] };
+    const segment = {
+      kind: m[1] as Kind,
+      s: pos,
+      e: pos + m[2].length,
+      output: m[3],
+    };
     pos = segment.e;
     return segment;
   });
@@ -81,13 +112,20 @@ export function parseSegments(described: string): Segment[] {
 /// 打鍵列ごとの、区切りの採点で採った区間の並び。--explain は 1 打鍵列に 1 行「採点の変換の結果<TAB>区間の並び」を出し、
 /// 変換エンジンのログも標準出力に混ざるので、区間の表記を含む行だけを読む
 export async function readExplains(inputs: string[]): Promise<Segment[][]> {
-  const lines = (await run([cli, "--explain", ...inputs])).split("\n").filter((l) => /\t[EJP]\[/.test(l));
-  if (lines.length !== inputs.length) throw new Error(`--explain の行数 ${lines.length} が ${inputs.length} と合わない`);
+  const lines = (await run([cli, "--explain", ...inputs]))
+    .split("\n")
+    .filter((l) => /\t[EJP]\[/.test(l));
+  if (lines.length !== inputs.length)
+    throw new Error(
+      `--explain の行数 ${lines.length} が ${inputs.length} と合わない`,
+    );
   return lines.map((l) => parseSegments(l.split("\t")[1]));
 }
 
 /// 打鍵列ごとの、区切りの採点で比べた区間の候補
-export async function readLattices(inputs: string[]): Promise<Map<string, Span[]>> {
+export async function readLattices(
+  inputs: string[],
+): Promise<Map<string, Span[]>> {
   const out = await run([cli, "--lattice", ...inputs]);
   const lattices = new Map<string, Span[]>();
   let current: Span[] | undefined;
@@ -101,19 +139,37 @@ export async function readLattices(inputs: string[]): Promise<Map<string, Span[]
     // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点。変換エンジンのログも標準出力に混ざるので、数字とタブで始まる行だけを候補として読む
     if (!/^\d+\t/.test(line)) continue;
     const cols = line.split("\t");
-    if (cols.length !== 7) throw new Error(`--lattice の候補の行が 7 列でない: ${line}`);
+    if (cols.length !== 7)
+      throw new Error(`--lattice の候補の行が 7 列でない: ${line}`);
     if (!current) throw new Error(`== の行より前に候補がある: ${line}`);
-    current.push({ s: +cols[0], e: +cols[1], after: cols[2], kind: cols[3] as "J" | "E", output: cols[5], score: +cols[6] });
+    current.push({
+      s: +cols[0],
+      e: +cols[1],
+      after: cols[2],
+      kind: cols[3] as "J" | "E",
+      output: cols[5],
+      score: +cols[6],
+    });
   }
-  for (const i of inputs) if (!lattices.get(i)?.length) throw new Error(`--lattice の候補が無い: ${i}`);
+  for (const i of inputs)
+    if (!lattices.get(i)?.length)
+      throw new Error(`--lattice の候補が無い: ${i}`);
   return lattices;
 }
 
 export type Path = { total: number; spans: Span[] };
 
 /// 区間の候補を、直前の区間の種類が合うようにつないだ並びのうち、合計の最も高いもの。allow で使える区間を、must で含むべき区間を絞る
-export function bestPath(spans: Span[], length: number, allow: (s: Span) => boolean, must: (s: Span) => boolean = () => true): Path | undefined {
-  const table: Map<string, Path & { hit: boolean }>[] = Array.from({ length: length + 1 }, () => new Map());
+export function bestPath(
+  spans: Span[],
+  length: number,
+  allow: (s: Span) => boolean,
+  must: (s: Span) => boolean = () => true,
+): Path | undefined {
+  const table: Map<string, Path & { hit: boolean }>[] = Array.from(
+    { length: length + 1 },
+    () => new Map(),
+  );
   table[0].set("-|false", { total: 0, spans: [], hit: false });
   for (let pos = 0; pos < length; pos++) {
     for (const [key, cell] of table[pos]) {
@@ -124,11 +180,14 @@ export function bestPath(spans: Span[], length: number, allow: (s: Span) => bool
         const total = cell.total + span.score;
         const k = `${span.kind}|${hit}`;
         const existing = table[span.e].get(k);
-        if (!existing || existing.total < total) table[span.e].set(k, { total, spans: [...cell.spans, span], hit });
+        if (!existing || existing.total < total)
+          table[span.e].set(k, { total, spans: [...cell.spans, span], hit });
       }
     }
   }
-  return [...table[length].values()].filter((c) => c.hit).sort((a, b) => b.total - a.total)[0];
+  return [...table[length].values()]
+    .filter((c) => c.hit)
+    .sort((a, b) => b.total - a.total)[0];
 }
 
 /// 英字・数字・半角の記号は打ったまま残った文字なので英語の色、それ以外は日本語の色
@@ -139,7 +198,8 @@ export type Paint = string | ((ch: string, index: number) => string);
 
 /// 字形の送り幅。opentype.js は読めなかった字形の送り幅を持たない
 function advance(glyph: opentype.Glyph, ch: string): number {
-  if (glyph.advanceWidth === undefined) throw new Error(`字形に送り幅が無い: ${ch}`);
+  if (glyph.advanceWidth === undefined)
+    throw new Error(`字形に送り幅が無い: ${ch}`);
   return glyph.advanceWidth;
 }
 
@@ -151,27 +211,51 @@ export class Glyphs {
   /// draw が並べる幅。draw は 1 字ずつ字形の送り幅で並べるので、カーニングや合字を含む getAdvanceWidth では測らない
   width(text: string, font: FontName, size: number): number {
     const f = this.fonts[font];
-    return [...text].reduce((w, ch) => w + (advance(f.charToGlyph(ch), ch) * size) / f.unitsPerEm, 0);
+    return [...text].reduce(
+      (w, ch) => w + (advance(f.charToGlyph(ch), ch) * size) / f.unitsPerEm,
+      0,
+    );
   }
 
   /// 文字の間に tracking を足して並べたとき、text の幅が width になる字の大きさ（幅は字の大きさに比例する）
-  sizeFor(text: string, font: FontName, width: number, tracking: number): number {
+  sizeFor(
+    text: string,
+    font: FontName,
+    width: number,
+    tracking: number,
+  ): number {
     const gaps = [...text].length - 1;
     const size = (width - tracking * gaps) / this.width(text, font, 1);
-    if (size <= 0) throw new Error(`${text} は字間 ${tracking} で幅 ${width.toFixed(1)} に収まらない`);
+    if (size <= 0)
+      throw new Error(
+        `${text} は字間 ${tracking} で幅 ${width.toFixed(1)} に収まらない`,
+      );
     return size;
   }
 
   /// text を x から並べた <use> の列。paint は class 名か、1 文字ずつ class 名を返す関数。tracking は文字ごとに足す字間
-  draw(text: string, font: FontName, x: number, baseline: number, size: number, paint: Paint, tracking = 0): string {
+  draw(
+    text: string,
+    font: FontName,
+    x: number,
+    baseline: number,
+    size: number,
+    paint: Paint,
+    tracking = 0,
+  ): string {
     const f = this.fonts[font];
     const scale = size / f.unitsPerEm;
     return [...text]
       .map((ch, index) => {
         const glyph = f.charToGlyph(ch);
-        if (glyph.index === 0) throw new Error(`フォント ${font} に字形が無い: ${ch}`);
+        if (glyph.index === 0)
+          throw new Error(`フォント ${font} に字形が無い: ${ch}`);
         const id = `${font[0]}${ch.codePointAt(0)!.toString(16)}`;
-        if (!this.defs.has(id)) this.defs.set(id, `<path id="${id}" d="${glyph.getPath(0, 0, f.unitsPerEm).toPathData(1)}"/>`);
+        if (!this.defs.has(id))
+          this.defs.set(
+            id,
+            `<path id="${id}" d="${glyph.getPath(0, 0, f.unitsPerEm).toPathData(1)}"/>`,
+          );
         const cls = typeof paint === "string" ? paint : paint(ch, index);
         const use = `<use href="#${id}" class="${cls}" transform="translate(${x.toFixed(1)} ${baseline.toFixed(1)}) scale(${scale.toFixed(5)})"/>`;
         x += advance(glyph, ch) * scale + tracking;
@@ -181,13 +265,41 @@ export class Glyphs {
   }
 
   /// 中央 cx に揃えて並べる
-  center(text: string, font: FontName, cx: number, baseline: number, size: number, paint: Paint): string {
-    return this.draw(text, font, cx - this.width(text, font, size) / 2, baseline, size, paint);
+  center(
+    text: string,
+    font: FontName,
+    cx: number,
+    baseline: number,
+    size: number,
+    paint: Paint,
+  ): string {
+    return this.draw(
+      text,
+      font,
+      cx - this.width(text, font, size) / 2,
+      baseline,
+      size,
+      paint,
+    );
   }
 
   /// 右端 right に揃えて並べる
-  right(text: string, font: FontName, right: number, baseline: number, size: number, paint: Paint): string {
-    return this.draw(text, font, right - this.width(text, font, size), baseline, size, paint);
+  right(
+    text: string,
+    font: FontName,
+    right: number,
+    baseline: number,
+    size: number,
+    paint: Paint,
+  ): string {
+    return this.draw(
+      text,
+      font,
+      right - this.width(text, font, size),
+      baseline,
+      size,
+      paint,
+    );
   }
 
   defsXml(): string {
@@ -209,11 +321,25 @@ const DARK = `
 /// auto は見る人の設定でライトとダークを切り替え、light はダークでもライトの配色のまま描く
 export type Scheme = "auto" | "light";
 
-const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const escapeXml = (s: string) =>
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
 /// 字形の定義と背景を付けた SVG。body は glyphs で描き終えたものを渡す（<defs> は使った字形から作るため）。label は画像の説明。
 /// style は図が足す CSS
-export function svgDocument(source: string, width: number, height: number, label: string, glyphs: Glyphs, body: string, scheme: Scheme = "auto", style = ""): string {
+export function svgDocument(
+  source: string,
+  width: number,
+  height: number,
+  label: string,
+  glyphs: Glyphs,
+  body: string,
+  scheme: Scheme = "auto",
+  style = "",
+): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="${escapeXml(label)}">
 <!-- ${source} が生成する。直接編集しない。字形は LINE Seed JP（SIL Open Font License 1.1） -->
 <style>${LIGHT}${scheme === "auto" ? DARK : ""}${style}
@@ -229,13 +355,20 @@ ${body}
 /// 説明文は手で書くので、変換の結果が変わったときに図だけ変わって説明文が古くなるのを止める
 export async function assertAlt(doc: string, name: string, values: string[]) {
   const text = await Bun.file(join(root, doc)).text();
-  const alt = text.match(new RegExp(`!\\[([^\\]]*)\\]\\([^)]*${name.replace(/\./g, "\\.")}\\)`))?.[1];
+  const alt = text.match(
+    new RegExp(`!\\[([^\\]]*)\\]\\([^)]*${name.replace(/\./g, "\\.")}\\)`),
+  )?.[1];
   if (alt === undefined) throw new Error(`${doc} に ${name} の参照が無い`);
   const missing = values.filter((v) => !alt.includes(v));
-  if (missing.length) throw new Error(`${doc} の ${name} の説明文に ${missing.join(" / ")} が無い`);
+  if (missing.length)
+    throw new Error(
+      `${doc} の ${name} の説明文に ${missing.join(" / ")} が無い`,
+    );
 }
 
 export async function writeImage(name: string, svg: string) {
   await Bun.write(join(images, name), svg);
-  console.error(`${name} 書き出し ${(svg.length / 1024).toFixed(0)}KB ${elapsed()}`);
+  console.error(
+    `${name} 書き出し ${(svg.length / 1024).toFixed(0)}KB ${elapsed()}`,
+  );
 }
