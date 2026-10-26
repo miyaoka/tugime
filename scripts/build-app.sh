@@ -25,7 +25,7 @@ app="$root/dist/$name.app"
 build=(swift build --package-path "$root" -c release --build-system swiftbuild --arch arm64)
 
 echo "== 表示の変換のモデル"
-model=$("$root/scripts/fetch-genmai.sh")
+model=$(bun "$root/scripts/fetch-genmai.ts")
 
 echo "== swift build"
 "${build[@]}" --product tugime

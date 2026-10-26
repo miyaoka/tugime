@@ -1,9 +1,11 @@
 // README と docs の図を作るスクリプトが共有する部品。tugime-cli の実行と、フォントの字形を図形にして埋め込む SVG の組み立て。
 // 文字を図形にするので、見る人の環境のフォントに左右されない。配色は prefers-color-scheme でライトとダークを切り替える
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import opentype from "opentype.js";
+import { fonts as fetchFonts } from "../fetch-fonts";
+import { genmai } from "../fetch-genmai";
+import { root } from "./root";
 
-export const root = join(dirname(import.meta.path), "../..");
 export const images = join(root, "docs/images");
 export const cli = join(root, ".build/release/tugime-cli");
 const COMMAND_TIMEOUT_MS = 300_000;
@@ -41,21 +43,12 @@ export async function step<T>(
   return result;
 }
 
-/// 最後の行に出力したパスを返すスクリプトを実行する
-async function pathFrom(script: string): Promise<string> {
-  return (await run([join(root, "scripts", script)])).trim().split("\n").pop()!;
-}
-
 export type Fonts = { bold: opentype.Font; regular: opentype.Font };
 
 /// 表示の変換のモデルとフォントを用意し、tugime-cli を組み立てる
 export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
-  const model = await step("表示の変換のモデルの用意", () =>
-    pathFrom("fetch-genmai.sh"),
-  );
-  const fontDir = await step("フォントの用意", () =>
-    pathFrom("fetch-fonts.sh"),
-  );
+  const model = await step("表示の変換のモデルの用意", genmai);
+  const fontDir = await step("フォントの用意", fetchFonts);
   await step("tugime-cli の組み立て", () =>
     run(["swift", "build", "-c", "release", "--product", "tugime-cli"]),
   );

@@ -92,6 +92,8 @@ jobs:
           show-progress: false
           persist-credentials: false
 
+      - uses: $/.github/actions/setup-environment
+
       # tag 由来の version を Info.plist に焼き込み、ad-hoc 署名する
       - name: Build .app
         run: |

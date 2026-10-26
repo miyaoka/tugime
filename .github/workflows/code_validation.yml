@@ -43,6 +43,9 @@ jobs:
         with:
           files: |
             scripts/**
+            mise.toml
+            mise.lock
+            .github/actions/**
             App/**
             Package.swift
             Package.resolved
@@ -101,6 +104,8 @@ jobs:
         with:
           persist-credentials: false
           show-progress: false
+
+      - uses: $/.github/actions/setup-environment
 
       - name: Build .app
         run: TUGIME_BUILD_CHANNEL=stable scripts/build-app.sh
