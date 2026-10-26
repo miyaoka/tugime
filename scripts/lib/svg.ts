@@ -79,8 +79,15 @@ export function readLive(
 
 export type Kind = "J" | "E" | "P";
 /// tugime-cli が区間の種類に出す文字と、その種類
-const SEGMENT_KINDS: Record<string, Kind> = { J: "J", E: "E", P: "P" };
-const SPAN_KINDS: Record<string, Span["kind"]> = { J: "J", E: "E" };
+const SEGMENT_KINDS = new Map<string, Kind>([
+  ["J", "J"],
+  ["E", "E"],
+  ["P", "P"],
+]);
+const SPAN_KINDS = new Map<string, Span["kind"]>([
+  ["J", "J"],
+  ["E", "E"],
+]);
 export type Segment = { kind: Kind; s: number; e: number; output: string };
 export type Span = {
   s: number;
@@ -99,7 +106,7 @@ export function parseSegments(described: string): Segment[] {
   let pos = 0;
   return [...described.matchAll(segmentPattern)].map((m) => {
     const [whole, letter, keys, output] = m;
-    const kind = letter === undefined ? undefined : SEGMENT_KINDS[letter];
+    const kind = letter === undefined ? undefined : SEGMENT_KINDS.get(letter);
     assert(
       kind !== undefined && keys !== undefined && output !== undefined,
       `区間の表記を読めない: ${whole}`,
@@ -149,7 +156,7 @@ export async function readLattices(
     // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点。変換エンジンのログも標準出力に混ざるので、数字とタブで始まる行だけを候補として読む
     if (!/^\d+\t/.test(line)) continue;
     const [s, e, after, letter, , output, score, ...rest] = line.split("\t");
-    const kind = letter === undefined ? undefined : SPAN_KINDS[letter];
+    const kind = letter === undefined ? undefined : SPAN_KINDS.get(letter);
     if (
       s === undefined ||
       e === undefined ||
