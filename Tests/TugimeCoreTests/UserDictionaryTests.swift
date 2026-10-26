@@ -43,7 +43,7 @@ import Testing
         try converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索")])
         let reading = try #require(converter.convert(kana: "いーそう", context: .start))
         #expect(reading.text == "一索")
-        #expect(reading.clauses.map(\.userWords) == [[["一索"]]])
+        #expect(reading.clauses.map(\.userWords) == [[UsedUserWord(reading: "イーソウ", spellings: ["一索"])]])
         #expect(converter.alternatives(kana: "いーそう", context: .start).contains("一索"))
     }
 
@@ -51,7 +51,7 @@ import Testing
     @Test func marksTheUserWordAfterAStandIn() throws {
         try converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索")])
         let reading = try #require(converter.convert(kana: "いーそうをきる", context: .afterWord))
-        #expect(reading.clauses.flatMap(\.userWords) == [["一索"]])
+        #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["一索"]])
         #expect(reading.text.hasPrefix("一索"))
     }
 
@@ -59,7 +59,7 @@ import Testing
     @Test func listsEverySpellingOfTheReading() throws {
         try converter.replaceUserWords([UserWord(reading: "まんず", word: "萬子"), UserWord(reading: "まんず", word: "マンズ")])
         let reading = try #require(converter.convert(kana: "まんず", context: .start))
-        #expect(reading.clauses.flatMap(\.userWords) == [["萬子", "マンズ"]])
+        #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["萬子", "マンズ"]])
         let listed = converter.alternatives(kana: "まんず", context: .start)
         #expect(listed.contains("萬子") && listed.contains("マンズ"))
     }

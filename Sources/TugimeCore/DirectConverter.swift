@@ -73,7 +73,7 @@ final class DirectConverter: JapaneseConverting {
             }
             precondition(reading == clause.reading, "表示の文節が採点の文節の境目で切られていない: \(clause.reading) \(reading)")
             let words = covered.flatMap(\.userWords)
-            guard !words.allSatisfy({ spellings in spellings.contains { clause.text.contains($0) } }) else { return clause }
+            guard !words.allSatisfy({ word in word.spellings.contains { clause.text.contains($0) } }) else { return clause }
             return JapaneseClause(reading: clause.reading, text: covered.map(\.clause.text).joined())
         }
     }

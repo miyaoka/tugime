@@ -24,23 +24,34 @@ public struct JapaneseDisplay: Sendable, Equatable {
     public var text: String
     /// text を文節に分けたもの。読みを繋ぐと変換したかなに、表記を繋ぐと text になる
     public var clauses: [JapaneseClause]
-    /// text を作った変換が使った利用者の語ごとの、同じ読みに登録した表記（ScoredClause.userWords と同じ形）
-    public var userWords: [[String]]
+    /// text を作った変換が使った利用者の語
+    public var userWords: [UsedUserWord]
 
-    public init(text: String, clauses: [JapaneseClause], userWords: [[String]] = []) {
+    public init(text: String, clauses: [JapaneseClause], userWords: [UsedUserWord] = []) {
         self.text = text
         self.clauses = clauses
         self.userWords = userWords
     }
 
-    /// 照らすときに利用者の語の表記を置き換える文字。錨にならないので、漢字の連なりと同じく読みを 1 文字以上食う
-    private static let userSpellingMark = "〓"
-
     /// text のかなが、変換した読みのかなと同じ順に並ぶか（ReadingAlignment で対応づくか）。漢字の中の読みは見ない。
-    /// 利用者の語の表記は、利用者が決めた読みの書き方なので、表記のかな（よろしく → よろしくお願いします の お願いします）も読みと照らさない
+    /// 利用者の語の表記は、利用者が決めた読みの書き方なので、その語の読みに置き換えてから照らす（よろしく → よろしくお願いします の お願いします を読み違いにしない）
     public var matchesReading: Bool {
-        let masked = userWords.joined().sorted { $0.count > $1.count }.reduce(text) { $0.replacingOccurrences(of: $1, with: Self.userSpellingMark) }
-        return ReadingAlignment(text: masked, reading: clauses.map(\.reading).joined()) != nil
+        let spellings = userWords.flatMap { word in word.spellings.map { (spelling: $0, reading: word.reading) } }
+        let read = spellings.sorted { $0.spelling.count > $1.spelling.count }.reduce(text) { $0.replacingOccurrences(of: $1.spelling, with: $1.reading) }
+        return ReadingAlignment(text: read, reading: clauses.map(\.reading).joined()) != nil
+    }
+}
+
+/// 変換エンジンが語の列に使った利用者の語
+public struct UsedUserWord: Sendable, Equatable {
+    /// 変換エンジンの形の読み（カタカナ）。ReadingAlignment はカタカナをひらがなとして照らす
+    public var reading: String
+    /// この読みに利用者が登録した表記。使った表記を含む
+    public var spellings: [String]
+
+    public init(reading: String, spellings: [String]) {
+        self.reading = reading
+        self.spellings = spellings
     }
 }
 
@@ -59,10 +70,10 @@ public struct JapaneseClause: Sendable, Equatable {
 /// 利用者の語を使ったかは採点の変換だけが知るので、表示の文節（JapaneseClause）には持たせない
 public struct ScoredClause: Sendable, Equatable {
     public var clause: JapaneseClause
-    /// この文節の読みの中で、変換エンジンが語の列に使った利用者の語ごとの、その語と同じ読みに利用者が登録した表記（使った表記を含む）
-    public var userWords: [[String]]
+    /// この文節の読みの中で、変換エンジンが語の列に使った利用者の語
+    public var userWords: [UsedUserWord]
 
-    public init(_ clause: JapaneseClause, userWords: [[String]] = []) {
+    public init(_ clause: JapaneseClause, userWords: [UsedUserWord] = []) {
         self.clause = clause
         self.userWords = userWords
     }
@@ -447,14 +458,14 @@ final class AzooKeyConverter: JapaneseConverting {
         return clauses.map(\.clause.text).joined() == text ? clauses : whole
     }
 
-    /// 語の列のうち、読みの位置 start 以降から始まる利用者の語ごとの、同じ読みに登録した表記
-    private func userWords(in words: [DicdataElement], from start: Int) -> [[String]] {
+    /// 語の列のうち、読みの位置 start 以降から始まる利用者の語
+    private func userWords(in words: [DicdataElement], from start: Int) -> [UsedUserWord] {
         var position = 0
-        var found: [[String]] = []
+        var found: [UsedUserWord] = []
         for word in words {
             if position >= start, word.metadata.contains(.isFromUserDictionary) {
                 guard let spellings = userSpellings[word.ruby] else { preconditionFailure("変換エンジンが登録していない利用者の語を返した: \(word.ruby) \(word.word)") }
-                found.append(spellings)
+                found.append(UsedUserWord(reading: word.ruby, spellings: spellings))
             }
             position += word.ruby.count
         }
