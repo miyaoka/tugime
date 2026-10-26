@@ -1,5 +1,6 @@
 // README と docs の図を作るスクリプトが共有する部品。tugime-cli の実行と、フォントの字形を図形にして埋め込む SVG の組み立て。
 // 文字を図形にするので、見る人の環境のフォントに左右されない。配色は prefers-color-scheme でライトとダークを切り替える
+import assert from "node:assert";
 import { join } from "node:path";
 import opentype from "opentype.js";
 import { fonts as fetchFonts } from "../fetch-fonts";
@@ -60,20 +61,33 @@ export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
 }
 
 /// --live の出力から、打鍵列ごとの表示を読む。debug 版では変換エンジンのログも標準出力に混ざるので、渡した打鍵列で始まる行だけを読む
-export function readLive(stdout: string, inputs: string[]): string[] {
+export function readLive(
+  stdout: string,
+  inputs: string[],
+): { input: string; shown: string }[] {
   const lines = new Map<string, string>();
   for (const line of stdout.split("\n")) {
     const tab = line.indexOf("\t");
     if (tab > 0) lines.set(line.slice(0, tab), line.slice(tab + 1));
   }
-  return inputs.map((i) => {
-    const shown = lines.get(i);
-    if (shown === undefined) throw new Error(`--live の結果が無い: ${i}`);
-    return shown;
+  return inputs.map((input) => {
+    const shown = lines.get(input);
+    if (shown === undefined) throw new Error(`--live の結果が無い: ${input}`);
+    return { input, shown };
   });
 }
 
 export type Kind = "J" | "E" | "P";
+/// tugime-cli が区間の種類に出す文字と、その種類
+const SEGMENT_KINDS = new Map<string, Kind>([
+  ["J", "J"],
+  ["E", "E"],
+  ["P", "P"],
+]);
+const SPAN_KINDS = new Map<string, Span["kind"]>([
+  ["J", "J"],
+  ["E", "E"],
+]);
 export type Segment = { kind: Kind; s: number; e: number; output: string };
 export type Span = {
   s: number;
@@ -91,11 +105,17 @@ const segmentPattern = /([JEP])\[(.*?)→(.*?) (-?[\d.]+)\]/g;
 export function parseSegments(described: string): Segment[] {
   let pos = 0;
   return [...described.matchAll(segmentPattern)].map((m) => {
+    const [whole, letter, keys, output] = m;
+    const kind = letter === undefined ? undefined : SEGMENT_KINDS.get(letter);
+    assert(
+      kind !== undefined && keys !== undefined && output !== undefined,
+      `区間の表記を読めない: ${whole}`,
+    );
     const segment = {
-      kind: m[1] as Kind,
+      kind,
       s: pos,
-      e: pos + m[2].length,
-      output: m[3],
+      e: pos + keys.length,
+      output,
     };
     pos = segment.e;
     return segment;
@@ -112,7 +132,11 @@ export async function readExplains(inputs: string[]): Promise<Segment[][]> {
     throw new Error(
       `--explain の行数 ${lines.length} が ${inputs.length} と合わない`,
     );
-  return lines.map((l) => parseSegments(l.split("\t")[1]));
+  return lines.map((l) => {
+    const described = l.split("\t")[1];
+    assert(described !== undefined, `--explain の行に区間の並びが無い: ${l}`);
+    return parseSegments(described);
+  });
 }
 
 /// 打鍵列ごとの、区切りの採点で比べた区間の候補
@@ -123,25 +147,36 @@ export async function readLattices(
   const lattices = new Map<string, Span[]>();
   let current: Span[] | undefined;
   for (const line of out.split("\n")) {
-    const head = line.match(/^== (\S+)\t/);
-    if (head) {
+    const input = line.match(/^== (\S+)\t/)?.[1];
+    if (input !== undefined) {
       current = [];
-      lattices.set(head[1], current);
+      lattices.set(input, current);
       continue;
     }
     // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点。変換エンジンのログも標準出力に混ざるので、数字とタブで始まる行だけを候補として読む
     if (!/^\d+\t/.test(line)) continue;
-    const cols = line.split("\t");
-    if (cols.length !== 7)
-      throw new Error(`--lattice の候補の行が 7 列でない: ${line}`);
+    const [s, e, after, letter, , output, score, ...rest] = line.split("\t");
+    const kind = letter === undefined ? undefined : SPAN_KINDS.get(letter);
+    if (
+      s === undefined ||
+      e === undefined ||
+      after === undefined ||
+      kind === undefined ||
+      output === undefined ||
+      score === undefined ||
+      rest.length > 0
+    )
+      throw new Error(
+        `--lattice の候補の行が、種類が J か E の 7 列でない: ${line}`,
+      );
     if (!current) throw new Error(`== の行より前に候補がある: ${line}`);
     current.push({
-      s: +cols[0],
-      e: +cols[1],
-      after: cols[2],
-      kind: cols[3] as "J" | "E",
-      output: cols[5],
-      score: +cols[6],
+      s: +s,
+      e: +e,
+      after,
+      kind,
+      output,
+      score: +score,
     });
   }
   for (const i of inputs)
@@ -152,33 +187,49 @@ export async function readLattices(
 
 export type Path = { total: number; spans: Span[] };
 
-/// 区間の候補を、直前の区間の種類が合うようにつないだ並びのうち、合計の最も高いもの。allow で使える区間を、must で含むべき区間を絞る
+/// 区間の候補を、直前の区間の種類が合うようにつないだ、打鍵列の length 文字目までの並びのうち、合計の最も高いもの。
+/// length を超える区間は使わない。allow で使える区間を、must で含むべき区間を絞る
 export function bestPath(
   spans: Span[],
   length: number,
   allow: (s: Span) => boolean,
   must: (s: Span) => boolean = () => true,
 ): Path | undefined {
-  const table: Map<string, Path & { hit: boolean }>[] = Array.from(
-    { length: length + 1 },
-    () => new Map(),
-  );
-  table[0].set("-|false", { total: 0, spans: [], hit: false });
+  /// 打鍵列の位置ごとに、最後の区間の種類と must を満たしたかの組で、合計の最も高い並び
+  const table: Map<string, Path & { kind: string; hit: boolean }>[] =
+    Array.from({ length: length + 1 }, () => new Map());
+  const at = (pos: number) => {
+    const cells = table[pos];
+    // length を超える区間は使わないので、0 から length までの位置だけを読む
+    assert(cells !== undefined, `区間の位置 ${pos} が表の外`);
+    return cells;
+  };
+  at(0).set("-|false", { total: 0, spans: [], kind: "-", hit: false });
   for (let pos = 0; pos < length; pos++) {
-    for (const [key, cell] of table[pos]) {
-      const previous = key.split("|")[0];
+    for (const cell of at(pos).values()) {
       for (const span of spans) {
-        if (span.s !== pos || span.after !== previous || !allow(span)) continue;
+        if (
+          span.s !== pos ||
+          span.e > length ||
+          span.after !== cell.kind ||
+          !allow(span)
+        )
+          continue;
         const hit = cell.hit || must(span);
         const total = cell.total + span.score;
         const k = `${span.kind}|${hit}`;
-        const existing = table[span.e].get(k);
+        const existing = at(span.e).get(k);
         if (!existing || existing.total < total)
-          table[span.e].set(k, { total, spans: [...cell.spans, span], hit });
+          at(span.e).set(k, {
+            total,
+            spans: [...cell.spans, span],
+            kind: span.kind,
+            hit,
+          });
       }
     }
   }
-  return [...table[length].values()]
+  return [...at(length).values()]
     .filter((c) => c.hit)
     .sort((a, b) => b.total - a.total)[0];
 }
@@ -187,6 +238,8 @@ export function bestPath(
 export const kindOf = (ch: string) => (/[\x21-\x7e]/.test(ch) ? "en" : "ink");
 
 export type FontName = keyof Fonts;
+/// <defs> に入れる字形の id の頭。太さごとに字形が違うので分ける
+const FONT_ID: Record<FontName, string> = { bold: "b", regular: "r" };
 export type Paint = string | ((ch: string, index: number) => string);
 
 /// 字形の送り幅
@@ -243,7 +296,9 @@ export class Glyphs {
         const glyph = f.charToGlyph(ch);
         if (glyph.index === 0)
           throw new Error(`フォント ${font} に字形が無い: ${ch}`);
-        const id = `${font[0]}${ch.codePointAt(0)!.toString(16)}`;
+        const code = ch.codePointAt(0);
+        assert(code !== undefined, `字形を引く文字が空: ${text}`);
+        const id = `${FONT_ID[font]}${code.toString(16)}`;
         if (!this.defs.has(id))
           this.defs.set(
             id,
