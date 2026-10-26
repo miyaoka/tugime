@@ -43,6 +43,9 @@ jobs:
         with:
           files: |
             scripts/**
+            mise.toml
+            mise.lock
+            .github/actions/**
             App/**
             Package.swift
             Package.resolved
@@ -82,6 +85,9 @@ jobs:
 
       - uses: $/.github/actions/setup-environment
 
+      - name: Install dependencies
+        run: bun install --cwd scripts --frozen-lockfile
+
       - name: Typecheck
         run: bun run --cwd scripts typecheck
 
@@ -101,6 +107,8 @@ jobs:
         with:
           persist-credentials: false
           show-progress: false
+
+      - uses: $/.github/actions/setup-environment
 
       - name: Build .app
         run: TUGIME_BUILD_CHANNEL=stable scripts/build-app.sh

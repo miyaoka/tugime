@@ -1,5 +1,5 @@
 name: "Setup Environment"
-description: "mise.toml の道具を mise.lock の checksum で確かめて入れ、scripts の依存を入れる"
+description: "mise.toml の道具を mise.lock の checksum で確かめて入れる"
 
 runs:
   using: "composite"
@@ -15,7 +15,3 @@ runs:
         version: 2026.10.19
         install: true
         cache: false
-
-    - name: Install dependencies
-      shell: bash
-      run: bun install --cwd scripts --frozen-lockfile

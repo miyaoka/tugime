@@ -10,7 +10,7 @@ public struct LoadedProblems: Sendable {
     public var dropped: [String: Int]
 }
 
-/// 問題ファイルの置き場所。scripts/fetch-eval.sh が取得して SHA-256 を確かめ、このディレクトリのパスを出す。
+/// 問題ファイルの置き場所。scripts/fetch-eval.ts が取得して SHA-256 を確かめ、このディレクトリのパスを出す。
 /// ファイル名はスクリプトと同じものを使う。版はスクリプトが固定し、Swift 側は版を知らない
 public struct ProblemFiles: Sendable {
     public var directory: URL
@@ -18,7 +18,7 @@ public struct ProblemFiles: Sendable {
     /// 1 ファイルを読んだ問題と、捨てた行の数
     typealias Parsed = (problems: [Problem], dropped: Int)
 
-    /// fetch-eval.sh が置くファイル名・集まりの名前・読む関数の表。集まりを足すときはスクリプトとこの表に 1 行ずつ足す
+    /// fetch-eval.ts が置くファイル名・集まりの名前・読む関数の表。集まりを足すときはスクリプトとこの表に 1 行ずつ足す
     static let sources: [(file: String, set: String, load: @Sendable (Data, String, String) throws -> Parsed)] = [
         ("ajimee-evaluation_items.json", AJIMEE.set, { (try AJIMEE.problems(from: $0, file: $1, set: $2), 0) }),
         ("mozc-oss.tsv", "mozc-oss", MozcRegression.problems(from:file:set:)),
@@ -61,7 +61,7 @@ public enum ProblemLoadError: Error, CustomStringConvertible {
     case duplicateID(String)
     public var description: String {
         switch self {
-        case .missingFile(let url): "問題ファイルが無い: \(url.path)。scripts/fetch-eval.sh で取得する"
+        case .missingFile(let url): "問題ファイルが無い: \(url.path)。bun scripts/fetch-eval.ts で取得する"
         case .malformed(let file, let line, let text): "\(file) の \(line) 番目を読めない: \(text)"
         case .duplicateID(let id): "問題の id が重複した: \(id)"
         }

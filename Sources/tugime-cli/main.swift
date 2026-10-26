@@ -4,7 +4,7 @@ import TugimeCore
 let usage = """
     使い方（先頭に次を付けられる。--before <文字列> は入力欄のカーソルの前にその文字列がある状態として変換する。
     --method <方式> は変換の方式。\(ConversionMethod.forms)。既定は入力メソッドと同じ方式で、作業ディレクトリの .zenz/\(ConversionMethod.inputMethodModel) を読む。
-    リポジトリの直下から実行し、モデルは scripts/fetch-genmai.sh で用意する。azooKey だけで変換するときは --method azookey。
+    リポジトリの直下から実行し、モデルは bun scripts/fetch-genmai.ts で用意する。azooKey だけで変換するときは --method azookey。
     zenzai と direct は表示の変換にモデルを使う。zenzai は azooKey がモデルを動かし、direct は tugime が動かす。ほかのモデルは scripts/convert-hf-to-gguf.sh が出す。
     --dictionary <ファイル> は利用者の辞書（書式は入力メソッドと同じ）。渡さなければ利用者の語は無く、入力メソッドの辞書は読まない。
     --explain・--lattice・--span の出力の表記は、区切りを採点した azooKey の変換で、表示の変換ではない）:

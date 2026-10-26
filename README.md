@@ -98,10 +98,11 @@ bash "$dir/install.sh"
 
 ### C. ソースから組み立てて入れる
 
-Xcode（Swift 6.2 以降）が要ります。組み立てのときに genmai-310M の GGUF（約 340MB）を Hugging Face から `.zenz/` に取得します。自分で組み立てるので、出自の確かめは要りません。
+Xcode（Swift 6.2 以降）と、[mise](https://mise.jdx.dev/) で入れる bun が要ります。組み立てのときに genmai-310M の GGUF（約 340MB）を Hugging Face から `.zenz/` に取得します。自分で組み立てるので、出自の確かめは要りません。
 
 ```bash
-scripts/build-app.sh                    # dist/tugime Dev.app を組み立てて ad-hoc 署名する
+mise install --locked                   # mise.toml の版の bun を入れる
+mise exec -- scripts/build-app.sh       # dist/tugime Dev.app を組み立てて ad-hoc 署名する
 ./install.sh "dist/tugime Dev.app"      # 配置して登録する
 ```
 

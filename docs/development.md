@@ -1,10 +1,12 @@
 # 開発
 
+scripts は bun で動かす。bun は `mise.toml` の版を `mise install --locked` で入れる。シェルで mise を有効にしていなければ、bun を使うコマンドの前に `mise exec --` を付ける。scripts の下を変えたら、CI と同じく `bun run --cwd scripts typecheck` と `bun run --cwd scripts format:check` で確かめる。
+
 ## 変換を確かめる
 
 ```bash
 swift build --product tugime-cli
-scripts/fetch-genmai.sh                                                           # 入力メソッドと同じモデルを .zenz/ に用意する
+bun scripts/fetch-genmai.ts                                                       # 入力メソッドと同じモデルを .zenz/ に用意する
 .build/debug/tugime-cli nodewosakujosite,sitewokoukaisuru                         # 入力メソッドと同じ方式で変換した結果
 .build/debug/tugime-cli --explain sitewokoukaisuru                                # 区間と評価値（採点の変換）
 .build/debug/tugime-cli --typing burauzanankahirakerunda                          # 1 打鍵ずつ打ったときの表示と、未確定の文字列の下の知らせ
@@ -19,8 +21,8 @@ swift test
 
 ```bash
 swift build -c release --product tugime-eval
-problems=$(scripts/fetch-eval.sh)                                                  # 問題を取得してディレクトリを出す
-model=$(scripts/fetch-genmai.sh)                                                   # 入力メソッドと同じモデルのパス
+problems=$(bun scripts/fetch-eval.ts)                                              # 問題を取得してディレクトリを出す
+model=$(bun scripts/fetch-genmai.ts)                                               # 入力メソッドと同じモデルのパス
 .build/release/tugime-eval accuracy --method azookey --problems "$problems" --out .eval/azookey.jsonl
 .build/release/tugime-eval accuracy --method "direct:$model" --problems "$problems" --out .eval/genmai.jsonl
 .build/release/tugime-eval compare .eval/azookey.jsonl .eval/genmai.jsonl         # 片方だけが正解した問題
@@ -38,8 +40,6 @@ model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出
 ## README と docs の図を作り直す
 
 図は `tugime-cli` の出力から SVG に描く。手で書き換えない。字形はフォントから図形にして埋め込み、配色はライトとダークで切り替える（`scripts/lib/svg.ts`）。
-
-bun は `mise.toml` の版を `mise install --locked` で入れる。scripts の下を変えたら、CI と同じく `bun run --cwd scripts typecheck` と `bun run --cwd scripts format:check` で確かめる。
 
 ```bash
 bun install --cwd scripts
