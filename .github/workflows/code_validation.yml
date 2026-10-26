@@ -45,6 +45,7 @@ jobs:
             scripts/**
             mise.toml
             mise.lock
+            bunfig.toml
             .github/actions/**
             App/**
             Package.swift
@@ -111,12 +112,12 @@ jobs:
       - uses: $/.github/actions/setup-environment
 
       - name: Build .app
-        run: TUGIME_BUILD_CHANNEL=stable bun --no-install scripts/build-app.ts
+        run: TUGIME_BUILD_CHANNEL=stable bun scripts/build-app.ts
 
       # 利用者の Mac と同じく、組み立てたディレクトリが無い状態で辞書・表示の変換のモデル・llama.framework を読めるか。
       # 実行ファイルと llama.framework が arm64 だけか
       - name: Check .app
-        run: bun --no-install scripts/check-app.ts dist/tugime.app
+        run: bun scripts/check-app.ts dist/tugime.app
 
   # ==============================================================
   # workflow のセキュリティ検査

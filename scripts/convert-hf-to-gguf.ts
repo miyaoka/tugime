@@ -1,7 +1,4 @@
-// Hugging Face の safetensors（GPT-2 系）を、azooKey が同梱する llama.cpp が読める GGUF に変換してパスを出す。
-// 使い方: bun scripts/convert-hf-to-gguf.ts <Hugging Face のリポジトリ> <コミット> <量子化> <出力名>
-//   例: bun scripts/convert-hf-to-gguf.ts subdiox/genmai-310M 3d52f4fe739c42e00801cc5646cd5bc79913dc4e q8_0 genmai-310M-q8_0
-// 量子化は convert_hf_to_gguf.py の --outtype（f32 / f16 / bf16 / q8_0）。出力は .zenz/<出力名>.gguf。
+// Hugging Face の safetensors（GPT-2 系）を、azooKey が同梱する llama.cpp が読める GGUF に変換してパスを出す。使い方は USAGE。
 // 変換が効いたかはこのスクリプトでは判定しない。tugime-eval accuracy --method direct:<出力> で、基準と同じ出力の件数と正解数を見る（全件が基準と同じなら終了コード 1）。
 // zenzai: の方式は azooKey の計算の設定で動くので、そこで壊れるモデル（genmai-310M）では、正しい GGUF でも効いていないように見える。
 // 元のファイルは .eval/hf/ に、変換の道具は .eval/llama.cpp に置き、取得済みなら取り直さない
@@ -11,7 +8,8 @@ import { join } from "node:path";
 import { root } from "./lib/root";
 
 const USAGE = `使い方: bun scripts/convert-hf-to-gguf.ts <Hugging Face のリポジトリ> <コミット> <量子化> <出力名>
-  例: bun scripts/convert-hf-to-gguf.ts subdiox/genmai-310M 3d52f4fe739c42e00801cc5646cd5bc79913dc4e q8_0 genmai-310M-q8_0`;
+  例: bun scripts/convert-hf-to-gguf.ts subdiox/genmai-310M 3d52f4fe739c42e00801cc5646cd5bc79913dc4e q8_0 genmai-310M-q8_0
+量子化は convert_hf_to_gguf.py の --outtype（f32 / f16 / bf16 / q8_0）。出力は .zenz/<出力名>.gguf。`;
 
 // 取得と変換の Python は scripts/convert-env の uv.lock で固定した環境で動かす。環境は .eval/ に作る
 $.env({
@@ -42,8 +40,6 @@ const META_FILES = [
   "merges.txt",
   "model.safetensors.index.json",
 ];
-// 重みは transformers と同じく、分割の目録があればそこに書かれたファイル、無ければ model.safetensors だけを取る。
-// 変換はディレクトリの safetensors をすべて読むので、IME 用の量子化版など別の重みを並べて置かない
 
 const [repo, commit, outtype, name, ...extra] = process.argv.slice(2);
 if (
@@ -96,6 +92,8 @@ async function indexedWeights(path: string): Promise<string[]> {
   return [...new Set(files)].sort();
 }
 
+// 重みは transformers と同じく、分割の目録があればそこに書かれたファイル、無ければ model.safetensors だけを取る。
+// 変換はディレクトリの safetensors をすべて読むので、IME 用の量子化版など別の重みを並べて置かない
 const index = join(sourceDir, "model.safetensors.index.json");
 const weights = (await Bun.file(index).exists())
   ? await indexedWeights(index)

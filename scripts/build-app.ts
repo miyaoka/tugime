@@ -2,7 +2,7 @@
 // 無指定は開発版にする。手元で組み立てたものが配布版と同じ bundle id を名乗り、入れた配布版を上書きしないようにするため
 // 使い方: [TUGIME_BUILD_CHANNEL=stable] [TUGIME_VERSION=<版>] bun scripts/build-app.ts
 import { $ } from "bun";
-import { mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { genmai } from "./fetch-genmai";
@@ -73,9 +73,8 @@ if ((await $`lipo -archs ${llama}`.text()).trim() !== "arm64")
   await $`lipo -thin arm64 ${llama} -output ${llama}`;
 await $`install_name_tool -add_rpath @executable_path/../Frameworks ${join(app, "Contents/MacOS/tugime")}`;
 await $`cp ${model} ${join(app, "Contents/Resources/model/")}`;
-for (const entry of await readdir(bin))
-  if (entry.endsWith(".bundle"))
-    await $`cp -R ${join(bin, entry)} ${join(app, "Contents/Resources/")}`;
+// .bundle が 1 つも無ければ、Bun Shell の glob が no matches found で止める
+await $`cp -R ${bin}/*.bundle ${join(app, "Contents/Resources/")}`;
 await fill(join(root, "App/Info.plist"), join(app, "Contents/Info.plist"), {
   BUNDLE_ID: bundleId,
   VERSION: version,
