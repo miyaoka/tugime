@@ -2,6 +2,7 @@
 //   docs/images/intro.svg      … 同じ文を打つとき、ふつうの日本語入力と tugime で文字のほかに押すキーを比べる
 //   docs/images/conversion.svg … 打鍵列を区切って変換するまで（比べた読み方の候補、打鍵ごとの区切り、最後に入れ替わる理由）
 // 使い方: bun install --cwd scripts && bun scripts/make-readme-figures.ts
+import assert from "node:assert";
 import {
   Glyphs,
   type Kind,
@@ -105,15 +106,22 @@ async function readSteps(prefixes: string[], model: string) {
     await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]),
     prefixes,
   );
-  return prefixes.map((prefix, i) => ({
-    prefix,
-    segments: segments[i],
-    shown: shown[i],
-  }));
+  return prefixes.map((prefix, i) => {
+    const s = segments[i];
+    const t = shown[i];
+    assert(
+      s !== undefined && t !== undefined,
+      `${prefix} の区切りか表示が無い`,
+    );
+    return { prefix, segments: s, shown: t };
+  });
 }
 
-/// 表示の文字列を区間ごとに分ける。英語と句読点の区間は出力がそのまま表示に出るので、その間を日本語の区間の表示とする
-function splitShown(segments: Segment[], shown: string): string[] {
+/// 表示の文字列を区間ごとに分け、区間と組にする。英語と句読点の区間は出力がそのまま表示に出るので、その間を日本語の区間の表示とする
+function splitShown(
+  segments: Segment[],
+  shown: string,
+): { segment: Segment; text: string }[] {
   let cursor = 0;
   return segments.map((segment, i) => {
     if (segment.kind !== "J") {
@@ -122,15 +130,15 @@ function splitShown(segments: Segment[], shown: string): string[] {
           `表示 ${shown} の ${cursor} 文字目に ${segment.output} が無い`,
         );
       cursor += segment.output.length;
-      return segment.output;
+      return { segment, text: segment.output };
     }
     const next = segments.slice(i + 1).find((s) => s.kind !== "J");
     const end = next ? shown.indexOf(next.output, cursor) : shown.length;
-    if (end < cursor)
-      throw new Error(`表示 ${shown} に ${next!.output} が無い`);
+    if (next && end < 0)
+      throw new Error(`表示 ${shown} に ${next.output} が無い`);
     const text = shown.slice(cursor, end);
     cursor = end;
-    return text;
+    return { segment, text };
   });
 }
 
@@ -167,10 +175,12 @@ const lattices = await step("区間の候補", () =>
   readLattices([...new Set([input, ...versusPrefixes])]),
 );
 
-const lattice = lattices.get(input)!;
+const lattice = lattices.get(input);
+assert(lattice !== undefined, `${input} の区間の候補が無い`);
 const chosen = bestPath(lattice, input.length, () => true);
 if (!chosen) throw new Error("最後まで打ったときの並びが見つからない");
-const finalStep = steps[steps.length - 1];
+const finalStep = steps.at(-1);
+assert(finalStep !== undefined, "stepEnds が空");
 if (finalStep.prefix !== input)
   throw new Error(`最後の時点 ${finalStep.prefix} が打鍵列の全体ではない`);
 if (finalStep.shown !== expected)
@@ -192,7 +202,8 @@ const isFlipped = (s: Span) =>
   s.s === flippedStart &&
   s.e === flippedStart + flippedWord.length;
 const versus = versusPrefixes.map((prefix) => {
-  const spans = lattices.get(prefix)!;
+  const spans = lattices.get(prefix);
+  assert(spans !== undefined, `${prefix} の区間の候補が無い`);
   const japanese = bestPath(spans, prefix.length, (s) => s.kind === "J");
   const english = bestPath(spans, prefix.length, () => true, isFlipped);
   if (!japanese || !english)
@@ -202,6 +213,10 @@ const versus = versusPrefixes.map((prefix) => {
 
 // 図の筋書きが出力と合うかを確かめる。合わなければ見出しと説明が偽になる
 const [before, after] = versus;
+assert(
+  before !== undefined && after !== undefined,
+  "versusEnds が 2 つの時点でない",
+);
 if (!(before.japanese.total > before.english.total))
   throw new Error(
     `${before.prefix} で全部を日本語として読む並びが勝っていない`,
@@ -415,8 +430,10 @@ for (const [end, kind] of flippedKinds) {
   // 打ちたい文を、区間ごとにその打鍵の範囲の上に置く
   y += 46;
   parts.push(g.draw("打ちたい文", "regular", LEFT, y, 13, "sub"));
-  splitShown(finalSegments, finalStep.shown).forEach((text, i) => {
-    const s = finalSegments[i];
+  for (const { segment: s, text } of splitShown(
+    finalSegments,
+    finalStep.shown,
+  )) {
     parts.push(
       g.center(
         text,
@@ -427,7 +444,7 @@ for (const [end, kind] of flippedKinds) {
         segmentClass(s.kind),
       ),
     );
-  });
+  }
   y += 40;
   parts.push(g.draw("打鍵列", "regular", LEFT, y, 13, "sub"));
   [...input].forEach((c, i) =>
@@ -497,8 +514,7 @@ for (const [end, kind] of flippedKinds) {
         "sub",
       ),
     );
-    const texts = splitShown(s.segments, s.shown);
-    s.segments.forEach((seg, i) => {
+    splitShown(s.segments, s.shown).forEach(({ segment: seg, text }, i) => {
       const bx = x(seg.s) + 1;
       const bw = (seg.e - seg.s) * CELL - 2;
       const id = `c${row}-${i}`;
@@ -509,7 +525,7 @@ for (const [end, kind] of flippedKinds) {
         `<rect class="${seg.kind === "E" ? "etint" : "jtint"}" x="${bx}" y="${top}" width="${bw}" height="${BAR}" rx="3"/>`,
       );
       parts.push(
-        `<g clip-path="url(#${id})">${g.center(texts[i], "bold", bx + bw / 2, top + BAR / 2 + 5.5, 15, segmentClass(seg.kind))}</g>`,
+        `<g clip-path="url(#${id})">${g.center(text, "bold", bx + bw / 2, top + BAR / 2 + 5.5, 15, segmentClass(seg.kind))}</g>`,
       );
     });
   });
@@ -521,16 +537,17 @@ for (const [end, kind] of flippedKinds) {
     "最後に入れ替わる理由",
     "それぞれの読み方で、最も高い並びの点の合計（高いほうを採る）。表記は点を付けるときの変換",
   );
-  const columns = [AXIS_LEFT + 130, AXIS_LEFT + 470];
+  const japaneseX = AXIS_LEFT + 130;
+  const englishX = AXIS_LEFT + 470;
   y += 32;
   parts.push(
-    g.draw("全部を日本語として読む", "regular", columns[0], y, 12, "sub"),
+    g.draw("全部を日本語として読む", "regular", japaneseX, y, 12, "sub"),
   );
   parts.push(
     g.draw(
       `${flippedWord} を英語として読む`,
       "regular",
-      columns[1],
+      englishX,
       y,
       12,
       "sub",
@@ -541,24 +558,24 @@ for (const [end, kind] of flippedKinds) {
     parts.push(
       g.draw(`…${v.prefix.slice(-6)} まで`, "regular", AXIS_LEFT, y, 13, "sub"),
     );
-    [v.japanese, v.english].forEach((path, i) => {
-      const other = i === 0 ? v.english : v.japanese;
+    for (const [path, other, column] of [
+      [v.japanese, v.english, japaneseX],
+      [v.english, v.japanese, englishX],
+    ] as const) {
       const win = path.total > other.total;
       const score = path.total.toFixed(1);
-      parts.push(
-        g.draw(score, "regular", columns[i], y, 14, win ? "good" : "sub"),
-      );
+      parts.push(g.draw(score, "regular", column, y, 14, win ? "good" : "sub"));
       parts.push(
         g.draw(
           path.spans.map((s) => s.output).join(" + "),
           "regular",
-          columns[i] + g.width(score, "regular", 14) + 12,
+          column + g.width(score, "regular", 14) + 12,
           y,
           14,
           win ? "good" : "ink",
         ),
       );
-    });
+    }
   }
   const height = y + 36;
   const label = `${input} を打ち進めるごとの表示と、その裏で比べた読み方の候補。打鍵列の範囲を日本語や英語として読む候補を挙げ、点の合計が最も高い並びを採る。${flippedWord} は、打った直後は英語、続けて打つと日本語、最後の打鍵で英語に戻る`;

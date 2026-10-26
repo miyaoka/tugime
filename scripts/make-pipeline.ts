@@ -1,6 +1,7 @@
 // README の変換の仕組みの図 docs/images/pipeline.svg を tugime-cli の出力から作る。
 // 打鍵列を工程ごとに形を変える素材として等角投影のコンベアに並べ、各工程で働く部品をキャラにして、この素材に何をしているかを吹き出しで言わせる
 // 使い方: bun install --cwd scripts && bun scripts/make-pipeline.ts
+import assert from "node:assert";
 import {
   type FontName,
   Glyphs,
@@ -22,10 +23,11 @@ const SOURCE = "scripts/make-pipeline.ts";
 
 /// 図の打鍵列と、採点の変換で採る区切り、最後に表示されるはずの文
 const INPUT = "zipwokaitousita.";
-const SCORED = ["zip", "を回答した", "。"];
+const SCORED: [string, string, string] = ["zip", "を回答した", "。"];
 const SHOWN = "zipを解凍した。";
 /// 工程 3 で比べて捨てる区切り方。[始まり, 終わり, 種類, 出力] の区間が --lattice でつながった並びになるかを確かめる
-const REJECTED: [number, number, "J" | "E", string][] = [
+type RejectedSpan = [number, number, "J" | "E", string];
+const REJECTED: [RejectedSpan, RejectedSpan, RejectedSpan] = [
   [0, 2, "J", "字"],
   [2, 3, "E", "p"],
   [3, 15, "J", "を回答した"],
@@ -38,24 +40,30 @@ const EXAMPLES: [string, string][] = [
 
 // ── tugime-cli から値を読む ─────────────────────────
 
+function readingOf(readings: Map<string, string>, input: string): string {
+  const reading = readings.get(input);
+  assert(reading !== undefined, `--clauses に ${input} が無い`);
+  return reading;
+}
+
 /// 打鍵列ごとの、日本語の文節の読みをつないだもの（--clauses）
 async function readReadings(inputs: string[]): Promise<Map<string, string>> {
   const readings = new Map<string, string>();
   let current: string | undefined;
   for (const line of (await run([cli, "--clauses", ...inputs])).split("\n")) {
-    const head = line.match(/^== (\S+)$/);
-    if (head) {
-      current = head[1];
+    const input = line.match(/^== (\S+)$/)?.[1];
+    if (input !== undefined) {
+      current = input;
       readings.set(current, "");
       continue;
     }
     // 種類 読み<TAB>候補。変換エンジンのログも標準出力に混ざるので、種類と空白で始まりタブを含む行だけを文節として読む
-    const clause = line.match(/^([JEP]) ([^\t]+)\t/);
-    if (!clause) continue;
+    const [, kind, reading] = line.match(/^([JEP]) ([^\t]+)\t/) ?? [];
+    if (kind === undefined || reading === undefined) continue;
     if (current === undefined)
       throw new Error(`== の行より前に文節がある: ${line}`);
-    if (clause[1] === "J")
-      readings.set(current, readings.get(current) + clause[2]);
+    if (kind === "J")
+      readings.set(current, readingOf(readings, current) + reading);
   }
   for (const i of inputs)
     if (!readings.get(i))
@@ -65,16 +73,20 @@ async function readReadings(inputs: string[]): Promise<Map<string, string>> {
 
 async function readValues(model: string) {
   const [segments] = await readExplains([INPUT]);
+  assert(segments !== undefined);
   const scored = segments.map((s) => s.output);
   if (scored.join("|") !== SCORED.join("|"))
     throw new Error(
       `採点の区切り ${scored.join("|")} が ${SCORED.join("|")} と違う`,
     );
-  const japanese = segments.filter((s) => s.kind === "J");
-  if (japanese.length !== 1)
+  const [japanese, ...otherJapanese] = segments.filter((s) => s.kind === "J");
+  if (japanese === undefined || otherJapanese.length > 0)
     throw new Error(`日本語の区間が 1 つでない: ${scored.join("|")}`);
 
-  const lattice = (await readLattices([INPUT])).get(INPUT)!;
+  const lattice = (await readLattices([INPUT])).get(INPUT);
+  assert(lattice !== undefined, `${INPUT} の区間の候補が無い`);
+  const rejectedEnd = REJECTED.at(-1)?.[1];
+  assert(rejectedEnd !== undefined, "REJECTED が空");
   const isRejected = (span: Span) =>
     REJECTED.some(
       ([s, e, kind, output]) =>
@@ -83,11 +95,7 @@ async function readValues(model: string) {
         span.kind === kind &&
         span.output === output,
     );
-  const rejected = bestPath(
-    lattice,
-    REJECTED[REJECTED.length - 1][1],
-    isRejected,
-  );
+  const rejected = bestPath(lattice, rejectedEnd, isRejected);
   if (rejected?.spans.length !== REJECTED.length)
     throw new Error(
       `--lattice で ${REJECTED.map((r) => r[3]).join("｜")} がつながった並びにならない`,
@@ -101,19 +109,20 @@ async function readValues(model: string) {
     inputs,
   );
   const expected = [SHOWN, ...EXAMPLES.map((e) => e[1])];
-  shown.forEach((s, i) => {
-    if (s !== expected[i])
-      throw new Error(`${inputs[i]} の表示 ${s} が ${expected[i]} と違う`);
-  });
+  if (shown.join("\n") !== expected.join("\n"))
+    throw new Error(
+      `${inputs.join(" / ")} の表示 ${shown.join(" / ")} が ${expected.join(" / ")} と違う`,
+    );
+  // 採点の区切りと表示は、比べた値と一致したので、比べた値（型の決まった定数）を返す
   return {
-    scored,
-    japaneseKeys: INPUT.slice(japanese[0].s, japanese[0].e),
-    reading: readings.get(INPUT)!,
+    scored: SCORED,
+    japaneseKeys: INPUT.slice(japanese.s, japanese.e),
+    reading: readingOf(readings, INPUT),
     japaneseCandidates,
-    shown: shown[0],
-    examples: EXAMPLES.map((e, i) => ({
-      reading: readings.get(e[0])!,
-      shown: shown[i + 1],
+    shown: SHOWN,
+    examples: EXAMPLES.map(([input, shownExample]) => ({
+      reading: readingOf(readings, input),
+      shown: shownExample,
     })),
   };
 }
@@ -323,7 +332,7 @@ async function main() {
   const g4x = dx + rowLen(rowD) + GS;
   const ex = g4x + 0.5 + GS;
   const endX = ex + rowLen(rowE) + 1.6;
-  const G: Gate[] = [
+  const G: [Gate, Gate, Gate, Gate] = [
     { no: 1, x: g1x, col: "#2563eb", title: "受け取る" },
     { no: 2, x: g2x, col: "#2563eb", title: "読み分ける" },
     { no: 3, x: g3x, col: "#2563eb", title: "区切りを決める" },
@@ -389,22 +398,26 @@ async function main() {
         `<circle cx="${(b[0] - 14 + i * 7).toFixed(1)}" cy="${(b[1] - 4).toFixed(1)}" r="2" fill="${EN_INK}"/>`,
       );
   }
-  const sB = row(bx, rowB);
+  const [rawSpan] = row(bx, rowB);
   gateFront(G[0]);
-  const sC = row(cx, rowC);
+  const [enSpan, readingSpan] = row(cx, rowC);
   gateFront(G[1]);
-  const sD = row(dx, rowD);
+  const [, scoredSpan] = row(dx, rowD);
   gateFront(G[2]);
-  const sE = row(ex, rowE);
+  const [, shownSpan] = row(ex, rowE);
   gateFront(G[3]);
+  assert(
+    rawSpan && enSpan && readingSpan && scoredSpan && shownSpan,
+    "素材の行の塊が足りない",
+  );
 
   const mid = (s: [number, number]) => (s[0] + s[1]) / 2;
   add(text([Bold("打鍵（キー 1 つずつ）", SUB)], 24, P(-4.5, 2.2)[1] + 74, 18));
-  note(mid(sB[0]), "まだ 1 本の打鍵列", SUB);
-  note(mid(sC[0]), "読めない → 英語", EN_INK);
-  note(mid(sC[1]), "かなに読める", JA_INK);
+  note(mid(rawSpan), "まだ 1 本の打鍵列", SUB);
+  note(mid(enSpan), "読めない → 英語", EN_INK);
+  note(mid(readingSpan), "かなに読める", JA_INK);
   {
-    const p = P(mid(sD[1]), BY, 0.25 + BH);
+    const p = P(mid(scoredSpan), BY, 0.25 + BH);
     add(
       text(
         [Bold("区切りは決定。漢字はまだ仮", BAD)],
@@ -414,7 +427,7 @@ async function main() {
         "middle",
       ),
     );
-    const s = sE[1];
+    const s = shownSpan;
     const q = P(s[1], BY, 0.25 + BH);
     sparkle(q[0] - 4, q[1] - 14, 10);
     sparkle(q[0] + 14, q[1] + 4, 6);
@@ -568,7 +581,7 @@ async function main() {
     font: FontName = "bold",
   ) => text([{ t, col, font }], x, y, size, "middle");
   const PROP = {
-    key: `<rect x="-2" y="-16" width="26" height="26" rx="5" fill="#fff" stroke="#94a3b8" stroke-width="1.5"/>${glyph(INPUT[0], 11, 3, 15, EN_INK)}`,
+    key: `<rect x="-2" y="-16" width="26" height="26" rx="5" fill="#fff" stroke="#94a3b8" stroke-width="1.5"/>${glyph(INPUT.charAt(0), 11, 3, 15, EN_INK)}`,
     table: `<rect x="-4" y="-22" width="40" height="34" rx="3" fill="#fff" stroke="#16a34a" stroke-width="1.5"/><line x1="-4" y1="-11" x2="36" y2="-11" stroke="#86efac"/><line x1="-4" y1="0" x2="36" y2="0" stroke="#86efac"/><line x1="14" y1="-22" x2="14" y2="12" stroke="#86efac"/>`,
     dict: `<rect x="-2" y="-22" width="30" height="36" rx="3" fill="#0d9488"/><rect x="2" y="-18" width="22" height="28" rx="2" fill="#ccfbf1"/>${glyph("辞書", 13, -3, 9, "#115e59")}`,
     bars: `<rect x="-2" y="-22" width="40" height="36" rx="4" fill="#fff" stroke="#d97706" stroke-width="1.5"/><rect x="4" y="-2" width="6" height="12" fill="#f59e0b"/><rect x="13" y="-14" width="6" height="24" fill="#f59e0b"/><rect x="22" y="-8" width="6" height="18" fill="#f59e0b"/>`,
@@ -739,19 +752,19 @@ async function main() {
       18,
     ),
   );
-  (["raw", "en", "ja", "pn"] as const).forEach((k, i) => {
+  (
+    [
+      ["raw", "打鍵"],
+      ["en", "英語"],
+      ["ja", "日本語"],
+      ["pn", "句読点"],
+    ] as const
+  ).forEach(([k, label], i) => {
     const x = 44 + i * 110;
     add(
       `<rect x="${x}" y="154" width="20" height="20" rx="4" fill="${KIND[k].col}" stroke="${shade(KIND[k].col, -0.3)}"/>`,
     );
-    add(
-      text(
-        [T(["打鍵", "英語", "日本語", "句読点"][i], "#334155")],
-        x + 28,
-        171,
-        17,
-      ),
-    );
+    add(text([T(label, "#334155")], x + 28, 171, 17));
   });
 
   const defs = `<defs><filter id="sh" x="-10%" y="-10%" width="120%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.10"/></filter><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#475569"/></marker></defs>`;

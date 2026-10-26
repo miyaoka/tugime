@@ -1,5 +1,6 @@
 // README と docs の図を作るスクリプトが共有する部品。tugime-cli の実行と、フォントの字形を図形にして埋め込む SVG の組み立て。
 // 文字を図形にするので、見る人の環境のフォントに左右されない。配色は prefers-color-scheme でライトとダークを切り替える
+import assert from "node:assert";
 import { join } from "node:path";
 import opentype from "opentype.js";
 import { fonts as fetchFonts } from "../fetch-fonts";
@@ -91,11 +92,16 @@ const segmentPattern = /([JEP])\[(.*?)→(.*?) (-?[\d.]+)\]/g;
 export function parseSegments(described: string): Segment[] {
   let pos = 0;
   return [...described.matchAll(segmentPattern)].map((m) => {
+    const [whole, kind, keys, output] = m;
+    assert(
+      kind !== undefined && keys !== undefined && output !== undefined,
+      `区間の表記を読めない: ${whole}`,
+    );
     const segment = {
-      kind: m[1] as Kind,
+      kind: kind as Kind,
       s: pos,
-      e: pos + m[2].length,
-      output: m[3],
+      e: pos + keys.length,
+      output,
     };
     pos = segment.e;
     return segment;
@@ -112,7 +118,11 @@ export async function readExplains(inputs: string[]): Promise<Segment[][]> {
     throw new Error(
       `--explain の行数 ${lines.length} が ${inputs.length} と合わない`,
     );
-  return lines.map((l) => parseSegments(l.split("\t")[1]));
+  return lines.map((l) => {
+    const described = l.split("\t")[1];
+    assert(described !== undefined, `--explain の行に区間の並びが無い: ${l}`);
+    return parseSegments(described);
+  });
 }
 
 /// 打鍵列ごとの、区切りの採点で比べた区間の候補
@@ -123,25 +133,33 @@ export async function readLattices(
   const lattices = new Map<string, Span[]>();
   let current: Span[] | undefined;
   for (const line of out.split("\n")) {
-    const head = line.match(/^== (\S+)\t/);
-    if (head) {
+    const input = line.match(/^== (\S+)\t/)?.[1];
+    if (input !== undefined) {
       current = [];
-      lattices.set(head[1], current);
+      lattices.set(input, current);
       continue;
     }
     // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点。変換エンジンのログも標準出力に混ざるので、数字とタブで始まる行だけを候補として読む
     if (!/^\d+\t/.test(line)) continue;
-    const cols = line.split("\t");
-    if (cols.length !== 7)
+    const [s, e, after, kind, , output, score, ...rest] = line.split("\t");
+    if (
+      s === undefined ||
+      e === undefined ||
+      after === undefined ||
+      kind === undefined ||
+      output === undefined ||
+      score === undefined ||
+      rest.length > 0
+    )
       throw new Error(`--lattice の候補の行が 7 列でない: ${line}`);
     if (!current) throw new Error(`== の行より前に候補がある: ${line}`);
     current.push({
-      s: +cols[0],
-      e: +cols[1],
-      after: cols[2],
-      kind: cols[3] as "J" | "E",
-      output: cols[5],
-      score: +cols[6],
+      s: +s,
+      e: +e,
+      after,
+      kind: kind as "J" | "E",
+      output,
+      score: +score,
     });
   }
   for (const i of inputs)
@@ -159,26 +177,38 @@ export function bestPath(
   allow: (s: Span) => boolean,
   must: (s: Span) => boolean = () => true,
 ): Path | undefined {
-  const table: Map<string, Path & { hit: boolean }>[] = Array.from(
-    { length: length + 1 },
-    () => new Map(),
-  );
-  table[0].set("-|false", { total: 0, spans: [], hit: false });
+  /// 打鍵列の位置ごとに、最後の区間の種類と must を満たしたかの組で、合計の最も高い並び
+  const table: Map<string, Path & { kind: string; hit: boolean }>[] =
+    Array.from({ length: length + 1 }, () => new Map());
+  const at = (pos: number) => {
+    const cells = table[pos];
+    assert(
+      cells !== undefined,
+      `区間の位置 ${pos} が打鍵列の長さ ${length} を超える`,
+    );
+    return cells;
+  };
+  at(0).set("-|false", { total: 0, spans: [], kind: "-", hit: false });
   for (let pos = 0; pos < length; pos++) {
-    for (const [key, cell] of table[pos]) {
-      const previous = key.split("|")[0];
+    for (const cell of at(pos).values()) {
       for (const span of spans) {
-        if (span.s !== pos || span.after !== previous || !allow(span)) continue;
+        if (span.s !== pos || span.after !== cell.kind || !allow(span))
+          continue;
         const hit = cell.hit || must(span);
         const total = cell.total + span.score;
         const k = `${span.kind}|${hit}`;
-        const existing = table[span.e].get(k);
+        const existing = at(span.e).get(k);
         if (!existing || existing.total < total)
-          table[span.e].set(k, { total, spans: [...cell.spans, span], hit });
+          at(span.e).set(k, {
+            total,
+            spans: [...cell.spans, span],
+            kind: span.kind,
+            hit,
+          });
       }
     }
   }
-  return [...table[length].values()]
+  return [...at(length).values()]
     .filter((c) => c.hit)
     .sort((a, b) => b.total - a.total)[0];
 }
@@ -243,7 +273,9 @@ export class Glyphs {
         const glyph = f.charToGlyph(ch);
         if (glyph.index === 0)
           throw new Error(`フォント ${font} に字形が無い: ${ch}`);
-        const id = `${font[0]}${ch.codePointAt(0)!.toString(16)}`;
+        const code = ch.codePointAt(0);
+        assert(code !== undefined);
+        const id = `${font.charAt(0)}${code.toString(16)}`;
         if (!this.defs.has(id))
           this.defs.set(
             id,

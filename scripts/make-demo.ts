@@ -1,6 +1,7 @@
 // README の冒頭のデモを作る。docs/images/demo.svg は打鍵列を 1 打鍵ずつ tugime-cli に渡した表示を順に見せるアニメーション、
 // docs/images/demo-compare.svg は同じ打鍵列をほかの方式で打った結果と並べた静止画。
 // 使い方: bun install --cwd scripts && bun scripts/make-demo.ts
+import assert from "node:assert";
 import {
   Glyphs,
   assertAlt,
@@ -42,12 +43,20 @@ function wrongPositions(other: string, right: string): Set<number> {
   const lcs = Array.from({ length: a.length + 1 }, () =>
     new Array<number>(b.length + 1).fill(0),
   );
+  /// a[i..] と b[j..] の最長共通部分列の長さ
+  const at = (i: number, j: number) => {
+    const length = lcs[i]?.[j];
+    assert(length !== undefined, `最長共通部分列の表の外: ${i}, ${j}`);
+    return length;
+  };
   for (let i = a.length - 1; i >= 0; i--) {
+    const row = lcs[i];
+    assert(row !== undefined);
     for (let j = b.length - 1; j >= 0; j--) {
-      lcs[i][j] =
+      row[j] =
         a[i] === b[j]
-          ? lcs[i + 1][j + 1] + 1
-          : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+          ? at(i + 1, j + 1) + 1
+          : Math.max(at(i + 1, j), at(i, j + 1));
     }
   }
   const wrong = new Set<number>();
@@ -57,7 +66,7 @@ function wrongPositions(other: string, right: string): Set<number> {
     if (j < b.length && a[i] === b[j]) {
       i++;
       j++;
-    } else if (j < b.length && lcs[i][j + 1] >= lcs[i + 1][j]) j++;
+    } else if (j < b.length && at(i, j + 1) >= at(i + 1, j)) j++;
     else wrong.add(i++);
   }
   return wrong;
@@ -94,6 +103,7 @@ const [dictionaryResult] = await step(
   async () =>
     readLive(await run([cli, "--method", "azookey", "--live", input]), [input]),
 );
+assert(dictionaryResult !== undefined);
 if (dictionaryResult === expected)
   throw new Error(
     `英語を見分けて辞書と統計で変換しても ${expected} になり、比べる意味が無い`,
@@ -120,10 +130,12 @@ await assertAlt("README.md", "demo-compare.svg", [
   );
   const frameXml = frames
     .map((shown, i) => {
+      const prefix = prefixes[i];
+      assert(prefix !== undefined, `${i + 1} 打鍵目の打鍵列が無い`);
       const start = i * KEY_INTERVAL;
       const end = i === frames.length - 1 ? undefined : start + KEY_INTERVAL;
       const width = g.width(shown, "bold", SHOWN_SIZE);
-      return `<g opacity="0">${visible(start, end, total)}${g.draw(prefixes[i], "bold", LEFT, keysY, keysSize, "key", KEYS_TRACKING)}${g.draw(shown, "bold", LEFT, shownY, SHOWN_SIZE, kindOf)}<rect class="line" x="${LEFT}" y="${shownY + 10}" width="${width.toFixed(1)}" height="2"/></g>`;
+      return `<g opacity="0">${visible(start, end, total)}${g.draw(prefix, "bold", LEFT, keysY, keysSize, "key", KEYS_TRACKING)}${g.draw(shown, "bold", LEFT, shownY, SHOWN_SIZE, kindOf)}<rect class="line" x="${LEFT}" y="${shownY + 10}" width="${width.toFixed(1)}" height="2"/></g>`;
     })
     .join("");
   const title = g.draw("tugime", "bold", LEFT, 36, LABEL_SIZE, "sub");
