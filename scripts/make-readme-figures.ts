@@ -83,20 +83,21 @@ const keyCount = (runs: Run[]) =>
 
 // ── conversion ────────────────────────────────────
 
-/// 変換の図に載せる例文。name が英語、日本語、英語と入れ替わる
-const input = "namewohennkousuru";
+/// 変換の図に載せる例文。make が英語、日本語、英語と入れ替わる
+const input = "makewojikkousuru";
 /// 最後まで打ったときに表示されるはずの文
-const expected = "nameを変更する";
+const expected = "makeを実行する";
 /// 「採った読み方」に並べる時点（打鍵の数）
-const stepEnds = [4, 6, 8, 10, 12, 14, 15, 16, 17];
+const stepEnds = [4, 6, 8, 10, 12, 14, 15, 16];
 /// 最後に入れ替わる語と、入れ替わりの前後で比べる時点（打鍵の数）
-const flippedWord = "name";
-const versusEnds = [15, 17];
+const flippedWord = "make";
+const versusEnds = [14, 16];
 /// 図の筋書き。この時点（打鍵の数）で flippedWord を含む区間がこの種類になる
 const flippedKinds: [number, Kind][] = [
   [4, "E"],
   [8, "J"],
-  [17, "E"],
+  [15, "J"],
+  [16, "E"],
 ];
 
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）
@@ -577,6 +578,10 @@ for (const [end, kind] of flippedKinds) {
   }
   const height = y + 36;
   const label = `${input} を打ち進めるごとの表示と、その裏で比べた読み方の候補。打鍵列の範囲を日本語や英語として読む候補を挙げ、点の合計が最も高い並びを採る。${flippedWord} は、打った直後は英語、続けて打つと日本語、最後の打鍵で英語に戻る`;
+  await assertAlt("docs/how-it-works.md", "conversion.svg", [
+    expected,
+    flippedWord,
+  ]);
   await writeImage(
     "conversion.svg",
     svgDocument(
