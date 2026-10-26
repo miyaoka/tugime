@@ -19,11 +19,17 @@ swift test
 ```bash
 swift build -c release --product tugime-eval
 problems=$(scripts/fetch-eval.sh)                                                  # 問題を取得してディレクトリを出す
+model=$(scripts/fetch-genmai.sh)                                                   # 入力メソッドと同じモデルのパス
 .build/release/tugime-eval accuracy --method azookey --problems "$problems" --out .eval/azookey.jsonl
 .build/release/tugime-eval accuracy --method "direct:$model" --problems "$problems" --out .eval/genmai.jsonl
 .build/release/tugime-eval compare .eval/azookey.jsonl .eval/genmai.jsonl         # 片方だけが正解した問題
 .build/release/tugime-eval keystrokes --method "direct:$model" --problems "$problems" --out .eval/keys.tsv
-model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出力名>)      # Hugging Face の safetensors を GGUF にする
+```
+
+別のモデルを測るときは、Hugging Face の safetensors を GGUF にして、そのパスを `model` にする。
+
+```bash
+model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出力名>)
 ```
 
 引数と終了コードは `tugime-eval` を引数なしで実行すると出る。
