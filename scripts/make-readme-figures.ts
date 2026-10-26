@@ -106,14 +106,11 @@ async function readSteps(prefixes: string[], model: string) {
     await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]),
     prefixes,
   );
-  return prefixes.map((prefix, i) => {
+  // readExplains は渡した打鍵列と同じ順に、同じ数の区切りを返す
+  return shown.map(({ input: prefix, shown }, i) => {
     const s = segments[i];
-    const t = shown[i];
-    assert(
-      s !== undefined && t !== undefined,
-      `${prefix} の区切りか表示が無い`,
-    );
-    return { prefix, segments: s, shown: t };
+    assert(s !== undefined, `${prefix} の区切りが無い`);
+    return { prefix, segments: s, shown };
   });
 }
 
@@ -157,12 +154,13 @@ function mergedBounds(spans: { kind: string; s: number; e: number }[]): string {
 
 const { model, fonts } = await prepare();
 
-const [introShown] = await step("紹介の文の表示", async () =>
+const [intro] = await step("紹介の文の表示", async () =>
   readLive(
     await run([cli, "--method", `direct:${model}`, "--live", introInput]),
     [introInput],
   ),
 );
+const introShown = intro?.shown;
 if (introShown !== introExpected)
   throw new Error(`紹介の文の表示 ${introShown} が ${introExpected} と違う`);
 
@@ -212,9 +210,9 @@ const versus = versusPrefixes.map((prefix) => {
 });
 
 // 図の筋書きが出力と合うかを確かめる。合わなければ見出しと説明が偽になる
-const [before, after] = versus;
+const [before, after, ...moreVersus] = versus;
 assert(
-  before !== undefined && after !== undefined,
+  before !== undefined && after !== undefined && moreVersus.length === 0,
   "versusEnds が 2 つの時点でない",
 );
 if (!(before.japanese.total > before.english.total))

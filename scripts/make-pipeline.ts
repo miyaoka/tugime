@@ -58,8 +58,13 @@ async function readReadings(inputs: string[]): Promise<Map<string, string>> {
       continue;
     }
     // 種類 読み<TAB>候補。変換エンジンのログも標準出力に混ざるので、種類と空白で始まりタブを含む行だけを文節として読む
-    const [, kind, reading] = line.match(/^([JEP]) ([^\t]+)\t/) ?? [];
-    if (kind === undefined || reading === undefined) continue;
+    const clause = line.match(/^([JEP]) ([^\t]+)\t/);
+    if (!clause) continue;
+    const [, kind, reading] = clause;
+    assert(
+      kind !== undefined && reading !== undefined,
+      `文節の行を読めない: ${line}`,
+    );
     if (current === undefined)
       throw new Error(`== の行より前に文節がある: ${line}`);
     if (kind === "J")
@@ -73,20 +78,20 @@ async function readReadings(inputs: string[]): Promise<Map<string, string>> {
 
 async function readValues(model: string) {
   const [segments] = await readExplains([INPUT]);
-  assert(segments !== undefined);
+  assert(segments !== undefined, `${INPUT} の区切りが無い`);
   const scored = segments.map((s) => s.output);
-  if (scored.join("|") !== SCORED.join("|"))
-    throw new Error(
-      `採点の区切り ${scored.join("|")} が ${SCORED.join("|")} と違う`,
-    );
+  assert.deepStrictEqual(
+    scored,
+    SCORED,
+    `採点の区切り ${scored.join("|")} が ${SCORED.join("|")} と違う`,
+  );
   const [japanese, ...otherJapanese] = segments.filter((s) => s.kind === "J");
   if (japanese === undefined || otherJapanese.length > 0)
     throw new Error(`日本語の区間が 1 つでない: ${scored.join("|")}`);
 
   const lattice = (await readLattices([INPUT])).get(INPUT);
   assert(lattice !== undefined, `${INPUT} の区間の候補が無い`);
-  const rejectedEnd = REJECTED.at(-1)?.[1];
-  assert(rejectedEnd !== undefined, "REJECTED が空");
+  const rejectedEnd = REJECTED[2][1];
   const isRejected = (span: Span) =>
     REJECTED.some(
       ([s, e, kind, output]) =>
@@ -108,14 +113,14 @@ async function readValues(model: string) {
     await run([cli, "--method", `direct:${model}`, "--live", ...inputs]),
     inputs,
   );
-  const expected = [SHOWN, ...EXAMPLES.map((e) => e[1])];
-  if (shown.join("\n") !== expected.join("\n"))
-    throw new Error(
-      `${inputs.join(" / ")} の表示 ${shown.join(" / ")} が ${expected.join(" / ")} と違う`,
-    );
-  // 採点の区切りと表示は、比べた値と一致したので、比べた値（型の決まった定数）を返す
+  const expected = [
+    { input: INPUT, shown: SHOWN },
+    ...EXAMPLES.map(([input, shown]) => ({ input, shown })),
+  ];
+  assert.deepStrictEqual(shown, expected, "打鍵列の表示が期待する文と違う");
+  // 表示は期待する文と一致したので、期待する文を返す
   return {
-    scored: SCORED,
+    scored,
     japaneseKeys: INPUT.slice(japanese.s, japanese.e),
     reading: readingOf(readings, INPUT),
     japaneseCandidates,
@@ -580,8 +585,10 @@ async function main() {
     col: string,
     font: FontName = "bold",
   ) => text([{ t, col, font }], x, y, size, "middle");
+  const [firstKey] = INPUT;
+  assert(firstKey !== undefined, "INPUT が空");
   const PROP = {
-    key: `<rect x="-2" y="-16" width="26" height="26" rx="5" fill="#fff" stroke="#94a3b8" stroke-width="1.5"/>${glyph(INPUT.charAt(0), 11, 3, 15, EN_INK)}`,
+    key: `<rect x="-2" y="-16" width="26" height="26" rx="5" fill="#fff" stroke="#94a3b8" stroke-width="1.5"/>${glyph(firstKey, 11, 3, 15, EN_INK)}`,
     table: `<rect x="-4" y="-22" width="40" height="34" rx="3" fill="#fff" stroke="#16a34a" stroke-width="1.5"/><line x1="-4" y1="-11" x2="36" y2="-11" stroke="#86efac"/><line x1="-4" y1="0" x2="36" y2="0" stroke="#86efac"/><line x1="14" y1="-22" x2="14" y2="12" stroke="#86efac"/>`,
     dict: `<rect x="-2" y="-22" width="30" height="36" rx="3" fill="#0d9488"/><rect x="2" y="-18" width="22" height="28" rx="2" fill="#ccfbf1"/>${glyph("辞書", 13, -3, 9, "#115e59")}`,
     bars: `<rect x="-2" y="-22" width="40" height="36" rx="4" fill="#fff" stroke="#d97706" stroke-width="1.5"/><rect x="4" y="-2" width="6" height="12" fill="#f59e0b"/><rect x="13" y="-14" width="6" height="24" fill="#f59e0b"/><rect x="22" y="-8" width="6" height="18" fill="#f59e0b"/>`,

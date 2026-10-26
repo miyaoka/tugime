@@ -51,7 +51,7 @@ function wrongPositions(other: string, right: string): Set<number> {
   };
   for (let i = a.length - 1; i >= 0; i--) {
     const row = lcs[i];
-    assert(row !== undefined);
+    assert(row !== undefined, `最長共通部分列の表に ${i} 行目が無い`);
     for (let j = b.length - 1; j >= 0; j--) {
       row[j] =
         a[i] === b[j]
@@ -93,17 +93,16 @@ const frames = await step("1 打鍵ごとの表示", async () =>
     prefixes,
   ),
 );
-const final = frames[frames.length - 1];
+const final = frames.at(-1)?.shown;
 if (final !== expected)
   throw new Error(
     `最後まで打ったときの表示 ${final} が期待する文 ${expected} と違う`,
   );
-const [dictionaryResult] = await step(
-  "英語を見分けて辞書と統計で変換",
-  async () =>
-    readLive(await run([cli, "--method", "azookey", "--live", input]), [input]),
+const [dictionary] = await step("英語を見分けて辞書と統計で変換", async () =>
+  readLive(await run([cli, "--method", "azookey", "--live", input]), [input]),
 );
-assert(dictionaryResult !== undefined);
+assert(dictionary !== undefined, `${input} の辞書と統計の変換の結果が無い`);
+const dictionaryResult = dictionary.shown;
 if (dictionaryResult === expected)
   throw new Error(
     `英語を見分けて辞書と統計で変換しても ${expected} になり、比べる意味が無い`,
@@ -129,9 +128,7 @@ await assertAlt("README.md", "demo-compare.svg", [
     KEYS_TRACKING,
   );
   const frameXml = frames
-    .map((shown, i) => {
-      const prefix = prefixes[i];
-      assert(prefix !== undefined, `${i + 1} 打鍵目の打鍵列が無い`);
+    .map(({ input: prefix, shown }, i) => {
       const start = i * KEY_INTERVAL;
       const end = i === frames.length - 1 ? undefined : start + KEY_INTERVAL;
       const width = g.width(shown, "bold", SHOWN_SIZE);
