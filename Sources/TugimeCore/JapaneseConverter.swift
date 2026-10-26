@@ -40,9 +40,23 @@ public struct JapaneseDisplay: Sendable, Equatable {
     public var matchesReading: Bool {
         let reading = clauses.map(\.reading).joined()
         guard ReadingAlignment(text: text, reading: reading) == nil else { return true }
-        let spellings = userWords.flatMap { word in word.spellings.map { (spelling: $0, reading: word.reading) } }
-        let read = spellings.sorted { $0.spelling.count > $1.spelling.count }.reduce(text) { $0.replacingOccurrences(of: $1.spelling, with: $1.reading) }
-        return ReadingAlignment(text: read, reading: reading) != nil
+        return ReadingAlignment(text: readingUserSpellings, reading: reading) != nil
+    }
+
+    /// text を前から 1 度だけ読み、各位置で最も長く一致する利用者の語の表記をその語の読みにしたもの。置き換えた読みを、ほかの語の表記として読み直さない
+    private var readingUserSpellings: String {
+        let spellings = userWords.flatMap { word in word.spellings.map { (spelling: $0, reading: word.reading) } }.sorted { $0.spelling.count > $1.spelling.count }
+        var read = ""
+        var rest = text[...]
+        while !rest.isEmpty {
+            if let match = spellings.first(where: { rest.hasPrefix($0.spelling) }) {
+                read += match.reading
+                rest = rest.dropFirst(match.spelling.count)
+            } else {
+                read.append(rest.removeFirst())
+            }
+        }
+        return read
     }
 }
 

@@ -116,6 +116,13 @@ private final class FixedGenerator: DirectDisplayGenerating {
         }
     }
 
+    /// 表記を読みに置き換えた結果を、ほかの語の表記として置き換え直さない
+    @Test func replacesEachSpellingOnce() {
+        let words = [UsedUserWord(reading: "カナ", spellings: ["甲乙"]), UsedUserWord(reading: "イ", spellings: ["ナ"])]
+        let shown = JapaneseDisplay(text: "甲乙ナ", clauses: [JapaneseClause(reading: "かない", text: "甲乙ナ")], userWords: words)
+        #expect(shown.matchesReading)
+    }
+
     /// 利用者の語の表記が、別の読みの語の一部として表示にあっても、読みどおりの表示は読みと合う
     @Test func keepsAReadingThatMatchesWithoutTheUserWord() {
         let shown = JapaneseDisplay(text: "火が点く点", clauses: [JapaneseClause(reading: "ひがつくてん", text: "火が点く点")], userWords: [UsedUserWord(reading: "テン", spellings: ["点"])])
