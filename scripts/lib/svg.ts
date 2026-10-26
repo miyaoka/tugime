@@ -47,7 +47,7 @@ export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
   return { model, fonts };
 }
 
-/// --live の出力から、打鍵列ごとの表示を読む。変換エンジンのログも標準出力に混ざるので、渡した打鍵列で始まる行だけを読む
+/// --live の出力から、打鍵列ごとの表示を読む。debug 版では変換エンジンのログも標準出力に混ざるので、渡した打鍵列で始まる行だけを読む
 export function readLive(stdout: string, inputs: string[]): string[] {
   const lines = new Map<string, string>();
   for (const line of stdout.split("\n")) {
