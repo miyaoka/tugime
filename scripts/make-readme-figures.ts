@@ -2,7 +2,7 @@
 //   docs/images/intro.svg      … 同じ文を打つとき、ふつうの日本語入力と tugime で文字のほかに押すキーを比べる
 //   docs/images/conversion.svg … 打鍵列を区切って変換するまで（比べた読み方の候補、打鍵ごとの区切り、最後に入れ替わる理由）
 // 使い方: bun install --cwd scripts && bun scripts/make-readme-figures.ts
-import { Glyphs, assertAlt, cli, kindOf, prepare, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
+import { Glyphs, type Kind, type Segment, type Span, assertAlt, bestPath, cli, kindOf, prepare, readExplains, readLattices, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
 
 const SOURCE = "scripts/make-readme-figures.ts";
 
@@ -52,29 +52,11 @@ const flippedKinds: [number, Kind][] = [
   [26, "E"],
 ];
 
-type Kind = "J" | "E" | "P";
-type Segment = { kind: Kind; s: number; e: number; output: string };
-type Span = { s: number; e: number; after: string; kind: "J" | "E"; output: string; score: number };
-
-/// --explain と --lattice の区間の表記 K[打鍵→出力 点]
-const segmentPattern = /([JEP])\[(.*?)→(.*?) (-?[\d.]+)\]/g;
-
-function parseSegments(described: string): Segment[] {
-  let pos = 0;
-  return [...described.matchAll(segmentPattern)].map((m) => {
-    const segment = { kind: m[1] as Kind, s: pos, e: pos + m[2].length, output: m[3] };
-    pos = segment.e;
-    return segment;
-  });
-}
-
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）
 async function readSteps(prefixes: string[], model: string) {
-  const explainOut = await run([cli, "--explain", ...prefixes]);
-  const explainLines = explainOut.split("\n").filter((l) => /\t[EJP]\[/.test(l));
-  if (explainLines.length !== prefixes.length) throw new Error(`--explain の行数 ${explainLines.length} が ${prefixes.length} と合わない`);
+  const segments = await readExplains(prefixes);
   const shown = readLive(await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]), prefixes);
-  return prefixes.map((prefix, i) => ({ prefix, segments: parseSegments(explainLines[i].split("\t")[1]), shown: shown[i] }));
+  return prefixes.map((prefix, i) => ({ prefix, segments: segments[i], shown: shown[i] }));
 }
 
 /// 表示の文字列を区間ごとに分ける。英語と句読点の区間は出力がそのまま表示に出るので、その間を日本語の区間の表示とする
@@ -93,51 +75,6 @@ function splitShown(segments: Segment[], shown: string): string[] {
     cursor = end;
     return text;
   });
-}
-
-/// 打鍵列ごとの、区切りの採点で比べた区間の候補
-async function readLattices(inputs: string[]): Promise<Map<string, Span[]>> {
-  const out = await run([cli, "--lattice", ...inputs]);
-  const lattices = new Map<string, Span[]>();
-  let current: Span[] | undefined;
-  for (const line of out.split("\n")) {
-    const head = line.match(/^== (\S+)\t/);
-    if (head) {
-      current = [];
-      lattices.set(head[1], current);
-      continue;
-    }
-    // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点。変換エンジンのログも標準出力に混ざるので、数字とタブで始まる行だけを候補として読む
-    if (!/^\d+\t/.test(line)) continue;
-    const cols = line.split("\t");
-    if (cols.length !== 7) throw new Error(`--lattice の候補の行が 7 列でない: ${line}`);
-    if (!current) throw new Error(`== の行より前に候補がある: ${line}`);
-    current.push({ s: +cols[0], e: +cols[1], after: cols[2], kind: cols[3] as "J" | "E", output: cols[5], score: +cols[6] });
-  }
-  for (const i of inputs) if (!lattices.get(i)?.length) throw new Error(`--lattice の候補が無い: ${i}`);
-  return lattices;
-}
-
-type Path = { total: number; spans: Span[] };
-
-/// 区間の候補を、直前の区間の種類が合うようにつないだ並びのうち、合計の最も高いもの。allow で使える区間を、must で含むべき区間を絞る
-function bestPath(spans: Span[], length: number, allow: (s: Span) => boolean, must: (s: Span) => boolean = () => true): Path | undefined {
-  const table: Map<string, Path & { hit: boolean }>[] = Array.from({ length: length + 1 }, () => new Map());
-  table[0].set("-|false", { total: 0, spans: [], hit: false });
-  for (let pos = 0; pos < length; pos++) {
-    for (const [key, cell] of table[pos]) {
-      const previous = key.split("|")[0];
-      for (const span of spans) {
-        if (span.s !== pos || span.after !== previous || !allow(span)) continue;
-        const hit = cell.hit || must(span);
-        const total = cell.total + span.score;
-        const k = `${span.kind}|${hit}`;
-        const existing = table[span.e].get(k);
-        if (!existing || existing.total < total) table[span.e].set(k, { total, spans: [...cell.spans, span], hit });
-      }
-    }
-  }
-  return [...table[length].values()].filter((c) => c.hit).sort((a, b) => b.total - a.total)[0];
 }
 
 /// 隣り合う日本語の区間をまとめた位置。--explain の区切りと比べるのに使う

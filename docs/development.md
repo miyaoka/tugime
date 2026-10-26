@@ -42,6 +42,7 @@ model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出
 bun install --cwd scripts
 bun scripts/make-demo.ts             # README の冒頭のデモ docs/images/demo.svg と demo-compare.svg
 bun scripts/make-readme-figures.ts   # docs/images/intro.svg と conversion.svg
+bun scripts/make-pipeline.ts         # README の変換の仕組みの図 docs/images/pipeline.svg
 ```
 
 `make-demo.ts` は、他の入力方式の結果のうち、日本語モードのライブ変換の結果だけを人間が打って確かめた値として持つ。デモの打鍵列を変えたら、その値も打ち直して変える。

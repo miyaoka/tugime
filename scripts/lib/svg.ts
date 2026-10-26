@@ -61,6 +61,76 @@ export function readLive(stdout: string, inputs: string[]): string[] {
   });
 }
 
+export type Kind = "J" | "E" | "P";
+export type Segment = { kind: Kind; s: number; e: number; output: string };
+export type Span = { s: number; e: number; after: string; kind: "J" | "E"; output: string; score: number };
+
+/// --explain と --lattice の区間の表記 K[打鍵→出力 点]
+const segmentPattern = /([JEP])\[(.*?)→(.*?) (-?[\d.]+)\]/g;
+
+/// --explain の区間の並びを、打鍵列の位置と出力にする
+export function parseSegments(described: string): Segment[] {
+  let pos = 0;
+  return [...described.matchAll(segmentPattern)].map((m) => {
+    const segment = { kind: m[1] as Kind, s: pos, e: pos + m[2].length, output: m[3] };
+    pos = segment.e;
+    return segment;
+  });
+}
+
+/// 打鍵列ごとの、区切りの採点で採った区間の並び。--explain は 1 打鍵列に 1 行「採点の変換の結果<TAB>区間の並び」を出し、
+/// 変換エンジンのログも標準出力に混ざるので、区間の表記を含む行だけを読む
+export async function readExplains(inputs: string[]): Promise<Segment[][]> {
+  const lines = (await run([cli, "--explain", ...inputs])).split("\n").filter((l) => /\t[EJP]\[/.test(l));
+  if (lines.length !== inputs.length) throw new Error(`--explain の行数 ${lines.length} が ${inputs.length} と合わない`);
+  return lines.map((l) => parseSegments(l.split("\t")[1]));
+}
+
+/// 打鍵列ごとの、区切りの採点で比べた区間の候補
+export async function readLattices(inputs: string[]): Promise<Map<string, Span[]>> {
+  const out = await run([cli, "--lattice", ...inputs]);
+  const lattices = new Map<string, Span[]>();
+  let current: Span[] | undefined;
+  for (const line of out.split("\n")) {
+    const head = line.match(/^== (\S+)\t/);
+    if (head) {
+      current = [];
+      lattices.set(head[1], current);
+      continue;
+    }
+    // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点。変換エンジンのログも標準出力に混ざるので、数字とタブで始まる行だけを候補として読む
+    if (!/^\d+\t/.test(line)) continue;
+    const cols = line.split("\t");
+    if (cols.length !== 7) throw new Error(`--lattice の候補の行が 7 列でない: ${line}`);
+    if (!current) throw new Error(`== の行より前に候補がある: ${line}`);
+    current.push({ s: +cols[0], e: +cols[1], after: cols[2], kind: cols[3] as "J" | "E", output: cols[5], score: +cols[6] });
+  }
+  for (const i of inputs) if (!lattices.get(i)?.length) throw new Error(`--lattice の候補が無い: ${i}`);
+  return lattices;
+}
+
+export type Path = { total: number; spans: Span[] };
+
+/// 区間の候補を、直前の区間の種類が合うようにつないだ並びのうち、合計の最も高いもの。allow で使える区間を、must で含むべき区間を絞る
+export function bestPath(spans: Span[], length: number, allow: (s: Span) => boolean, must: (s: Span) => boolean = () => true): Path | undefined {
+  const table: Map<string, Path & { hit: boolean }>[] = Array.from({ length: length + 1 }, () => new Map());
+  table[0].set("-|false", { total: 0, spans: [], hit: false });
+  for (let pos = 0; pos < length; pos++) {
+    for (const [key, cell] of table[pos]) {
+      const previous = key.split("|")[0];
+      for (const span of spans) {
+        if (span.s !== pos || span.after !== previous || !allow(span)) continue;
+        const hit = cell.hit || must(span);
+        const total = cell.total + span.score;
+        const k = `${span.kind}|${hit}`;
+        const existing = table[span.e].get(k);
+        if (!existing || existing.total < total) table[span.e].set(k, { total, spans: [...cell.spans, span], hit });
+      }
+    }
+  }
+  return [...table[length].values()].filter((c) => c.hit).sort((a, b) => b.total - a.total)[0];
+}
+
 /// 英字・数字・半角の記号は打ったまま残った文字なので英語の色、それ以外は日本語の色
 export const kindOf = (ch: string) => (/[\x21-\x7e]/.test(ch) ? "en" : "ink");
 
@@ -72,8 +142,10 @@ export class Glyphs {
   private defs = new Map<string, string>();
   constructor(private fonts: Fonts) {}
 
+  /// draw が並べる幅。draw は 1 字ずつ字形の送り幅で並べるので、カーニングや合字を含む getAdvanceWidth では測らない
   width(text: string, font: FontName, size: number): number {
-    return this.fonts[font].getAdvanceWidth(text, size);
+    const f = this.fonts[font];
+    return [...text].reduce((w, ch) => w + (f.charToGlyph(ch).advanceWidth * size) / f.unitsPerEm, 0);
   }
 
   /// 文字の間に tracking を足して並べたとき、text の幅が width になる字の大きさ（幅は字の大きさに比例する）
@@ -117,24 +189,29 @@ export class Glyphs {
   }
 }
 
-const STYLE = `<style>
+const LIGHT = `
   .bg { fill: #ffffff; } .panel { fill: #f6f8fa; } .sub { fill: #6b7280; } .ink { fill: #111827; } .en { fill: #c2410c; } .key { fill: #4b5563; }
   .bad { fill: #dc2626; } .good { fill: #15803d; } .line { fill: #9ca3af; } .chip { fill: #e5e7eb; }
-  .jtint { fill: #e7ecf4; } .etint { fill: #fbe7d8; }
+  .jtint { fill: #e7ecf4; } .etint { fill: #fbe7d8; }`;
+const DARK = `
   @media (prefers-color-scheme: dark) {
     .bg { fill: #0d1117; } .panel { fill: #161b22; } .sub { fill: #9ca3af; } .ink { fill: #f3f4f6; } .en { fill: #fb923c; } .key { fill: #d1d5db; }
     .bad { fill: #f87171; } .good { fill: #4ade80; } .line { fill: #6b7280; } .chip { fill: #30363d; }
     .jtint { fill: #1f2937; } .etint { fill: #3b2414; }
-  }
-</style>`;
+  }`;
+
+/// auto は見る人の設定でライトとダークを切り替え、light はダークでもライトの配色のまま描く
+export type Scheme = "auto" | "light";
 
 const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/// 字形の定義と背景を付けた SVG。body は glyphs で描き終えたものを渡す（<defs> は使った字形から作るため）。label は画像の説明
-export function svgDocument(source: string, width: number, height: number, label: string, glyphs: Glyphs, body: string): string {
+/// 字形の定義と背景を付けた SVG。body は glyphs で描き終えたものを渡す（<defs> は使った字形から作るため）。label は画像の説明。
+/// style は図が足す CSS
+export function svgDocument(source: string, width: number, height: number, label: string, glyphs: Glyphs, body: string, scheme: Scheme = "auto", style = ""): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="${escapeXml(label)}">
 <!-- ${source} が生成する。直接編集しない。字形は LINE Seed JP（SIL Open Font License 1.1） -->
-${STYLE}
+<style>${LIGHT}${scheme === "auto" ? DARK : ""}${style}
+</style>
 <defs>${glyphs.defsXml()}</defs>
 <rect class="bg" width="${width}" height="${height}" rx="12"/>
 ${body}
