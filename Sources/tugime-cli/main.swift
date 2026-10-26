@@ -9,7 +9,10 @@ let usage = """
     --dictionary <ファイル> は利用者の辞書（書式は入力メソッドと同じ）。渡さなければ利用者の語は無く、入力メソッドの辞書は読まない。
     --explain・--lattice・--span の出力の表記は、区切りを採点した azooKey の変換で、表示の変換ではない）:
       tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
-      tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す
+      tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す。
+                                              入力メソッドが未確定の文字列の下に知らせを出す表示なら、打鍵列 と知らせを標準エラーに出す（既定の形も同じ）
+      tugime-cli --typing <打鍵列>...         入力メソッドで 1 打鍵ずつ打ったときの表示を出す。1 打鍵 1 行のタブ区切りで
+                                              ここまでの打鍵列 表示 未確定の文字列の下に出る知らせ（出なければ空）
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
       tugime-cli --lattice <打鍵列>...        区切りを決めた部分の採点で比べた区間の候補を出す。打鍵列ごとに == 打鍵列 の行の後、
                                               1 候補 1 行のタブ区切りで 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点
@@ -21,6 +24,12 @@ let usage = """
 
 let tag: [Segment.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .word: "U"]
 let clauseTag: [Clause.Kind: String] = [.japanese: "J", .english: "E", .punctuation: "P", .word: "U", .whole: "W"]
+
+/// 入力メソッドが未確定の文字列の下に知らせを出す表示なら、打鍵列と知らせを標準エラーに出す。標準出力の行の形は --live を読むもの（tugime-eval・図）が前提にする
+func warnIfDiffers(_ live: Segmenter.LiveDisplay, input: String) {
+    guard live.differsFromInput else { return }
+    FileHandle.standardError.write(Data("\(input)\t\(Segmenter.LiveDisplay.warning)\n".utf8))
+}
 
 func describe(_ segments: [Segment]) -> String {
     segments.map { s in
@@ -123,7 +132,20 @@ do {
     case "--live":
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
-            print("\(input)\t\(segmenter.liveText(input, leading: leading))")
+            let live = segmenter.liveDisplay(input, leading: leading)
+            print("\(input)\t\(live.text)")
+            warnIfDiffers(live, input: input)
+        }
+    case "--typing":
+        // 入力メソッドと同じく、1 つの未確定の文字列の中で 1 打鍵ずつ伸ばし、打ち終えたら未確定の文字列を終える
+        let segmenter = try makeSegmenter()
+        for input in args.dropFirst() {
+            for end in input.indices.dropFirst() + [input.endIndex] {
+                let keys = String(input[..<end])
+                let live = segmenter.liveDisplay(keys, leading: leading)
+                print("\(keys)\t\(live.text)\t\(live.differsFromInput ? Segmenter.LiveDisplay.warning : "")")
+            }
+            segmenter.endComposition()
         }
     case "--explain":
         let segmenter = try makeSegmenter()
@@ -144,7 +166,9 @@ do {
     default:
         let segmenter = try makeSegmenter()
         for input in args {
-            print(segmenter.liveText(input, leading: leading))
+            let live = segmenter.liveDisplay(input, leading: leading)
+            print(live.text)
+            warnIfDiffers(live, input: input)
         }
     }
 } catch {
