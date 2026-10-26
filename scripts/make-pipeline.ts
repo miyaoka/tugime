@@ -1,7 +1,7 @@
 // README の変換の仕組みの図 docs/images/pipeline.svg を tugime-cli の出力から作る。
 // 打鍵列を工程ごとに形を変える素材として等角投影のコンベアに並べ、各工程で働く部品をキャラにして、この素材に何をしているかを吹き出しで言わせる
 // 使い方: bun install --cwd scripts && bun scripts/make-pipeline.ts
-import { type FontName, Glyphs, type Span, assertAlt, bestPath, cli, parseSegments, prepare, readLattices, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
+import { type FontName, Glyphs, type Span, assertAlt, bestPath, cli, prepare, readExplains, readLattices, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
 
 const SOURCE = "scripts/make-pipeline.ts";
 
@@ -45,14 +45,11 @@ async function readReadings(inputs: string[]): Promise<Map<string, string>> {
 }
 
 async function readValues(model: string) {
-  // --explain は 1 行に「採点の変換の結果<TAB>区間の並び」を出す
-  const explain = (await run([cli, "--explain", INPUT])).split("\n").find((l) => /\t[EJP]\[/.test(l));
-  if (!explain) throw new Error(`--explain の結果が無い: ${INPUT}`);
-  const segments = parseSegments(explain.split("\t")[1]);
+  const [segments] = await readExplains([INPUT]);
   const scored = segments.map((s) => s.output);
   if (scored.join("|") !== SCORED.join("|")) throw new Error(`採点の区切り ${scored.join("|")} が ${SCORED.join("|")} と違う`);
   const japanese = segments.filter((s) => s.kind === "J");
-  if (japanese.length !== 1) throw new Error(`日本語の区間が 1 つでない: ${explain}`);
+  if (japanese.length !== 1) throw new Error(`日本語の区間が 1 つでない: ${scored.join("|")}`);
 
   const lattice = (await readLattices([INPUT])).get(INPUT)!;
   const isRejected = (span: Span) => REJECTED.some(([s, e, kind, output]) => span.s === s && span.e === e && span.kind === kind && span.output === output);

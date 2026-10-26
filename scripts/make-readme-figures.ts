@@ -2,7 +2,7 @@
 //   docs/images/intro.svg      … 同じ文を打つとき、ふつうの日本語入力と tugime で文字のほかに押すキーを比べる
 //   docs/images/conversion.svg … 打鍵列を区切って変換するまで（比べた読み方の候補、打鍵ごとの区切り、最後に入れ替わる理由）
 // 使い方: bun install --cwd scripts && bun scripts/make-readme-figures.ts
-import { Glyphs, type Kind, type Segment, type Span, assertAlt, bestPath, cli, kindOf, parseSegments, prepare, readLattices, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
+import { Glyphs, type Kind, type Segment, type Span, assertAlt, bestPath, cli, kindOf, prepare, readExplains, readLattices, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
 
 const SOURCE = "scripts/make-readme-figures.ts";
 
@@ -54,11 +54,9 @@ const flippedKinds: [number, Kind][] = [
 
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）
 async function readSteps(prefixes: string[], model: string) {
-  const explainOut = await run([cli, "--explain", ...prefixes]);
-  const explainLines = explainOut.split("\n").filter((l) => /\t[EJP]\[/.test(l));
-  if (explainLines.length !== prefixes.length) throw new Error(`--explain の行数 ${explainLines.length} が ${prefixes.length} と合わない`);
+  const segments = await readExplains(prefixes);
   const shown = readLive(await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]), prefixes);
-  return prefixes.map((prefix, i) => ({ prefix, segments: parseSegments(explainLines[i].split("\t")[1]), shown: shown[i] }));
+  return prefixes.map((prefix, i) => ({ prefix, segments: segments[i], shown: shown[i] }));
 }
 
 /// 表示の文字列を区間ごとに分ける。英語と句読点の区間は出力がそのまま表示に出るので、その間を日本語の区間の表示とする

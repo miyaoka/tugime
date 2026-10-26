@@ -78,6 +78,14 @@ export function parseSegments(described: string): Segment[] {
   });
 }
 
+/// 打鍵列ごとの、区切りの採点で採った区間の並び。--explain は 1 打鍵列に 1 行「採点の変換の結果<TAB>区間の並び」を出し、
+/// 変換エンジンのログも標準出力に混ざるので、区間の表記を含む行だけを読む
+export async function readExplains(inputs: string[]): Promise<Segment[][]> {
+  const lines = (await run([cli, "--explain", ...inputs])).split("\n").filter((l) => /\t[EJP]\[/.test(l));
+  if (lines.length !== inputs.length) throw new Error(`--explain の行数 ${lines.length} が ${inputs.length} と合わない`);
+  return lines.map((l) => parseSegments(l.split("\t")[1]));
+}
+
 /// 打鍵列ごとの、区切りの採点で比べた区間の候補
 export async function readLattices(inputs: string[]): Promise<Map<string, Span[]>> {
   const out = await run([cli, "--lattice", ...inputs]);
