@@ -7,7 +7,7 @@ import TugimeEval
 let usage = """
     使い方:
       tugime-eval accuracy --method <方式> --problems <dir> --out <記録.jsonl>
-          全問題の読みを綴りの表で打鍵列にし、問題の前の文脈を入力欄のカーソルの前の文字列として、方式と基準（azookey）で入力メソッドと同じく打ち、
+          全問題の読みを綴りの表で打鍵列にし、問題の前の文脈を入力欄のカーソルの前の文字列として、方式と基準（lattice）で入力メソッドと同じく打ち、
           問題ごとの記録を書き、集まりごと・判定ごとの正解数を出す。綴りで書けない読みの問題は打たずに不正解とする。
           モデルを使う方式の出力が、打てた問題の全件で基準と一致したら、記録を書き、集計を出さずに終了コード 1
       tugime-eval compare <記録.jsonl> <記録.jsonl>
@@ -45,6 +45,11 @@ func stderr(_ line: String) {
 
 let problemOptions: Set<String> = ["--method", "--problems", "--out"]
 
+/// リポジトリの直下から実行したときの、bun scripts/fetch-dictionary.ts が組み立てたシステム辞書
+func repositoryDictionary() throws -> SystemDictionary {
+    try SystemDictionary(url: SystemDictionary.inRepository(URL(fileURLWithPath: FileManager.default.currentDirectoryPath)))
+}
+
 /// サブコマンドの表
 let commands: [String: (ArraySlice<String>) throws -> Void] = [
     "accuracy": { args in
@@ -55,7 +60,7 @@ let commands: [String: (ArraySlice<String>) throws -> Void] = [
         let problems = try ProblemFiles(directory: URL(fileURLWithPath: o["--problems"]!)).load()
         stderr("問題 \(problems.problems.count) 件。判定に写せず捨てた行 \(problems.dropped.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: "、"))")
         try AccuracyRun.run(
-            problems: problems, target: method, record: URL(fileURLWithPath: o["--out"]!), watchdog: watchdog,
+            problems: problems, target: method, dictionary: try repositoryDictionary(), record: URL(fileURLWithPath: o["--out"]!), watchdog: watchdog,
             progress: stderr, report: { print($0) }
         )
     },
@@ -75,7 +80,7 @@ let commands: [String: (ArraySlice<String>) throws -> Void] = [
         for problem in selection.skipped {
             stderr("綴りで書けないので外す: \(problem.id) \(problem.kana)")
         }
-        let report = try KeystrokeBench.run(selection: selection, method: method, watchdog: watchdog, progress: stderr)
+        let report = try KeystrokeBench.run(selection: selection, method: method, dictionary: try repositoryDictionary(), watchdog: watchdog, progress: stderr)
         watchdog.arm(item: "書き出し")
         try (report.finalTextLines.joined(separator: "\n") + "\n").write(toFile: o["--out"]!, atomically: true, encoding: .utf8)
         watchdog.finish()

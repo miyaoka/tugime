@@ -5,6 +5,7 @@ import { $ } from "bun";
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dictionary } from "./fetch-dictionary";
 import { genmai } from "./fetch-genmai";
 import { root } from "./lib/root";
 
@@ -54,13 +55,21 @@ async function fill(
 console.log("== 表示の変換のモデル");
 const model = await genmai();
 
+console.log("== システム辞書");
+const systemDictionary = await dictionary();
+
 console.log("== swift build");
 await $`${build} --product tugime`;
 const bin = (await $`${build} --show-bin-path`.text()).trim();
 
 console.log(`== 組み立て ${app}`);
 await rm(app, { recursive: true, force: true });
-for (const dir of ["MacOS", "Resources/model", "Frameworks"])
+for (const dir of [
+  "MacOS",
+  "Resources/model",
+  "Resources/dictionary",
+  "Frameworks",
+])
   await mkdir(join(app, "Contents", dir), { recursive: true });
 await $`cp ${join(bin, "tugime")} ${join(app, "Contents/MacOS/tugime")}`;
 // モデルの推論に使う llama.cpp。実行ファイルは @rpath/llama.framework を探すので、Frameworks を探し場所に足す
@@ -73,6 +82,7 @@ if ((await $`lipo -archs ${llama}`.text()).trim() !== "arm64")
   await $`lipo -thin arm64 ${llama} -output ${llama}`;
 await $`install_name_tool -add_rpath @executable_path/../Frameworks ${join(app, "Contents/MacOS/tugime")}`;
 await $`cp ${model} ${join(app, "Contents/Resources/model/")}`;
+await $`cp ${systemDictionary} ${join(app, "Contents/Resources/dictionary/")}`;
 // .bundle が 1 つも無ければ、Bun Shell の glob が no matches found で止める
 await $`cp -R ${bin}/*.bundle ${join(app, "Contents/Resources/")}`;
 await fill(join(root, "App/Info.plist"), join(app, "Contents/Info.plist"), {

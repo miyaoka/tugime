@@ -39,18 +39,13 @@ func printStatus() -> Int32 {
     return 0
 }
 
-/// 組み立てたバンドルから綴りの表・語表・辞書・表示の変換のモデルを読み、1 文を表示の変換で変換して出す。読めなければ初期化の時点で止まる。
-/// 続けて、利用者の辞書を組み立てる文字の表もバンドルから読めるかを、1 語の辞書で変換して確かめる。利用者の辞書のファイルは読まない
+/// 組み立てたバンドルから綴りの表・語表・システム辞書・表示の変換のモデルを読み、1 文を表示の変換で変換して出す。読めなければ初期化の時点で止まる。
+/// 続けて、システム辞書に無い表記の 1 語の辞書を入れ、利用者の語で変換できるかを確かめる。利用者の辞書のファイルは読まない
 func check() -> Int32 {
     let input = "kyouhagoogledekensaku"
     print("\(input)\t\(sharedSegmenter.liveText(input))")
-    let word = (keys: "i-sou", entry: "i-sou\t一索", text: "一索")
-    do {
-        try sharedSegmenter.replaceUserDictionary(UserDictionary(contents: word.entry))
-    } catch {
-        print("利用者の辞書を入れられない: \(error)")
-        return 1
-    }
+    let word = (keys: "i-sou", entry: "i-sou\t一索牌", text: "一索牌")
+    sharedSegmenter.replaceUserDictionary(UserDictionary(contents: word.entry))
     let shown = sharedSegmenter.liveText(word.keys)
     print("\(word.keys)\t\(shown)")
     return shown == word.text ? 0 : 1

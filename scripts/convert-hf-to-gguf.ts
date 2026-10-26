@@ -1,6 +1,5 @@
-// Hugging Face の safetensors（GPT-2 系）を、azooKey が同梱する llama.cpp が読める GGUF に変換してパスを出す。使い方は USAGE。
+// Hugging Face の safetensors（GPT-2 系）を、tugime が載せる llama.cpp が読める GGUF に変換してパスを出す。使い方は USAGE。
 // 変換が効いたかはこのスクリプトでは判定しない。tugime-eval accuracy --method direct:<出力> で、基準と同じ出力の件数と正解数を見る（全件が基準と同じなら終了コード 1）。
-// zenzai: の方式は azooKey の計算の設定で動くので、そこで壊れるモデル（genmai-310M）では、正しい GGUF でも効いていないように見える。
 // 元のファイルは .eval/hf/ に、変換の道具は .eval/llama.cpp に置き、取得済みなら取り直さない
 import { $ } from "bun";
 import { mkdir, readdir, rename, rm } from "node:fs/promises";
@@ -23,10 +22,10 @@ const uvRun = [
   join(root, "scripts/convert-env"),
   "--locked",
 ];
-// azooKey の llama.cpp のフォークで、azooKey が同梱する llama.cpp と同じ版。前処理の名前の表がこの版のもの
+// azooKey の llama.cpp のフォークで、tugime が binaryTarget に載せる llama.cpp と同じ版。前処理の名前の表がこの版のもの
 const LLAMA_REPO = "https://github.com/azooKey/llama.cpp";
 const LLAMA_COMMIT = "10131b23ee0dbd9d03dfc618cec9fe3402919277"; // タグ b4846
-// Zenzai が読む前処理の名前。convert_hf_to_gguf.py がトークナイザーから判別した結果がこれでなければ止める
+// zenz 形式のモデルの前処理の名前。convert_hf_to_gguf.py がトークナイザーから判別した結果がこれでなければ止める
 const PRE_TOKENIZER = "gpt2-small-japanese-char";
 // 設定とトークナイザーのファイル（リポジトリの直下のもの）。トークナイザーの形（tokenizer.json か vocab.json と merges.txt か）は
 // モデルごとに違うので、在るものを全部取る

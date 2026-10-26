@@ -44,12 +44,12 @@ import TugimeCore
             AccuracyRecord.Result(problem: problem, outcome: .typed(.init(keys: "kana", output: output, baselineOutput: "かな", seconds: 0, baselineSeconds: 0)))
         }
         let untyped = AccuracyRecord.Result(problem: problem, outcome: .untypable)
-        let model = ConversionMethod.azooKeyZenzai(weight: URL(fileURLWithPath: "/m.gguf"))
+        let model = ConversionMethod.direct(weight: URL(fileURLWithPath: "/m.gguf"))
         // 打てなかった問題は出力が無いので、一致にも不一致にも数えない
         #expect(AccuracyRun.modelHadNoEffect([result("かな"), untyped, result("かな")], target: model))
         #expect(!AccuracyRun.modelHadNoEffect([result("かな"), untyped, result("仮名")], target: model))
         // モデルを使わない方式は、基準と一致して当然なので止めない
-        #expect(!AccuracyRun.modelHadNoEffect([result("かな")], target: .azooKey))
+        #expect(!AccuracyRun.modelHadNoEffect([result("かな")], target: .lattice))
     }
 
     @Test func ajimeeStopsWithoutIndex() {

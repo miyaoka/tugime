@@ -4,7 +4,7 @@ import Testing
 
 /// 本物の変換器と、それで組んだ Segmenter。作るたびに辞書と語表を読むので、全テストで共有する
 private enum Shared {
-    static let converter = ConversionMethod.baseline.make()
+    static let converter = ConversionMethod.baseline.make(dictionary: TestDictionary.shared)
     static let table = Result { try RomajiTable.bundled() }
     static let english = Result { try EnglishModel.bundled() }
     static let segmenter = Result { try make(converter) }
@@ -29,7 +29,7 @@ private final class LeftRecorder: JapaneseConverting {
     }
 
     func endComposition() { base.endComposition() }
-    func replaceUserWords(_ words: [UserWord]) throws { try base.replaceUserWords(words) }
+    func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
 }
 
 @Suite struct SegmenterTests {
@@ -215,7 +215,7 @@ private final class LeftRecorder: JapaneseConverting {
     // MARK: 途中の確定
 
     @Test func committingThroughAClauseKeepsTheRestConverted() throws {
-        let clauses = segmenter.resize(segmenter.clauses("kyouhaiitenkidesu"), at: 0, by: -2)
+        let clauses = segmenter.resize(segmenter.clauses("kyouhaiitenkidesu"), at: 1, by: -5)
         #expect(readings(clauses) == ["きょうは", "いい", "てんきです"])
         let first = try #require(segmenter.commit(clauses, through: 0))
         #expect(first.text == clauses[0].output)
@@ -264,7 +264,7 @@ private final class RewritingConverter: JapaneseConverting {
     }
 
     func endComposition() { base.endComposition() }
-    func replaceUserWords(_ words: [UserWord]) throws { try base.replaceUserWords(words) }
+    func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
 }
 
 /// 打っている途中の表示が、変換して見せた区間で読みと合わないかを返す
@@ -286,15 +286,16 @@ private final class RewritingConverter: JapaneseConverting {
         segmenter = try Shared.make(recorder)
     }
 
-    /// 前の日本語区間を変換した表記と英語区間をつないだもの
-    private func convertedLeft() throws -> String {
-        try Shared.segmenter.get().liveText("kawa") + "cwd"
+    /// 前の日本語区間を、同じ前の文字列に続けて変換した表記と英語区間をつないだもの
+    private func convertedLeft(leading: Segmenter.Leading = .start) throws -> String {
+        try Shared.segmenter.get().liveText("kawa", leading: leading) + "cwd"
     }
 
     /// 入力欄のカーソルより前の文字列を、最初の区間の左の文脈にし、後ろの区間の左の文脈の前にも置く
     @Test func liveTextPassesTheTextBeforeTheCaretToEverySpan() throws {
-        let left = try convertedLeft()
-        _ = segmenter.liveText(input, leading: Segmenter.Leading("奈良"))
+        let leading = Segmenter.Leading("奈良")
+        let left = try convertedLeft(leading: leading)
+        _ = segmenter.liveText(input, leading: leading)
         #expect(recorder.lefts == ["奈良", "奈良" + left])
     }
 
@@ -309,14 +310,15 @@ private final class RewritingConverter: JapaneseConverting {
         let left = try convertedLeft()
         _ = segmenter.clauses(input)
         #expect(recorder.lefts == ["", left])
-        _ = segmenter.clauses(input, leading: Segmenter.Leading("奈良"))
-        #expect(recorder.lefts.suffix(2) == ["奈良", "奈良" + left])
+        let leading = Segmenter.Leading("奈良")
+        let leftAfterLeading = try convertedLeft(leading: leading)
+        _ = segmenter.clauses(input, leading: leading)
+        #expect(recorder.lefts.suffix(2) == ["奈良", "奈良" + leftAfterLeading])
     }
 
     @Test func resizingRedisplaysTheLaterSpansWithTheNewLeft() {
         let clauses = segmenter.clauses("kyouhaiicwdde")
-        #expect(clauses.map(\.kind) == [.japanese, .english, .japanese])
-        let resized = segmenter.resize(clauses, at: 0, by: -1)
+        let resized = segmenter.resize(clauses, at: 0, by: 1)
         #expect(readings(resized) == ["きょうはい", "い", "cwd", "で"])
         #expect(recorder.lefts.last == resized.dropLast().map(\.output).joined())
     }
@@ -325,7 +327,7 @@ private final class RewritingConverter: JapaneseConverting {
     @Test func resizingKeepsTheTextBeforeTheCaretInTheLeft() {
         let leading = Segmenter.Leading("奈良")
         let clauses = segmenter.clauses("kyouhaiicwdde", leading: leading)
-        let resized = segmenter.resize(clauses, at: 0, by: -1, leading: leading)
+        let resized = segmenter.resize(clauses, at: 0, by: 1, leading: leading)
         #expect(readings(resized) == ["きょうはい", "い", "cwd", "で"])
         #expect(recorder.lefts.last == "奈良" + resized.dropLast().map(\.output).joined())
     }

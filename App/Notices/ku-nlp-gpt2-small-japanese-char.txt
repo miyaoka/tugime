@@ -1,6 +1,0 @@
-AzooKeyKanaKanjiConverter_EfficientNGram.bundle/Contents/Resources/tokenizer
-
-AzooKeyKanaKanjiConverter が同梱する tokenizer のデータは、ku-nlp/gpt2-small-japanese-char に由来する。
-出典: https://huggingface.co/ku-nlp/gpt2-small-japanese-char
-利用条件: Creative Commons Attribution-ShareAlike 4.0 International（CC BY-SA 4.0）
-https://creativecommons.org/licenses/by-sa/4.0/

@@ -1,6 +1,6 @@
 ../Frameworks/llama.framework
 
-llama.cpp（AzooKeyKanaKanjiConverter が取り込む https://github.com/azooKey/llama.cpp の b4846 のビルド済みフレームワーク）。
+llama.cpp（https://github.com/azooKey/llama.cpp の b4846 のビルド済みフレームワーク）。
 利用条件: MIT License（https://github.com/azooKey/llama.cpp/blob/b4846/LICENSE）
 
 MIT License

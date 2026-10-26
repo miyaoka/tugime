@@ -6,15 +6,13 @@ import Foundation
 /// 方式を足すときは case を 1 つ足し、接頭辞の定数と `specs` の表に 1 行ずつ足す。switch の網羅はコンパイラが確かめる。
 /// 検証の道具は case を switch せず、使い方の文言も `forms` から作るので、触らずに新しい方式を測れる
 public enum ConversionMethod: Sendable, Hashable {
-    /// azooKey の辞書と n-gram だけで変換する。検証の基準
-    case azooKey
-    /// 採点は azooKey、表示は azooKey の Zenzai に GGUF のモデルを渡して選び直す
-    case azooKeyZenzai(weight: URL)
-    /// 採点と候補の窓は azooKey（Zenzai なし）、表示は tugime が zenz 形式の GGUF のモデルを直接動かした出力そのもの
+    /// システム辞書の格子だけで変換する。検証の基準
+    case lattice
+    /// 採点と候補の窓はシステム辞書の格子、表示は tugime が zenz 形式の GGUF のモデルを直接動かした出力そのもの
     case direct(weight: URL)
 
     /// 基準の方式。検証はどの対象の方式にも、これの出力を並べて残す
-    public static let baseline = ConversionMethod.azooKey
+    public static let baseline = ConversionMethod.lattice
 
     /// 入力メソッドが表示の変換に使うモデルのファイル名
     public static let inputMethodModel = "genmai-310M-q8_0.gguf"
@@ -27,8 +25,7 @@ public enum ConversionMethod: Sendable, Hashable {
     /// 方式が読むモデルのファイル。nil ならモデルを使わない方式
     public var weight: URL? {
         switch self {
-        case .azooKey: nil
-        case .azooKeyZenzai(let weight): weight
+        case .lattice: nil
         case .direct(let weight): weight
         }
     }
@@ -45,14 +42,12 @@ public enum ConversionMethod: Sendable, Hashable {
     }
 
     /// 指定の接頭辞。読む表と記録に残す名前の両方が使う
-    private static let azooKeyPrefix = "azookey"
-    private static let zenzaiPrefix = "zenzai:"
+    private static let latticePrefix = "lattice"
     private static let directPrefix = "direct:"
 
     /// 指定の接頭辞から方式を作る表。form は使い方に出す書式。パスを取らない方式は接頭辞と完全一致させる
     private static let specs: [(prefix: String, form: String, make: @Sendable (URL?) -> ConversionMethod?)] = [
-        (azooKeyPrefix, azooKeyPrefix, { $0 == nil ? .azooKey : nil }),
-        (zenzaiPrefix, "\(zenzaiPrefix)<GGUF のパス>", { $0.map { .azooKeyZenzai(weight: $0) } }),
+        (latticePrefix, latticePrefix, { $0 == nil ? .lattice : nil }),
         (directPrefix, "\(directPrefix)<GGUF のパス>", { $0.map { .direct(weight: $0) } }),
     ]
 
@@ -78,30 +73,24 @@ public enum ConversionMethod: Sendable, Hashable {
     /// 記録に残す名前。`init(spec:)` と往復する
     public var spec: String {
         switch self {
-        case .azooKey: Self.azooKeyPrefix
-        case .azooKeyZenzai(let weight): Self.zenzaiPrefix + weight.path
+        case .lattice: Self.latticePrefix
         case .direct(let weight): Self.directPrefix + weight.path
         }
     }
 
     /// 同梱の綴りの表と語表で、この方式の区切りを作る。区切りはこれからだけ作る
-    public func makeSegmenter() throws -> Segmenter {
-        try Segmenter(table: .bundled(), english: .bundled(), japanese: make())
+    public func makeSegmenter(dictionary: SystemDictionary) throws -> Segmenter {
+        try Segmenter(table: .bundled(), english: .bundled(), japanese: make(dictionary: dictionary))
     }
 
     /// 変換器を作り、モデルを読み込み終えた状態で返す。最初の変換で読み込みの時間が混ざらないよう、ここで先読みまで済ませる。
     /// モデルを読めなければプロセスごと止まる（fatalError。投げるエラーではないので、呼び出し元は受け止められない）
-    public func make() -> any JapaneseConverting {
+    public func make(dictionary: SystemDictionary) -> any JapaneseConverting {
         switch self {
-        case .azooKey:
-            return AzooKeyConverter(zenzaiWeight: nil)
-        case .azooKeyZenzai(let weight):
-            let converter = AzooKeyConverter(zenzaiWeight: weight)
-            converter.preloadZenzai()
-            return converter
+        case .lattice:
+            LatticeConverter(dictionary: dictionary)
         case .direct(let weight):
-            // azooKey には Zenzai を渡さない。llama.cpp にモデルを載せるのは ZenzGenerator だけになる
-            return DirectConverter(scorer: AzooKeyConverter(zenzaiWeight: nil), generator: ZenzGenerator(weight: weight))
+            DirectConverter(scorer: LatticeConverter(dictionary: dictionary), generator: ZenzGenerator(weight: weight))
         }
     }
 }

@@ -3,9 +3,6 @@ import llama
 
 /// zenz 形式のモデル（GGUF）を llama.cpp で動かし、読みから出力の文字列を貪欲に生成する。llama.cpp を直接触るのはこのファイルだけ。
 ///
-/// llama.cpp は azooKey が trait Zenzai で載せるもの（binaryTarget）をそのまま使い、別の llama.cpp を足さない。
-/// direct の方式は azooKey に Zenzai を渡さないので、プロセスで llama.cpp にモデルを載せるのはこの型だけになる。
-///
 /// 区切りごとに「BOS + ZenzPrompt.text をトークンにし、EOS か上限まで argmax を 1 つずつ足した列」を作り、文字にして繋ぐ。
 /// 入力と出力がモデルの位置の上限に収まらないときは、左の文脈を前から削る。
 /// 1 つの区切りの読みは出力と合わせて収まる長さに分けてあるので、読みは落ちない。

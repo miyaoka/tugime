@@ -9,12 +9,12 @@ protocol DirectDisplayGenerating: AnyObject {
     func reset()
 }
 
-/// 表示の変換だけを zenz 形式のモデルの出力にし、区切りの採点と候補の窓は azooKey（Zenzai なし）に任せる変換器。
+/// 表示の変換だけを zenz 形式のモデルの出力にし、区切りの採点と候補の窓はシステム辞書の格子に任せる変換器。
 ///
 /// 不変条件:
 /// - 表示の文節は、採点の変換がその文節の読みの中で使った利用者の語を、その語と同じ読みに登録したどれかの表記で含む。
-///   モデルは利用者の語を知らないので、これは azooKey の変換が守る
-/// - その上で、表示の文節の表記はモデルの出力を切ったものそのもの。読みと食い違っても azooKey の変換に差し替えない。
+///   モデルは利用者の語を知らないので、これは採点の変換が守る
+/// - その上で、表示の文節の表記はモデルの出力を切ったものそのもの。読みと食い違っても採点の変換に差し替えない。
 ///   前の条件を出力が満たさない文節だけ、その文節の読みに当たる採点の文節の表記を繋いだものにする
 /// - 表示の clauses は、読みを繋ぐと kana、表記を繋ぐと text。文節の境目の読みの位置は採点の変換から借り、
 ///   ReadingAlignment で出力の側の位置が確定した境目でだけ切る。対応づかない出力は 1 文節（kana, 出力）にする。
@@ -85,8 +85,8 @@ final class DirectConverter: JapaneseConverting {
     }
 
     /// 生成するものは辞書を知らないが、未確定の文字列が終わるので、覚えた生成も捨てる
-    func replaceUserWords(_ words: [UserWord]) throws {
-        try scorer.replaceUserWords(words)
+    func replaceUserWords(_ words: [UserWord]) {
+        scorer.replaceUserWords(words)
         generator.reset()
         displays = [:]
     }

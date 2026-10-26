@@ -2,9 +2,6 @@
 
 import PackageDescription
 
-// AzooKey の Zenzai（ニューラルの変換モデル）は C++ の llama.cpp を使うので、その型を見るターゲットはすべて C++ の相互運用を有効にする
-let cxx: SwiftSetting = .interoperabilityMode(.Cxx)
-
 let package = Package(
     name: "tugime",
     platforms: [.macOS(.v14)],
@@ -13,64 +10,54 @@ let package = Package(
         .executable(name: "tugime-cli", targets: ["tugime-cli"]),
         .executable(name: "tugime", targets: ["TugimeIME"]),
     ],
-    dependencies: [
-        // 1.0 まではマイナー版でも破壊的変更があるため revision で固定する
-        .package(
-            url: "https://github.com/azooKey/AzooKeyKanaKanjiConverter",
-            revision: "04ce2ec3afe2bd6f92fcae1dc15a2357d332c27a",
-            traits: ["Zenzai"]
-        ),
-    ],
     targets: [
+        // 表示の変換のモデルを動かす llama.cpp。azooKey/llama.cpp の b4846 のビルド済みフレームワーク
+        .binaryTarget(
+            name: "llama",
+            url: "https://github.com/azooKey/llama.cpp/releases/download/b4846/signed-llama.xcframework.zip",
+            checksum: "db3b13169df8870375f212e6ac21194225f1c85f7911d595ab64c8c790068e0a"
+        ),
         .target(name: "SystemDictionaryLayout"),
         // システム辞書を組み立てる道具。scripts/fetch-dictionary.ts が呼ぶ
         .executableTarget(
             name: "tugime-dictionary",
             dependencies: ["SystemDictionaryLayout"]
         ),
-        // llama.cpp（import llama）は、azooKey が trait Zenzai で載せる binaryTarget を推移的に使う。別の llama.cpp を足さない
         .target(
             name: "TugimeCore",
-            dependencies: [
-                .product(name: "KanaKanjiConverterModuleWithDefaultDictionary", package: "AzooKeyKanaKanjiConverter"),
-            ],
-            resources: [.copy("Resources")],
-            swiftSettings: [cxx]
+            dependencies: ["llama", "SystemDictionaryLayout"],
+            resources: [.copy("Resources")]
         ),
         .executableTarget(
             name: "tugime-cli",
-            dependencies: ["TugimeCore"],
-            swiftSettings: [cxx]
+            dependencies: ["TugimeCore"]
         ),
         // 変換の方式とモデルを比べる検証の道具。配布物には入れない。測定は手元で実行する
         .target(
             name: "TugimeEval",
-            dependencies: ["TugimeCore"],
-            swiftSettings: [cxx]
+            dependencies: ["TugimeCore"]
         ),
         .executableTarget(
             name: "tugime-eval",
-            dependencies: ["TugimeCore", "TugimeEval"],
-            swiftSettings: [cxx]
+            dependencies: ["TugimeCore", "TugimeEval"]
         ),
         .executableTarget(
             name: "TugimeIME",
             dependencies: ["TugimeCore"],
             // 入力メソッドの呼び出しはすべてメインスレッドで届くので、既定の隔離をメインアクターにする（SE-0466）
-            swiftSettings: [.defaultIsolation(MainActor.self), cxx],
+            swiftSettings: [.defaultIsolation(MainActor.self)],
             linkerSettings: [.linkedFramework("InputMethodKit")]
         ),
         .testTarget(
             name: "TugimeCoreTests",
             dependencies: ["TugimeCore"],
             // テストは 1 つの本物の変換器を共有するので、同時に使わないようメインアクターで動かす
-            swiftSettings: [.defaultIsolation(MainActor.self), cxx]
+            swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
         // 検証の道具の読み込みと判定。変換エンジンを通す測定そのものはテストにしない
         .testTarget(
             name: "TugimeEvalTests",
-            dependencies: ["TugimeCore", "TugimeEval"],
-            swiftSettings: [cxx]
+            dependencies: ["TugimeCore", "TugimeEval"]
         ),
     ]
 )

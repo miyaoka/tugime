@@ -74,10 +74,10 @@ extension Segmenter {
         japaneseConverter.endComposition()
     }
 
-    /// 利用者の語を置き換える。未確定の文字列は終わる。投げたときは前の語のまま（JapaneseConverting.replaceUserWords）。
+    /// 利用者の語を置き換える。未確定の文字列は終わる。
     /// 日本語の語は、打鍵をかなに読めればその読みでかな漢字変換に入れ、読めなければ打鍵とちょうど一致する区間をその語にする。
     /// 英語の語は、打鍵とちょうど一致する英語の区間の表記にする
-    public func replaceUserDictionary(_ dictionary: UserDictionary) throws {
+    public func replaceUserDictionary(_ dictionary: UserDictionary) {
         var converted: [UserWord] = []
         var typed: [String: [String]] = [:]
         for (keys, words) in dictionary.words(of: .japanese) {
@@ -87,7 +87,7 @@ extension Segmenter {
             }
             converted += words.map { UserWord(reading: kana, word: $0) }
         }
-        try japaneseConverter.replaceUserWords(converted)
+        japaneseConverter.replaceUserWords(converted)
         typedWords = dictionary.words(of: .english)
         typedJapaneseWords = typed
     }

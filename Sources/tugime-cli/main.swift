@@ -4,10 +4,10 @@ import TugimeCore
 let usage = """
     使い方（先頭に次を付けられる。--before <文字列> は入力欄のカーソルの前にその文字列がある状態として変換する。
     --method <方式> は変換の方式。\(ConversionMethod.forms)。既定は入力メソッドと同じ方式で、作業ディレクトリの .zenz/\(ConversionMethod.inputMethodModel) を読む。
-    リポジトリの直下から実行し、モデルは bun scripts/fetch-genmai.ts で用意する。azooKey だけで変換するときは --method azookey。
-    zenzai と direct は表示の変換にモデルを使う。zenzai は azooKey がモデルを動かし、direct は tugime が動かす。ほかのモデルは scripts/convert-hf-to-gguf.ts が出す。
+    リポジトリの直下から実行し、モデルは bun scripts/fetch-genmai.ts で、システム辞書は bun scripts/fetch-dictionary.ts で用意する。
+    システム辞書だけで変換するときは --method lattice。direct は表示の変換にモデルを使う。ほかのモデルは scripts/convert-hf-to-gguf.ts が出す。
     --dictionary <ファイル> は利用者の辞書（書式は入力メソッドと同じ）。渡さなければ利用者の語は無く、入力メソッドの辞書は読まない。
-    --explain・--lattice・--span の出力の表記は、区切りを採点した azooKey の変換で、表示の変換ではない）:
+    --explain・--lattice・--span の出力の表記は、区切りを採点したシステム辞書の変換で、表示の変換ではない）:
       tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す。
                                               入力メソッドが未確定の文字列の下に知らせを出す表示なら、打鍵列 と知らせを標準エラーに出す（既定の形も同じ）
@@ -63,21 +63,22 @@ if args.first == nil || ["-h", "--help"].contains(args.first) {
 }
 do {
     let method = try ConversionMethod(spec: methodSpec)
+    let system = try SystemDictionary(url: SystemDictionary.inRepository(URL(fileURLWithPath: FileManager.default.currentDirectoryPath)))
     let dictionary = try dictionaryPath.map { UserDictionary(contents: try String(contentsOfFile: $0, encoding: .utf8)) } ?? .empty
     for line in dictionary.skipped {
         FileHandle.standardError.write(Data("\(line)\n".utf8))
     }
     /// 方式の区切りに利用者の語を入れたもの
     func makeSegmenter() throws -> Segmenter {
-        let segmenter = try method.makeSegmenter()
-        try segmenter.replaceUserDictionary(dictionary)
+        let segmenter = try method.makeSegmenter(dictionary: system)
+        segmenter.replaceUserDictionary(dictionary)
         return segmenter
     }
     switch args.first {
     case "--span":
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
-        let japanese = method.make()
+        let japanese = method.make(dictionary: system)
         try Segmenter(table: .bundled(), english: english, japanese: japanese).replaceUserDictionary(dictionary)
         for arg in args.dropFirst() {
             let isKana = arg.unicodeScalars.contains { $0.value > 0x3000 }

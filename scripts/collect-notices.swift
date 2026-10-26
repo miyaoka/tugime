@@ -92,7 +92,8 @@ func read(_ url: URL) -> String {
 
 let root = showDependencies()
 let dependencies = flatten(root)
-let revisions: [String: String] = {
+// 依存が無ければ SwiftPM は Package.resolved を作らない
+let revisions: [String: String] = dependencies.isEmpty ? [:] : {
     let url = packageDir.appendingPathComponent("Package.resolved")
     do {
         let resolved = try JSONDecoder().decode(Resolved.self, from: Data(contentsOf: url))

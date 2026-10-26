@@ -49,7 +49,7 @@ import Testing
 }
 
 @Suite struct ConversionMethodTests {
-    @Test(arguments: ["", "azookeyx", "zenzai:", "zenzai", "direct:", "direct", "llama:/a.gguf"])
+    @Test(arguments: ["", "latticex", "zenzai:", "zenzai", "direct:", "direct", "llama:/a.gguf"])
     func rejectsUnknownSpecs(spec: String) {
         #expect(throws: ConversionMethod.ParseError.self) { try ConversionMethod(spec: spec) }
     }

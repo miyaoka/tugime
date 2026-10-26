@@ -51,7 +51,7 @@ private final class FixedScorer: JapaneseConverting {
 
     func endComposition() { ended += 1 }
 
-    func replaceUserWords(_ words: [UserWord]) throws {}
+    func replaceUserWords(_ words: [UserWord]) {}
 }
 
 /// 決めた出力を返し、呼ばれた左の文脈と読みを記録する

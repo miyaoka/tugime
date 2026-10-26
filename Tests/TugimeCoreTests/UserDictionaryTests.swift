@@ -36,28 +36,28 @@ import Testing
 
 /// 本物の変換器に利用者の語を入れる。テストで共有する変換器（SegmenterTests の Shared）の辞書を変えないよう、別に作る
 @Suite struct UserWordConversionTests {
-    let converter = ConversionMethod.baseline.make()
+    let converter = ConversionMethod.baseline.make(dictionary: TestDictionary.shared)
 
-    /// 入力全体が利用者の語 1 つでも、カタカナにしただけの候補と同じ品詞なのに捨てない
+    /// 入力全体が利用者の語 1 つでも、その語に変換し、候補の窓にも並べる
     @Test func convertsAndListsTheUserWord() throws {
-        try converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索")])
+        converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索牌")])
         let reading = try #require(converter.convert(kana: "いーそう", context: .start))
-        #expect(reading.text == "一索")
-        #expect(reading.clauses.map { $0.userWords.map(\.spellings) } == [[["一索"]]])
-        #expect(converter.alternatives(kana: "いーそう", context: .start).contains("一索"))
+        #expect(reading.text == "一索牌")
+        #expect(reading.clauses.map { $0.userWords.map(\.spellings) } == [[["一索牌"]]])
+        #expect(converter.alternatives(kana: "いーそう", context: .start).contains("一索牌"))
     }
 
-    /// 前に名詞を置いて読む文脈でも、利用者の語は前に置いたものを外した文節に付く
-    @Test func marksTheUserWordAfterAStandIn() throws {
-        try converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索")])
+    /// 英語の後の文脈でも、利用者の語はその語の文節に付く
+    @Test func marksTheUserWordAfterAWord() throws {
+        converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索牌")])
         let reading = try #require(converter.convert(kana: "いーそうをきる", context: .afterWord))
-        #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["一索"]])
-        #expect(reading.text.hasPrefix("一索"))
+        #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["一索牌"]])
+        #expect(reading.text.hasPrefix("一索牌"))
     }
 
     /// 使った語には、同じ読みに登録した表記をすべて添える。表示はそのどれかを含めばよい
     @Test func listsEverySpellingOfTheReading() throws {
-        try converter.replaceUserWords([UserWord(reading: "まんず", word: "萬子"), UserWord(reading: "まんず", word: "マンズ")])
+        converter.replaceUserWords([UserWord(reading: "まんず", word: "萬子"), UserWord(reading: "まんず", word: "マンズ")])
         let reading = try #require(converter.convert(kana: "まんず", context: .start))
         #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["萬子", "マンズ"]])
         let listed = converter.alternatives(kana: "まんず", context: .start)
@@ -66,51 +66,34 @@ import Testing
 
     /// 表記に読みに無いかなを含む語を使った表示は、読みと合う
     @Test func matchesTheReadingWithAUserWordThatAddsKana() throws {
-        try converter.replaceUserWords([UserWord(reading: "よろしく", word: "よろしくお願いします")])
+        converter.replaceUserWords([UserWord(reading: "よろしく", word: "よろしくお願いします")])
         let shown = try #require(converter.display(kana: "よろしく", context: .start, left: ""))
         #expect(shown.text == "よろしくお願いします")
         #expect(shown.matchesReading)
     }
 
-    /// ゕ ゖ の読みも、打った読みと同じ規則でカタカナにして引く（azooKey は ゕ を ヵ にして辞書を引く）
+    /// ゕ ゖ を含む読みの語も引ける
     @Test func findsAReadingWithSmallKa() throws {
-        try converter.replaceUserWords([UserWord(reading: "いっゕげつ", word: "壱ヶ月")])
+        converter.replaceUserWords([UserWord(reading: "いっゕげつ", word: "壱ヶ月")])
         #expect(converter.alternatives(kana: "いっゕげつ", context: .start).contains("壱ヶ月"))
     }
 
-    /// 変換器を作ると、終わったプロセスが残した辞書のディレクトリを消し、動いているプロセスのものは残す
-    @Test func removesDirectoriesLeftByFinishedProcesses() throws {
-        let finished = Process()
-        finished.executableURL = URL(fileURLWithPath: "/usr/bin/true")
-        try finished.run()
-        finished.waitUntilExit()
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tugime-user-dictionary", isDirectory: true)
-        let left = root.appendingPathComponent("\(finished.processIdentifier)-left", isDirectory: true)
-        let alive = root.appendingPathComponent("\(getpid())-alive", isDirectory: true)
-        try FileManager.default.createDirectory(at: left, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: alive, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: alive) }
-        _ = ConversionMethod.baseline.make()
-        #expect(!FileManager.default.fileExists(atPath: left.path))
-        #expect(FileManager.default.fileExists(atPath: alive.path))
-    }
-
-    /// 5000 語でも組み立てられ、入れた語を引ける
+    /// 5000 語でも入れた語を引ける
     @Test func findsWordsInALargeDictionary() throws {
         let digits = Array("あいうえおかきくけこ")
         let words = (0..<5000).map { n in UserWord(reading: "ゆーざー" + String(String(n).map { digits[$0.wholeNumberValue!] }), word: "語\(n)") }
-        try converter.replaceUserWords(words + [UserWord(reading: "いーそう", word: "一索")])
-        #expect(converter.convert(kana: "いーそう", context: .start)?.text == "一索")
+        converter.replaceUserWords(words + [UserWord(reading: "いーそう", word: "一索牌")])
+        #expect(converter.convert(kana: "いーそう", context: .start)?.text == "一索牌")
         #expect(converter.alternatives(kana: "ゆーざーいおう", context: .start).contains("語142"))
     }
 
-    /// 置き換えると前の語は消える。採点のセッションが前の辞書の途中の計算を使い回さない
+    /// 置き換えると前の語は消える。採点の覚えが前の辞書の計算を使い回さない
     @Test func replacingDropsThePreviousWords() throws {
-        try converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索")])
-        #expect(converter.convert(kana: "いーそう", context: .start)?.text == "一索")
-        try converter.replaceUserWords([])
+        converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索牌")])
+        #expect(converter.convert(kana: "いーそう", context: .start)?.text == "一索牌")
+        converter.replaceUserWords([])
         let reading = try #require(converter.convert(kana: "いーそう", context: .start))
-        #expect(reading.text != "一索")
+        #expect(reading.text != "一索牌")
         #expect(reading.clauses.flatMap(\.userWords).isEmpty)
     }
 }
@@ -120,8 +103,8 @@ import Testing
     let segmenter: Segmenter
 
     init() throws {
-        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: ConversionMethod.baseline.make())
-        try segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\nsake\t鮭\tja\ncafe\tCafé"))
+        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: ConversionMethod.baseline.make(dictionary: TestDictionary.shared))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\nsake\t鮭\tja\ncafe\tCafé"))
     }
 
     /// 綴りの表で読める打鍵は、そのかなの語になり、長い打鍵の途中でも効く
