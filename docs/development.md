@@ -32,7 +32,7 @@ model=$(bun scripts/fetch-genmai.ts)                                            
 別のモデルを測るときは、Hugging Face の safetensors を GGUF にして、そのパスを `model` にする。
 
 ```bash
-model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出力名>)
+model=$(bun scripts/convert-hf-to-gguf.ts <リポジトリ> <コミット> q8_0 <出力名>)
 ```
 
 引数と終了コードは `tugime-eval` を引数なしで実行すると出る。

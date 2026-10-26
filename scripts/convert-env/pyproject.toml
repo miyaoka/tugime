@@ -1,4 +1,4 @@
-# scripts/convert-hf-to-gguf.sh が取得と変換に使う Python の環境。uv.lock がハッシュまで固定し、スクリプトは --locked で使う
+# scripts/convert-hf-to-gguf.ts が取得と変換に使う Python の環境。uv.lock がハッシュまで固定し、スクリプトは --locked で使う
 [project]
 name = "tugime-convert-env"
 version = "0"
