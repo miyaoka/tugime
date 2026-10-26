@@ -27,8 +27,7 @@ const LLAMA_REPO = "https://github.com/ggml-org/llama.cpp";
 const LLAMA_COMMIT = "c6fb3b5be2209f6c12339833198190f6f6829581"; // タグ b11899
 // 変換はトークナイザーで決まった文字列を区切った結果のハッシュから前処理の名前を決め、表に無いハッシュでは止まる。
 // zenz 形式のモデルのトークナイザーは表に無いので、同じ正規表現で前処理する gpt-2 として表に足す。
-// 足し方は convert_hf_to_gguf_update.py が表を生成する形と同じ。ハッシュは azooKey の llama.cpp のフォークが
-// gpt2-small-japanese-char（フォークの llama.cpp で gpt-2 と同じ正規表現）として登録したもの
+// 足し方は convert_hf_to_gguf_update.py が表を生成する形と同じ
 const ZENZ_TOKENIZER_HASH =
   "acded0362f57dcca1fbdada8d4c87dd782c798cb4c510a70f12a9de6aea57857";
 const PRE_TOKENIZER = "gpt-2";
