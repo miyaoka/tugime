@@ -196,7 +196,7 @@ export const kindOf = (ch: string) => (/[\x21-\x7e]/.test(ch) ? "en" : "ink");
 export type FontName = keyof Fonts;
 export type Paint = string | ((ch: string, index: number) => string);
 
-/// 字形の送り幅。opentype.js は読めなかった字形の送り幅を持たない
+/// 字形の送り幅
 function advance(glyph: opentype.Glyph, ch: string): number {
   if (glyph.advanceWidth === undefined)
     throw new Error(`字形に送り幅が無い: ${ch}`);
