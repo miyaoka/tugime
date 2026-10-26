@@ -137,6 +137,12 @@ export const kindOf = (ch: string) => (/[\x21-\x7e]/.test(ch) ? "en" : "ink");
 export type FontName = keyof Fonts;
 export type Paint = string | ((ch: string, index: number) => string);
 
+/// 字形の送り幅。opentype.js は読めなかった字形の送り幅を持たない
+function advance(glyph: opentype.Glyph, ch: string): number {
+  if (glyph.advanceWidth === undefined) throw new Error(`字形に送り幅が無い: ${ch}`);
+  return glyph.advanceWidth;
+}
+
 /// 1 枚の SVG で使った字形を 1 回だけ <defs> に入れ、<use> で並べる
 export class Glyphs {
   private defs = new Map<string, string>();
@@ -145,7 +151,7 @@ export class Glyphs {
   /// draw が並べる幅。draw は 1 字ずつ字形の送り幅で並べるので、カーニングや合字を含む getAdvanceWidth では測らない
   width(text: string, font: FontName, size: number): number {
     const f = this.fonts[font];
-    return [...text].reduce((w, ch) => w + (f.charToGlyph(ch).advanceWidth * size) / f.unitsPerEm, 0);
+    return [...text].reduce((w, ch) => w + (advance(f.charToGlyph(ch), ch) * size) / f.unitsPerEm, 0);
   }
 
   /// 文字の間に tracking を足して並べたとき、text の幅が width になる字の大きさ（幅は字の大きさに比例する）
@@ -168,7 +174,7 @@ export class Glyphs {
         if (!this.defs.has(id)) this.defs.set(id, `<path id="${id}" d="${glyph.getPath(0, 0, f.unitsPerEm).toPathData(1)}"/>`);
         const cls = typeof paint === "string" ? paint : paint(ch, index);
         const use = `<use href="#${id}" class="${cls}" transform="translate(${x.toFixed(1)} ${baseline.toFixed(1)}) scale(${scale.toFixed(5)})"/>`;
-        x += glyph.advanceWidth * scale + tracking;
+        x += advance(glyph, ch) * scale + tracking;
         return use;
       })
       .join("");

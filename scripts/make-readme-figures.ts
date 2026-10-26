@@ -16,7 +16,7 @@ type Token = { key: string } | { text: string } | "space";
 /// ime は IME が効いている（かなを変換する）打鍵のまとまり
 type Run = { ime: boolean; tokens: Token[] };
 
-const typed = (s: string): Token[] => s.split(" ").flatMap((w, i) => (i === 0 ? [] : ["space" as const]).concat(w ? [{ text: w }] : []));
+const typed = (s: string): Token[] => s.split(" ").flatMap((w, i) => [...(i === 0 ? [] : ["space" as const]), ...(w ? [{ text: w }] : [])]);
 /// ふつうの日本語入力: 英語を打つたびに英数に切り替え、日本語は Space で変換して Enter で確定する
 const plainRuns: Run[] = [
   { ime: false, tokens: [{ key: "英数" }, ...typed("dark mode "), { key: "かな" }] },
