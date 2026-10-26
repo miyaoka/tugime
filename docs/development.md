@@ -1,6 +1,6 @@
 # 開発
 
-scripts は bun で動かす。bun は `mise.toml` の版を `mise install --locked` で入れる。scripts の下を変えたら、CI と同じく `bun run --cwd scripts typecheck` と `bun run --cwd scripts format:check` で確かめる。
+scripts は bun で動かす。bun は `mise.toml` の版を `mise install --locked` で入れる。シェルで mise を有効にしていなければ、bun を使うコマンドの前に `mise exec --` を付ける。scripts の下を変えたら、CI と同じく `bun run --cwd scripts typecheck` と `bun run --cwd scripts format:check` で確かめる。
 
 ## 変換を確かめる
 
