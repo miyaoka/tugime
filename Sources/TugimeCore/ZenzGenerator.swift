@@ -12,7 +12,7 @@ import llama
 /// まとめて decode した位置と 1 つずつ decode した位置では浮動小数の丸めが違うので、argmax が並ぶ所では、
 /// 同じ入力でもそれまでの打鍵によって出力が変わることがある
 final class ZenzGenerator: DirectDisplayGenerating {
-    /// KV キャッシュの型。genmai-310M の元のモデルの型（単精度）に合わせる。半精度は genmai-310M で桁があふれ、BF16 は丸めで出力が変わる
+    /// KV キャッシュの型。genmai-310M の元のモデルの型（単精度）に合わせる。F16 は genmai-310M で桁があふれ、BF16 は丸めで出力が変わる
     private static let kvType = GGML_TYPE_F32
     /// モデルの全層を GPU に載せる。llama.cpp はモデルの層数を超える値を全層として扱う
     private static let allLayersOnGPU: Int32 = 999
@@ -51,7 +51,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
         contextParams.type_k = Self.kvType
         contextParams.type_v = Self.kvType
         contextParams.no_perf = true
-        // genmai-310M は半精度の KV キャッシュで flash attention を使うと logits が有限でなくなる。使わなければ半精度でも壊れない
+        // flash attention は、genmai-310M の単精度の KV キャッシュでは出力を変えずに 1 打鍵の表示を遅くする
         contextParams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED
         guard let context = llama_init_from_model(model, contextParams) else { fatalError("llama.cpp のコンテキストを作れない: \(weight.path)") }
         resources = LlamaResources(model: model, context: context)
