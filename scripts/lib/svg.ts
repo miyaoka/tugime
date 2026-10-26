@@ -1,5 +1,5 @@
 // README と docs の図を作るスクリプトが共有する部品。tugime-cli の実行と、フォントの字形を図形にして埋め込む SVG の組み立て。
-// 文字を図形にするので、見る人の環境のフォントに左右されない。配色は prefers-color-scheme でライトとダークを切り替える（図ごとにライトだけにもできる）
+// 文字を図形にするので、見る人の環境のフォントに左右されない。配色は prefers-color-scheme でライトとダークを切り替える
 import { dirname, join } from "node:path";
 import opentype from "opentype.js";
 
@@ -61,6 +61,68 @@ export function readLive(stdout: string, inputs: string[]): string[] {
   });
 }
 
+export type Kind = "J" | "E" | "P";
+export type Segment = { kind: Kind; s: number; e: number; output: string };
+export type Span = { s: number; e: number; after: string; kind: "J" | "E"; output: string; score: number };
+
+/// --explain と --lattice の区間の表記 K[打鍵→出力 点]
+const segmentPattern = /([JEP])\[(.*?)→(.*?) (-?[\d.]+)\]/g;
+
+/// --explain の区間の並びを、打鍵列の位置と出力にする
+export function parseSegments(described: string): Segment[] {
+  let pos = 0;
+  return [...described.matchAll(segmentPattern)].map((m) => {
+    const segment = { kind: m[1] as Kind, s: pos, e: pos + m[2].length, output: m[3] };
+    pos = segment.e;
+    return segment;
+  });
+}
+
+/// 打鍵列ごとの、区切りの採点で比べた区間の候補
+export async function readLattices(inputs: string[]): Promise<Map<string, Span[]>> {
+  const out = await run([cli, "--lattice", ...inputs]);
+  const lattices = new Map<string, Span[]>();
+  let current: Span[] | undefined;
+  for (const line of out.split("\n")) {
+    const head = line.match(/^== (\S+)\t/);
+    if (head) {
+      current = [];
+      lattices.set(head[1], current);
+      continue;
+    }
+    // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点。変換エンジンのログも標準出力に混ざるので、数字とタブで始まる行だけを候補として読む
+    if (!/^\d+\t/.test(line)) continue;
+    const cols = line.split("\t");
+    if (cols.length !== 7) throw new Error(`--lattice の候補の行が 7 列でない: ${line}`);
+    if (!current) throw new Error(`== の行より前に候補がある: ${line}`);
+    current.push({ s: +cols[0], e: +cols[1], after: cols[2], kind: cols[3] as "J" | "E", output: cols[5], score: +cols[6] });
+  }
+  for (const i of inputs) if (!lattices.get(i)?.length) throw new Error(`--lattice の候補が無い: ${i}`);
+  return lattices;
+}
+
+export type Path = { total: number; spans: Span[] };
+
+/// 区間の候補を、直前の区間の種類が合うようにつないだ並びのうち、合計の最も高いもの。allow で使える区間を、must で含むべき区間を絞る
+export function bestPath(spans: Span[], length: number, allow: (s: Span) => boolean, must: (s: Span) => boolean = () => true): Path | undefined {
+  const table: Map<string, Path & { hit: boolean }>[] = Array.from({ length: length + 1 }, () => new Map());
+  table[0].set("-|false", { total: 0, spans: [], hit: false });
+  for (let pos = 0; pos < length; pos++) {
+    for (const [key, cell] of table[pos]) {
+      const previous = key.split("|")[0];
+      for (const span of spans) {
+        if (span.s !== pos || span.after !== previous || !allow(span)) continue;
+        const hit = cell.hit || must(span);
+        const total = cell.total + span.score;
+        const k = `${span.kind}|${hit}`;
+        const existing = table[span.e].get(k);
+        if (!existing || existing.total < total) table[span.e].set(k, { total, spans: [...cell.spans, span], hit });
+      }
+    }
+  }
+  return [...table[length].values()].filter((c) => c.hit).sort((a, b) => b.total - a.total)[0];
+}
+
 /// 英字・数字・半角の記号は打ったまま残った文字なので英語の色、それ以外は日本語の色
 export const kindOf = (ch: string) => (/[\x21-\x7e]/.test(ch) ? "en" : "ink");
 
@@ -72,8 +134,10 @@ export class Glyphs {
   private defs = new Map<string, string>();
   constructor(private fonts: Fonts) {}
 
+  /// draw が並べる幅。draw は 1 字ずつ字形の送り幅で並べるので、カーニングや合字を含む getAdvanceWidth では測らない
   width(text: string, font: FontName, size: number): number {
-    return this.fonts[font].getAdvanceWidth(text, size);
+    const f = this.fonts[font];
+    return [...text].reduce((w, ch) => w + (f.charToGlyph(ch).advanceWidth * size) / f.unitsPerEm, 0);
   }
 
   /// 文字の間に tracking を足して並べたとき、text の幅が width になる字の大きさ（幅は字の大きさに比例する）
