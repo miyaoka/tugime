@@ -12,9 +12,8 @@ import llama
 /// まとめて decode した位置と 1 つずつ decode した位置では浮動小数の丸めが違うので、argmax が並ぶ所では、
 /// 同じ入力でもそれまでの打鍵によって出力が変わることがある
 final class ZenzGenerator: DirectDisplayGenerating {
-    /// KV キャッシュの型。単精度より軽い型で出力が変わらないことを tugime-eval で確かめたモデルだけを、GGUF の general.name で書く
-    private static let kvTypes: [String: ggml_type] = ["Genmai 310M": GGML_TYPE_BF16]
-    private static let defaultKVType = GGML_TYPE_F32
+    /// KV キャッシュの型。genmai-310M の元のモデルの型（単精度）に合わせる。半精度は genmai-310M で桁があふれ、BF16 は丸めで出力が変わる
+    private static let kvType = GGML_TYPE_F32
     /// モデルの全層を GPU に載せる。llama.cpp はモデルの層数を超える値を全層として扱う
     private static let allLayersOnGPU: Int32 = 999
     /// 文字にするときに最初に用意する、1 トークンあたりのバイト数。足りなければ llama.cpp が要る大きさを返す
@@ -46,16 +45,11 @@ final class ZenzGenerator: DirectDisplayGenerating {
         guard let model = llama_model_load_from_file(weight.path, modelParams) else { fatalError("モデルを読めない: \(weight.path)") }
         vocab = llama_model_get_vocab(model)!
         maxPositions = Int(llama_model_n_ctx_train(model))
-        var nameBuffer = [CChar](repeating: 0, count: 256)
-        let name = llama_model_meta_val_str(model, "general.name", &nameBuffer, nameBuffer.count) >= 0
-            ? String(decoding: nameBuffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
-            : ""
-        let kvType = Self.kvTypes[name] ?? Self.defaultKVType
         var contextParams = llama_context_default_params()
         contextParams.n_ctx = UInt32(maxPositions)
         contextParams.n_batch = UInt32(maxPositions)
-        contextParams.type_k = kvType
-        contextParams.type_v = kvType
+        contextParams.type_k = Self.kvType
+        contextParams.type_v = Self.kvType
         contextParams.no_perf = true
         // genmai-310M は半精度の KV キャッシュで flash attention を使うと logits が有限でなくなる。使わなければ半精度でも壊れない
         contextParams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED
