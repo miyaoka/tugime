@@ -69,6 +69,26 @@ jobs:
         run: swift test
 
   # ==============================================================
+  # scripts の TypeScript の型と整形
+  # ==============================================================
+  scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - uses: $/.github/actions/setup-environment
+
+      - name: Typecheck
+        run: bun run --cwd scripts typecheck
+
+      - name: Format
+        run: bun run --cwd scripts format:check
+
+  # ==============================================================
   # 配布物の組み立て（リソースの同梱・Info.plist・署名）が壊れていないかを、release より前に検知する
   # ==============================================================
   app:
@@ -120,6 +140,7 @@ jobs:
       # changes は常に走る。失敗したら app が飛ばされるので、allowed-skips に入れずに失敗を拾う
       - changes
       - test
+      - scripts
       - app
       - workflow_audit
     steps:

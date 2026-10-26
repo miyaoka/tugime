@@ -1,6 +1,15 @@
 {
   "private": true,
+  "scripts": {
+    "typecheck": "bun check",
+    "format": "bun fmt",
+    "format:check": "bun fmt --check"
+  },
   "dependencies": {
     "opentype.js": "1.3.4"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@types/opentype.js": "1.3.10"
   }
 }

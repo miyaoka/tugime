@@ -39,6 +39,8 @@ model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出
 
 図は `tugime-cli` の出力から SVG に描く。手で書き換えない。字形はフォントから図形にして埋め込み、配色はライトとダークで切り替える（`scripts/lib/svg.ts`）。
 
+bun は `mise.toml` の版を `mise install --locked` で入れる。scripts の下を変えたら、CI と同じく `bun run --cwd scripts typecheck` と `bun run --cwd scripts format:check` で確かめる。
+
 ```bash
 bun install --cwd scripts
 bun scripts/make-demo.ts             # README の冒頭のデモ docs/images/demo.svg と demo-compare.svg
