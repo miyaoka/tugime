@@ -65,6 +65,12 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).allSatisfy { $0.kind == .japanese })
     }
 
+    /// 促音の形の数詞（ひゃっ・じゅっ）を含む読みも日本語区間として採り、途中に英字を残さない
+    @Test(arguments: [("hyappoyuzuru", "百歩譲る"), ("sorehagojuppohyappo", "それは五十歩百歩")])
+    func readsGeminatedNumeralsAsJapanese(input: String, expected: String) {
+        #expect(segmenter.liveText(input) == expected)
+    }
+
     /// 長音を省いた綴りは利用者の綴りでその語の読みにならないので、英語の語として残る
     @Test func keepsSpellingsWithoutTheLongVowelAsEnglish() {
         #expect(segmenter.segment("tokyo").map(\.kind) == [.english])
