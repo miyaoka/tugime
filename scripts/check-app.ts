@@ -3,17 +3,20 @@
 // SwiftPM の生成するリソースの探し方はビルドの仕組みで違い、組み立てたマシンの絶対パスを探すものがあるので、.build を退避して実行する
 import { $ } from "bun";
 import assert from "node:assert";
-import { mkdtempSync, realpathSync, renameSync, rmdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmdirSync,
+} from "node:fs";
+import { constants } from "node:os";
 import { join } from "node:path";
 import { root } from "./lib/root";
 
 const USAGE = "使い方: bun scripts/check-app.ts <.app>";
-/// 止めるシグナルと、そのシグナルで止まったときの終了コード（128 + シグナルの番号）
-const SIGNAL_EXIT_CODES = new Map<NodeJS.Signals, number>([
-  ["SIGHUP", 129],
-  ["SIGINT", 130],
-  ["SIGTERM", 143],
-]);
+/// 受けて .build を戻してから止めるシグナル
+const SIGNALS = ["SIGHUP", "SIGINT", "SIGTERM"] as const;
 
 const [appArgument, ...extra] = process.argv.slice(2);
 if (appArgument === undefined || extra.length > 0) {
@@ -25,14 +28,19 @@ const app = realpathSync(appArgument);
 // 退避先はリポジトリの中に置く。同じボリュームなので rename で動き、OS の一時ディレクトリの掃除で消されない。
 // 戻すのは exit のとき。シグナルでは exit が出ないので、受けて process.exit を呼ぶ（Bun の文書 OS signals）
 const build = join(root, ".build");
+if (!existsSync(build))
+  throw new Error(
+    `${build} が無い。先に bun scripts/build-app.ts で組み立てる`,
+  );
 const aside = mkdtempSync(join(root, ".check-aside-"));
 renameSync(build, join(aside, ".build"));
 process.on("exit", () => {
   renameSync(join(aside, ".build"), build);
   rmdirSync(aside);
 });
-for (const [signal, code] of SIGNAL_EXIT_CODES)
-  process.on(signal, () => process.exit(code));
+// シグナルで止まったときの終了コードは、シェルと同じく 128 + シグナルの番号
+for (const signal of SIGNALS)
+  process.on(signal, () => process.exit(128 + constants.signals[signal]));
 
 await $`${join(app, "Contents/MacOS/tugime")} --check`;
 
