@@ -96,6 +96,7 @@ const versusEnds = [14, 16];
 const flippedKinds: [number, Kind][] = [
   [4, "E"],
   [8, "J"],
+  [15, "J"],
   [16, "E"],
 ];
 
@@ -577,6 +578,10 @@ for (const [end, kind] of flippedKinds) {
   }
   const height = y + 36;
   const label = `${input} を打ち進めるごとの表示と、その裏で比べた読み方の候補。打鍵列の範囲を日本語や英語として読む候補を挙げ、点の合計が最も高い並びを採る。${flippedWord} は、打った直後は英語、続けて打つと日本語、最後の打鍵で英語に戻る`;
+  await assertAlt("docs/how-it-works.md", "conversion.svg", [
+    expected,
+    flippedWord,
+  ]);
   await writeImage(
     "conversion.svg",
     svgDocument(
