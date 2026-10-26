@@ -423,17 +423,20 @@ final class TugimeInputController: IMKInputController {
 
     // MARK: 表示と確定
 
-    /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示する。
-    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する
+    /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示し、それが打った読みと合わなければ警告の窓を出す。
+    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。警告の窓は出さない
     private func showMarkedText(_ client: IMKTextInput) {
         let marked = NSMutableAttributedString()
+        var differs = false
         if let clauses {
             for (index, clause) in clauses.enumerated() {
                 let style = index == focus ? kTSMHiliteSelectedConvertedText : kTSMHiliteConvertedText
                 marked.append(styled(clause.output, style: style, at: marked.length))
             }
         } else {
-            marked.append(styled(liveText, style: kTSMHiliteRawText, at: 0))
+            let live = sharedSegmenter.liveDisplay(keys, leading: leading)
+            marked.append(styled(live.text, style: kTSMHiliteRawText, at: 0))
+            differs = live.differsFromInput
         }
         // カーソルは常に末尾に置く。ターミナル（xterm.js）はカーソルの位置を未確定の文字列の終わりとして読むので、途中に置くと確定する文字列が欠ける
         client.setMarkedText(
@@ -441,6 +444,11 @@ final class TugimeInputController: IMKInputController {
             selectionRange: NSRange(location: marked.length, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
+        if differs {
+            rewriteWarning.show(below: client)
+        } else {
+            rewriteWarning.hide()
+        }
     }
 
     /// 下線の種類と太さはクライアントが決めるので、文節の状態だけを IMK に渡して属性を受け取る
@@ -483,6 +491,7 @@ final class TugimeInputController: IMKInputController {
     /// 未確定の文字列を、表示しているとおりに確定する
     private func commit(_ client: IMKTextInput) {
         candidatePanel.hide()
+        rewriteWarning.hide()
         guard !keys.isEmpty else { return }
         insert(clauses?.map(\.output).joined() ?? liveText, client: client)
         keys = ""
