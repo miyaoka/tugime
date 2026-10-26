@@ -1,9 +1,9 @@
 import Cocoa
 import InputMethodKit
+import TugimeCore
 
 /// 打っている途中の表示が打った読みと合わないときに、未確定の文字列の下に出す小さな窓
 final class RewriteWarning {
-    static let message = "入力と違う変換"
     /// 窓の中の文字の余白と、行から窓までの間
     private static let padding = NSSize(width: 12, height: 8)
     private static let gap: CGFloat = 6
@@ -18,7 +18,7 @@ final class RewriteWarning {
             hide()
             return
         }
-        let label = NSTextField(labelWithString: Self.message)
+        let label = NSTextField(labelWithString: Segmenter.LiveDisplay.warning)
         label.font = .systemFont(ofSize: 13)
         label.sizeToFit()
         let size = NSSize(width: label.frame.width + Self.padding.width * 2, height: label.frame.height + Self.padding.height * 2)

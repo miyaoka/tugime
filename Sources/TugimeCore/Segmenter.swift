@@ -143,6 +143,8 @@ public final class Segmenter {
 
     /// 打っている途中に見せる文字列と、それが打った読みと合わない変換を含むか
     public struct LiveDisplay: Sendable, Equatable {
+        /// differsFromInput のとき、入力メソッドが未確定の文字列の下に出す文言
+        public static let warning = "入力と違う変換"
         /// Enter で確定するのもこれ
         public var text: String
         /// 変換して見せた日本語区間のどれかが、読みと対応づかない（JapaneseDisplay.matchesReading が偽）

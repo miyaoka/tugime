@@ -7,6 +7,7 @@ swift build --product tugime-cli
 scripts/fetch-genmai.sh                                                           # 入力メソッドと同じモデルを .zenz/ に用意する
 .build/debug/tugime-cli nodewosakujosite,sitewokoukaisuru                         # 入力メソッドと同じ方式で変換した結果
 .build/debug/tugime-cli --explain sitewokoukaisuru                                # 区間と評価値（採点の変換）
+.build/debug/tugime-cli --typing burauzanankahirakerunda                          # 1 打鍵ずつ打ったときの表示と、未確定の文字列の下の知らせ
 swift test
 ```
 
