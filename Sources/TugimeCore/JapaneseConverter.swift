@@ -34,11 +34,15 @@ public struct JapaneseDisplay: Sendable, Equatable {
     }
 
     /// text のかなが、変換した読みのかなと同じ順に並ぶか（ReadingAlignment で対応づくか）。漢字の中の読みは見ない。
-    /// 利用者の語の表記は、利用者が決めた読みの書き方なので、その語の読みに置き換えてから照らす（よろしく → よろしくお願いします の お願いします を読み違いにしない）
+    /// 利用者の語の表記は、利用者が決めた読みの書き方なので、text のままで合わなければ、表記をその語の読みに置き換えて照らす
+    /// （よろしく → よろしくお願いします の お願いします を読み違いにしない）。置き換えは表記が現れるすべての位置に及び、
+    /// 別の読みの語の一部（点く の 点）も変えるので、text のままで合う表示には当てない
     public var matchesReading: Bool {
+        let reading = clauses.map(\.reading).joined()
+        guard ReadingAlignment(text: text, reading: reading) == nil else { return true }
         let spellings = userWords.flatMap { word in word.spellings.map { (spelling: $0, reading: word.reading) } }
         let read = spellings.sorted { $0.spelling.count > $1.spelling.count }.reduce(text) { $0.replacingOccurrences(of: $1.spelling, with: $1.reading) }
-        return ReadingAlignment(text: read, reading: clauses.map(\.reading).joined()) != nil
+        return ReadingAlignment(text: read, reading: reading) != nil
     }
 }
 

@@ -116,6 +116,12 @@ private final class FixedGenerator: DirectDisplayGenerating {
         }
     }
 
+    /// 利用者の語の表記が、別の読みの語の一部として表示にあっても、読みどおりの表示は読みと合う
+    @Test func keepsAReadingThatMatchesWithoutTheUserWord() {
+        let shown = JapaneseDisplay(text: "火が点く点", clauses: [JapaneseClause(reading: "ひがつくてん", text: "火が点く点")], userWords: [UsedUserWord(reading: "テン", spellings: ["点"])])
+        #expect(shown.matchesReading)
+    }
+
     /// 出力が利用者の語を含んでいれば、送り仮名などが採点と違っても出力のまま
     @Test func keepsAnOutputThatHasTheUserWord() throws {
         scorer.clauses["いーそうをきる"] = [ScoredClause(JapaneseClause(reading: "いーそうをきる", text: "一索を切る"), userWords: [UsedUserWord(reading: "イーソウ", spellings: ["一索"])])]

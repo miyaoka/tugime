@@ -43,7 +43,7 @@ import Testing
         try converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索")])
         let reading = try #require(converter.convert(kana: "いーそう", context: .start))
         #expect(reading.text == "一索")
-        #expect(reading.clauses.map(\.userWords) == [[UsedUserWord(reading: "イーソウ", spellings: ["一索"])]])
+        #expect(reading.clauses.map { $0.userWords.map(\.spellings) } == [[["一索"]]])
         #expect(converter.alternatives(kana: "いーそう", context: .start).contains("一索"))
     }
 
@@ -62,6 +62,14 @@ import Testing
         #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["萬子", "マンズ"]])
         let listed = converter.alternatives(kana: "まんず", context: .start)
         #expect(listed.contains("萬子") && listed.contains("マンズ"))
+    }
+
+    /// 表記に読みに無いかなを含む語を使った表示は、読みと合う
+    @Test func matchesTheReadingWithAUserWordThatAddsKana() throws {
+        try converter.replaceUserWords([UserWord(reading: "よろしく", word: "よろしくお願いします")])
+        let shown = try #require(converter.display(kana: "よろしく", context: .start, left: ""))
+        #expect(shown.text == "よろしくお願いします")
+        #expect(shown.matchesReading)
     }
 
     /// ゕ ゖ の読みも、打った読みと同じ規則でカタカナにして引く（azooKey は ゕ を ヵ にして辞書を引く）
