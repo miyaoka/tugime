@@ -24,15 +24,23 @@ public struct JapaneseDisplay: Sendable, Equatable {
     public var text: String
     /// text を文節に分けたもの。読みを繋ぐと変換したかなに、表記を繋ぐと text になる
     public var clauses: [JapaneseClause]
+    /// text を作った変換が使った利用者の語ごとの、同じ読みに登録した表記（ScoredClause.userWords と同じ形）
+    public var userWords: [[String]]
 
-    public init(text: String, clauses: [JapaneseClause]) {
+    public init(text: String, clauses: [JapaneseClause], userWords: [[String]] = []) {
         self.text = text
         self.clauses = clauses
+        self.userWords = userWords
     }
 
-    /// text のかなが、変換した読みのかなと同じ順に並ぶか（ReadingAlignment で対応づくか）。漢字の中の読みは見ない
+    /// 照らすときに利用者の語の表記を置き換える文字。錨にならないので、漢字の連なりと同じく読みを 1 文字以上食う
+    private static let userSpellingMark = "〓"
+
+    /// text のかなが、変換した読みのかなと同じ順に並ぶか（ReadingAlignment で対応づくか）。漢字の中の読みは見ない。
+    /// 利用者の語の表記は、利用者が決めた読みの書き方なので、表記のかな（よろしく → よろしくお願いします の お願いします）も読みと照らさない
     public var matchesReading: Bool {
-        ReadingAlignment(text: text, reading: clauses.map(\.reading).joined()) != nil
+        let masked = userWords.joined().sorted { $0.count > $1.count }.reduce(text) { $0.replacingOccurrences(of: $1, with: Self.userSpellingMark) }
+        return ReadingAlignment(text: masked, reading: clauses.map(\.reading).joined()) != nil
     }
 }
 
@@ -283,12 +291,12 @@ final class AzooKeyConverter: JapaneseConverting {
                 .first { Self.drop(prefix, from: $0) != nil }
                 .flatMap { candidate in
                     Self.drop(prefix, from: candidate).map { text in
-                        JapaneseDisplay(text: text, clauses: self.clauses(of: candidate, after: prefix, kana: kana, text: text).map(\.clause))
+                        Self.display(text: text, clauses: self.clauses(of: candidate, after: prefix, kana: kana, text: text))
                     }
                 }
         } else {
             result = candidates(kana, nBest: Self.scoringBest, zenzai: zenzai).first.map {
-                JapaneseDisplay(text: $0.text, clauses: self.clauses(of: $0, after: nil, kana: kana, text: $0.text).map(\.clause))
+                Self.display(text: $0.text, clauses: self.clauses(of: $0, after: nil, kana: kana, text: $0.text))
             }
         }
         // Zenzai の候補が表示に使えないときは、採点の変換を表示にする。使えないのは、前に置いたものを含む候補が無いときと、
@@ -300,7 +308,11 @@ final class AzooKeyConverter: JapaneseConverting {
 
     /// 採点の変換を表示の形にしたもの
     private func scoredDisplay(kana: String, context: JapaneseContext) -> JapaneseDisplay? {
-        convert(kana: kana, context: context).map { JapaneseDisplay(text: $0.text, clauses: $0.clauses.map(\.clause)) }
+        convert(kana: kana, context: context).map { Self.display(text: $0.text, clauses: $0.clauses) }
+    }
+
+    private static func display(text: String, clauses: [ScoredClause]) -> JapaneseDisplay {
+        JapaneseDisplay(text: text, clauses: clauses.map(\.clause), userWords: clauses.flatMap(\.userWords))
     }
 
     /// 先読みで Zenzai に渡すかな。モデルを読ませるためだけのもので、結果は使わない

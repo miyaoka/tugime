@@ -54,7 +54,7 @@ final class DirectConverter: JapaneseConverting {
             for scoredClause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + scoredClause.clause.reading.count) }
             let output = ReadingAlignment(text: text, reading: kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: kana, text: text)]
             let clauses = Self.keepingUserWords(output, scored: scored.clauses)
-            return JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses)
+            return JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses, userWords: scored.clauses.flatMap(\.userWords))
         }
         displays[key] = shown
         return shown

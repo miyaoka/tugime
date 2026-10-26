@@ -102,6 +102,17 @@ private final class FixedGenerator: DirectDisplayGenerating {
         #expect(shown.clauses == [JapaneseClause(reading: "まーじゃんの", text: "マージャンの"), JapaneseClause(reading: "まんず", text: "萬子")])
     }
 
+    /// 利用者の語の表記にある、読みに無いかなは、読みと合わない表示として扱わない。ほかの部分の書き換えは読みと合わない表示として扱う
+    @Test func doesNotFlagTheKanaOfAUserWord() throws {
+        scorer.clauses["よろしく"] = [ScoredClause(JapaneseClause(reading: "よろしく", text: "よろしくお願いします"), userWords: [["よろしくお願いします"]])]
+        generator.outputs["よろしく"] = "宜しく"
+        let shown = try #require(converter.display(kana: "よろしく", context: .start, left: ""))
+        #expect(shown.text == "よろしくお願いします")
+        #expect(shown.matchesReading)
+        let rewritten = JapaneseDisplay(text: "どうぞよろしくお願いします", clauses: [JapaneseClause(reading: "よろしく", text: "どうぞよろしくお願いします")], userWords: shown.userWords)
+        #expect(!rewritten.matchesReading)
+    }
+
     /// 出力が利用者の語を含んでいれば、送り仮名などが採点と違っても出力のまま
     @Test func keepsAnOutputThatHasTheUserWord() throws {
         scorer.clauses["いーそうをきる"] = [ScoredClause(JapaneseClause(reading: "いーそうをきる", text: "一索を切る"), userWords: [["一索"]])]
