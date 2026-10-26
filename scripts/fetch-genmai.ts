@@ -1,5 +1,5 @@
 // 入力メソッドが使うモデル（genmai-310M の q8_0）を .zenz/ に取得し、SHA-256 を確かめてパスを出す。
-// 版は Hugging Face のコミットで固定する。更新するときは scripts/convert-hf-to-gguf.sh で変換した GGUF を miyaoka/genmai-310M-GGUF に上げ、
+// 版は Hugging Face のコミットで固定する。更新するときは scripts/convert-hf-to-gguf.ts で変換した GGUF を miyaoka/genmai-310M-GGUF に上げ、
 // revision・sha256 と、App/Notices/genmai-310M.txt の版とコミットを一緒に変える
 import { join } from "node:path";
 import { fetchPinned } from "./lib/fetch";

@@ -1,0 +1,3 @@
+# scripts は bun install で入れた依存だけを使う。import した npm パッケージをレジストリから自動で取らない
+[install]
+auto = "disable"

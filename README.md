@@ -102,7 +102,7 @@ Xcode（Swift 6.2 以降）と、[mise](https://mise.jdx.dev/) で入れる bun 
 
 ```bash
 mise install --locked                   # mise.toml の版の bun を入れる
-mise exec -- scripts/build-app.sh       # dist/tugime Dev.app を組み立てて ad-hoc 署名する
+mise exec -- bun scripts/build-app.ts   # dist/tugime Dev.app を組み立てて ad-hoc 署名する
 ./install.sh "dist/tugime Dev.app"      # 配置して登録する
 ```
 

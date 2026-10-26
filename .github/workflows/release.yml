@@ -98,13 +98,13 @@ jobs:
       - name: Build .app
         run: |
           set -euo pipefail
-          TUGIME_BUILD_CHANNEL=stable TUGIME_VERSION="${TAG#v}" scripts/build-app.sh
+          TUGIME_BUILD_CHANNEL=stable TUGIME_VERSION="${TAG#v}" bun scripts/build-app.ts
 
       - name: Check .app
-        run: scripts/check-app.sh dist/tugime.app
+        run: bun scripts/check-app.ts dist/tugime.app
 
       - name: Package tarball
-        run: scripts/package.sh
+        run: bun scripts/package.ts
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
