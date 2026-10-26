@@ -58,7 +58,7 @@ final class UserDictionaryFile {
     }
 
     /// 更新時刻が前に見たときと違えば読み直し、segmenter の利用者の語を置き換える。読めない行は飛ばす。
-    /// ファイルを読めないか、語を変換エンジンに入れられなければ、前に読めた辞書で変換を続ける。
+    /// ファイルを読めなければ、前に読めた辞書で変換を続ける。
     /// ファイルが無いのは語が無い状態で、誤りではない。
     /// 置き換えると未確定の文字列が終わるので、未確定の文字列の外でだけ呼ぶ
     func refresh(into segmenter: Segmenter) {
@@ -73,18 +73,14 @@ final class UserDictionaryFile {
             return
         }
         guard seen != .some(modified) else { return }
-        // 中身で決まる誤り（変換エンジンが扱えない読みの文字）は同じ中身なら何度読んでも同じなので、時刻を覚えて読み直さない。
-        // それ以外の失敗（ファイルの読み込み、文字の表、組み立ての書き出し）は一時のこともあるので、時刻を覚えず、次の打ち始めにまた読む
+        // ファイルを読めないのは一時のこともあるので、時刻を覚えず、次の打ち始めにまた読む
         do {
             let dictionary = try modified.map { _ in UserDictionary(contents: try String(contentsOf: url, encoding: .utf8)) } ?? .empty
             for line in dictionary.skipped {
                 logger.warning("\(line.description, privacy: .public)")
             }
-            try segmenter.replaceUserDictionary(dictionary)
+            segmenter.replaceUserDictionary(dictionary)
             seen = modified
-        } catch let error as UserDictionary.ImportError {
-            if case .unsupportedCharacter = error { seen = modified } else { seen = nil }
-            logger.error("\(error.description, privacy: .public)")
         } catch {
             seen = nil
             logger.error("tugime の辞書を読めない: \(error.localizedDescription, privacy: .public)")

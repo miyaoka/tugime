@@ -54,8 +54,8 @@ public final class Segmenter {
     /// 英字が 1 文字だけの英語の区間で、さらに引く値
     static let singleLetterEnglishPenalty = 3.0
     /// 利用者の辞書で英語として扱う打鍵の区間の評価値の下限と、日本語として扱う読めない打鍵の区間の評価値。
-    /// かな漢字変換に入れた利用者の語 1 つの区間と同じ強さにする
-    static let registeredScore = Double(AzooKeyConverter.userWordValue) - japaneseSpanPenalty
+    /// かな漢字変換に入れた利用者の語 1 つの点の基準（登録数による減点と前後の連接を除いたもの）から作り、登録数によらず一定にする
+    static let registeredScore = LatticeConverter.userWordValue - japaneseSpanPenalty
 
     public init(table: RomajiTable, english: EnglishModel, japanese: any JapaneseConverting) {
         self.table = table

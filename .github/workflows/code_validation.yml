@@ -52,6 +52,8 @@ jobs:
             Package.resolved
             Sources/TugimeIME/**
             Sources/TugimeCore/Resources/**
+            Sources/SystemDictionaryLayout/**
+            Sources/tugime-dictionary/**
             .github/workflows/**
           skip_initial_fetch: true
           # 差分を取れなかったときに「変更なし」と同じ結果を返させない
@@ -68,6 +70,12 @@ jobs:
         with:
           persist-credentials: false
           show-progress: false
+
+      - uses: $/.github/actions/setup-environment
+
+      # テストは本物のシステム辞書で変換する
+      - name: Build system dictionary
+        run: bun scripts/fetch-dictionary.ts
 
       - name: Test
         run: swift test

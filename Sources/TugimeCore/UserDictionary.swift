@@ -44,19 +44,6 @@ public struct UserDictionary: Sendable, Equatable {
         }
     }
 
-    /// 読めた辞書を変換エンジンに入れられないとき（JapaneseConverting.replaceUserWords）
-    public enum ImportError: Error, CustomStringConvertible, Equatable {
-        case missingCharacterTable
-        case unsupportedCharacter(reading: String)
-
-        public var description: String {
-            switch self {
-            case .missingCharacterTable: "既定の辞書の文字の表（charID.chid）がバンドルに無い"
-            case .unsupportedCharacter(let reading): "tugime の辞書の読み \(reading) に、変換エンジンが辞書で扱えない文字がある"
-            }
-        }
-    }
-
     public static let empty = UserDictionary(entries: [], skipped: [])
 
     /// ファイルの行の順

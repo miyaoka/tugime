@@ -7,6 +7,7 @@ scripts は bun で動かす。bun は `mise.toml` の版を `mise install --loc
 ```bash
 swift build --product tugime-cli
 bun scripts/fetch-genmai.ts                                                       # 入力メソッドと同じモデルを .zenz/ に用意する
+bun scripts/fetch-dictionary.ts                                                   # システム辞書を .dictionary/ に組み立てる。swift test も読む
 .build/debug/tugime-cli nodewosakujosite,sitewokoukaisuru                         # 入力メソッドと同じ方式で変換した結果
 .build/debug/tugime-cli --explain sitewokoukaisuru                                # 区間と評価値（採点の変換）
 .build/debug/tugime-cli --typing burauzanankahirakerunda                          # 1 打鍵ずつ打ったときの表示と、未確定の文字列の下の知らせ
@@ -23,9 +24,9 @@ swift test
 swift build -c release --product tugime-eval
 problems=$(bun scripts/fetch-eval.ts)                                              # 問題を取得してディレクトリを出す
 model=$(bun scripts/fetch-genmai.ts)                                               # 入力メソッドと同じモデルのパス
-.build/release/tugime-eval accuracy --method azookey --problems "$problems" --out .eval/azookey.jsonl
+.build/release/tugime-eval accuracy --method lattice --problems "$problems" --out .eval/lattice.jsonl
 .build/release/tugime-eval accuracy --method "direct:$model" --problems "$problems" --out .eval/genmai.jsonl
-.build/release/tugime-eval compare .eval/azookey.jsonl .eval/genmai.jsonl         # 片方だけが正解した問題
+.build/release/tugime-eval compare .eval/lattice.jsonl .eval/genmai.jsonl         # 片方だけが正解した問題
 .build/release/tugime-eval keystrokes --method "direct:$model" --problems "$problems" --out .eval/keys.tsv
 ```
 

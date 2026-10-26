@@ -2,6 +2,7 @@
 .swiftpm/
 /dist/
 /.zenz/
+/.dictionary/
 /.eval/
 /.fonts/
 /scripts/node_modules/

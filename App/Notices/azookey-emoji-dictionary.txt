@@ -1,5 +1,0 @@
-AzooKeyKanaKanjiConverter_KanaKanjiConverterModuleWithDefaultDictionary.bundle/Contents/Resources/EmojiDictionary
-
-AzooKeyKanaKanjiConverter が同梱する絵文字辞書（azooKey_emoji_dictionary_storage）は、次のデータから作られている。同梱元に利用条件の記載は無い。
-- Mozc の src/data/emoji/emoji_data.tsv（https://github.com/google/mozc、BSD-3-Clause）
-- Unicode の emoji データと CLDR の日本語の注釈（https://www.unicode.org/license.txt、Unicode License v3）

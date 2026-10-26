@@ -83,20 +83,20 @@ const keyCount = (runs: Run[]) =>
 
 // ── conversion ────────────────────────────────────
 
-/// 変換の図に載せる例文。hide が英語、日本語、英語と入れ替わる
-const input = "setteiwohidesitamamanisuru";
+/// 変換の図に載せる例文。name が英語、日本語、英語と入れ替わる
+const input = "namewohennkousuru";
 /// 最後まで打ったときに表示されるはずの文
-const expected = "設定をhideしたままにする";
+const expected = "nameを変更する";
 /// 「採った読み方」に並べる時点（打鍵の数）
-const stepEnds = [6, 8, 12, 16, 20, 22, 24, 25, 26];
+const stepEnds = [4, 6, 8, 10, 12, 14, 15, 16, 17];
 /// 最後に入れ替わる語と、入れ替わりの前後で比べる時点（打鍵の数）
-const flippedWord = "hide";
-const versusEnds = [24, 26];
+const flippedWord = "name";
+const versusEnds = [15, 17];
 /// 図の筋書き。この時点（打鍵の数）で flippedWord を含む区間がこの種類になる
 const flippedKinds: [number, Kind][] = [
-  [12, "E"],
-  [16, "J"],
-  [26, "E"],
+  [4, "E"],
+  [8, "J"],
+  [17, "E"],
 ];
 
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）

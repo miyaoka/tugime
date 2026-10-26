@@ -28,7 +28,7 @@ const SHOWN = "zipを解凍した。";
 /// 工程 3 で比べて捨てる区切り方。[始まり, 終わり, 種類, 出力] の区間が --lattice でつながった並びになるかを確かめる
 type RejectedSpan = [number, number, "J" | "E", string];
 const REJECTED: [RejectedSpan, RejectedSpan, RejectedSpan] = [
-  [0, 2, "J", "字"],
+  [0, 2, "J", "次"],
   [2, 3, "E", "p"],
   [3, 15, "J", "を回答した"],
 ];
@@ -654,8 +654,8 @@ async function main() {
     [110, -120],
     {
       col: "#2dd4bf",
-      name: "azooKey の変換エンジン",
-      sub: "辞書と n-gram の変換",
+      name: "システム辞書",
+      sub: "Mozc から借りた辞書と品詞の連接",
       prop: PROP.dict,
     },
     [
@@ -778,7 +778,7 @@ async function main() {
   const style = [...fills]
     .map((c) => `\n  .f${c.slice(1)} { fill: ${c}; }`)
     .join("");
-  const label = `${INPUT} と打ったときの tugime の工程。1 受け取る、2 読み分ける（${en} は読めないので英語）、3 区切りを決める（${v.scored.join("｜")}）、4 漢字を仕上げる（${v.shown}）。各工程では InputMethodKit、ローマ字の綴りの表、azooKey の変換エンジン、wordfreq と Webster's、tugime の検査係、genmai-310M、llama.cpp が働く`;
+  const label = `${INPUT} と打ったときの tugime の工程。1 受け取る、2 読み分ける（${en} は読めないので英語）、3 区切りを決める（${v.scored.join("｜")}）、4 漢字を仕上げる（${v.shown}）。各工程では InputMethodKit、ローマ字の綴りの表、システム辞書、wordfreq と Webster's、tugime の検査係、genmai-310M、llama.cpp が働く`;
   await assertAlt("README.md", "pipeline.svg", [
     INPUT,
     v.scored.join("｜"),
