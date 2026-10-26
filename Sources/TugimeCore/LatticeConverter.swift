@@ -239,13 +239,15 @@ final class LatticeConverter: JapaneseConverting {
 
     /// 1 位の道で、文節の始まりの語から語の境目までの読みが利用者の語の読みに一致する範囲を、その利用者の語にする。左から最長の範囲を取る。
     /// 区切りはコストで決め、その区切りに収まる読みの表記を利用者の辞書登録で決める。
-    /// 文節の途中から始まる範囲（彼｜に｜し｜て｜は の にし）は、助詞や活用の並びが登録した読みと重なっただけなので置き換えない
-    private func preferringUserWords(_ words: [Word], kana: [Character]) -> [Word] {
+    /// 文節の途中から始まる範囲（彼｜に｜し｜て｜は の にし）は、助詞や活用の並びが登録した読みと重なっただけなので置き換えない。
+    /// 最初の語は、格子の始まりの品詞（startRid）の後ろとして見る
+    private func preferringUserWords(_ words: [Word], kana: [Character], startRid: UInt16) -> [Word] {
         guard !userWordsByReading.isEmpty else { return words }
         var result: [Word] = []
         var i = 0
         while i < words.count {
-            let found = i > 0 && !startsClause(words[i], after: words[i - 1]) ? nil : stride(from: words.count, through: i + 1, by: -1).lazy.compactMap { j in
+            let starts = i == 0 ? startsClause(words[i], afterRid: startRid) : startsClause(words[i], after: words[i - 1])
+            let found = !starts ? nil : stride(from: words.count, through: i + 1, by: -1).lazy.compactMap { j in
                 self.userWordsByReading[String(kana[words[i].start..<words[j - 1].end])].map { (end: j, index: $0[0]) }
             }.first
             guard let found else {
@@ -260,10 +262,15 @@ final class LatticeConverter: JapaneseConverting {
         return result
     }
 
-    /// segmenter.def で、word が previous の後ろで新しい文節を始めるか。
+    /// word が previous の後ろで新しい文節を始めるか。
     /// 辞書に無い 1 かな（ゃ など）の後ろでは切らず、続く語と 1 文節にする（ゃく を ゃ｜く にしない）
     private func startsClause(_ word: Word, after previous: Word) -> Bool {
-        !previous.unknown && dictionary.isBoundary(previous.rid, word.lid)
+        !previous.unknown && startsClause(word, afterRid: previous.rid)
+    }
+
+    /// segmenter.def で、右 ID が rid の語の後ろで word が新しい文節を始めるか
+    private func startsClause(_ word: Word, afterRid rid: UInt16) -> Bool {
+        dictionary.isBoundary(rid, word.lid)
     }
 
     /// 語の列を、segmenter.def の文節の境目で切り、文節ごとに使った利用者の語を添える
@@ -296,7 +303,7 @@ final class LatticeConverter: JapaneseConverting {
         let (chars, bytes, offsets) = Self.layout(kana)
         let positions = table(chars, bytes: bytes, offsets: offsets, startRid: startRid)
         let result = finals(positions, k: 1).first.map { final in
-            let words = preferringUserWords(backtrack(positions, rid: final.rid, rank: final.rank, kana: chars), kana: chars)
+            let words = preferringUserWords(backtrack(positions, rid: final.rid, rank: final.rank, kana: chars), kana: chars, startRid: startRid)
             return JapaneseReading(text: words.map(\.text).joined(), value: -Double(final.cost) / Self.scale, clauses: clauses(words, kana: chars), context: context)
         }
         readings[key] = result

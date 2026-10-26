@@ -98,11 +98,14 @@ import Testing
         #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [[word]])
     }
 
-    /// 文節の途中で助詞や活用の並びが登録した読みと重なっても、利用者の語にしない
-    @Test(arguments: [("にし", "西", "かれにしては"), ("から", "殻", "なにから"), ("かな", "カナ", "そうかな")])
-    func keepsFunctionWordsThatShareTheReading(reading: String, word: String, kana: String) throws {
+    /// 文節の途中で助詞や活用の並びが登録した読みと重なっても、利用者の語にしない。英語の語の後で助詞から始まる区間も同じ
+    @Test(arguments: [
+        ("にし", "西", "かれにしては", JapaneseContext.start), ("から", "殻", "なにから", .start), ("かな", "カナ", "そうかな", .start),
+        ("にし", "西", "にしては", .afterWord),
+    ])
+    func keepsFunctionWordsThatShareTheReading(reading: String, word: String, kana: String, context: JapaneseContext) throws {
         converter.replaceUserWords([UserWord(reading: reading, word: word)])
-        let converted = try #require(converter.convert(kana: kana, context: .start))
+        let converted = try #require(converter.convert(kana: kana, context: context))
         #expect(!converted.text.contains(word))
         #expect(converted.clauses.flatMap(\.userWords).isEmpty)
     }
