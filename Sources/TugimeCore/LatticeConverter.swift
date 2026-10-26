@@ -136,15 +136,11 @@ final class LatticeConverter: JapaneseConverting {
                 }
             }
             let range = bytes.withUnsafeBufferPointer { dictionary.lookup(UnsafeBufferPointer(rebasing: $0[offsets[start]..<offsets[end]])) }
-            let users = userWordsByReading.isEmpty ? nil : userWordsByReading[String(kana[start..<end])]
-            // 1 位の変換では、利用者の語がある読みに同じ読みの辞書の語を並べない。表記の好みは利用者の辞書登録で決まる。候補の窓（k > 1）には残す
-            if let range, users == nil || k > 1 {
-                for index in range {
-                    let entry = dictionary.entry(index)
-                    relax(lid: entry.lid, rid: entry.rid, cost: entry.cost, kind: .dictionary, word: Int32(index))
-                }
+            for index in range ?? 0..<0 {
+                let entry = dictionary.entry(index)
+                relax(lid: entry.lid, rid: entry.rid, cost: entry.cost, kind: .dictionary, word: Int32(index))
             }
-            for index in users ?? [] {
+            for index in userWordsByReading.isEmpty ? [] : userWordsByReading[String(kana[start..<end])] ?? [] {
                 relax(lid: dictionary.properNounId, rid: dictionary.properNounId, cost: userCost, kind: .user, word: Int32(index))
             }
             if start == end - 1 {
@@ -241,6 +237,35 @@ final class LatticeConverter: JapaneseConverting {
         return positions
     }
 
+    /// 1 位の道で、文節の始まりの語から語の境目までの読みが利用者の語の読みに一致する範囲を、その利用者の語にする。左から最長の範囲を取る。
+    /// 区切りはコストで決め、その区切りに収まる読みの表記を利用者の辞書登録で決める。
+    /// 文節の途中から始まる範囲（彼｜に｜し｜て｜は の にし）は、助詞や活用の並びが登録した読みと重なっただけなので置き換えない
+    private func preferringUserWords(_ words: [Word], kana: [Character]) -> [Word] {
+        guard !userWordsByReading.isEmpty else { return words }
+        var result: [Word] = []
+        var i = 0
+        while i < words.count {
+            let found = i > 0 && !startsClause(words[i], after: words[i - 1]) ? nil : stride(from: words.count, through: i + 1, by: -1).lazy.compactMap { j in
+                self.userWordsByReading[String(kana[words[i].start..<words[j - 1].end])].map { (end: j, index: $0[0]) }
+            }.first
+            guard let found else {
+                result.append(words[i])
+                i += 1
+                continue
+            }
+            let id = dictionary.properNounId
+            result.append(Word(start: words[i].start, end: words[found.end - 1].end, text: userEntries[found.index].word, lid: id, rid: id, user: found.index))
+            i = found.end
+        }
+        return result
+    }
+
+    /// segmenter.def で、word が previous の後ろで新しい文節を始めるか。
+    /// 辞書に無い 1 かな（ゃ など）の後ろでは切らず、続く語と 1 文節にする（ゃく を ゃ｜く にしない）
+    private func startsClause(_ word: Word, after previous: Word) -> Bool {
+        !previous.unknown && dictionary.isBoundary(previous.rid, word.lid)
+    }
+
     /// 語の列を、segmenter.def の文節の境目で切り、文節ごとに使った利用者の語を添える
     private func clauses(_ words: [Word], kana: [Character]) -> [ScoredClause] {
         var clauses: [ScoredClause] = []
@@ -257,8 +282,7 @@ final class LatticeConverter: JapaneseConverting {
             current = []
         }
         for word in words {
-            // 辞書に無い 1 かな（ゃ など）の後ろでは切らず、続く語と 1 文節にする（ゃく を ゃ｜く にしない）
-            if let previous = current.last, !previous.unknown, dictionary.isBoundary(previous.rid, word.lid) { flush() }
+            if let previous = current.last, startsClause(word, after: previous) { flush() }
             current.append(word)
         }
         flush()
@@ -272,7 +296,7 @@ final class LatticeConverter: JapaneseConverting {
         let (chars, bytes, offsets) = Self.layout(kana)
         let positions = table(chars, bytes: bytes, offsets: offsets, startRid: startRid)
         let result = finals(positions, k: 1).first.map { final in
-            let words = backtrack(positions, rid: final.rid, rank: final.rank, kana: chars)
+            let words = preferringUserWords(backtrack(positions, rid: final.rid, rank: final.rank, kana: chars), kana: chars)
             return JapaneseReading(text: words.map(\.text).joined(), value: -Double(final.cost) / Self.scale, clauses: clauses(words, kana: chars), context: context)
         }
         readings[key] = result

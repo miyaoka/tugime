@@ -87,6 +87,26 @@ import Testing
         #expect(converter.alternatives(kana: "ゆーざーいおう", context: .start).contains("語142"))
     }
 
+    /// 登録数でコストが増え、読みを辞書の語（この｜へん）で覆う道が勝っても、その読みは利用者の語にする。
+    /// 表記が読みと同じ語も、使った語として文節に付く
+    @Test(arguments: ["此の邊", "このへん"])
+    func takesTheUserWordOverDictionaryWordsCoveringItsReading(word: String) throws {
+        let others = ["まんず", "いーそう", "りゃんそう"].map { UserWord(reading: $0, word: $0) }
+        converter.replaceUserWords([UserWord(reading: "このへん", word: word)] + others)
+        let reading = try #require(converter.convert(kana: "このへんで", context: .start))
+        #expect(reading.text == word + "で")
+        #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [[word]])
+    }
+
+    /// 文節の途中で助詞や活用の並びが登録した読みと重なっても、利用者の語にしない
+    @Test(arguments: [("にし", "西", "かれにしては"), ("から", "殻", "なにから"), ("かな", "カナ", "そうかな")])
+    func keepsFunctionWordsThatShareTheReading(reading: String, word: String, kana: String) throws {
+        converter.replaceUserWords([UserWord(reading: reading, word: word)])
+        let converted = try #require(converter.convert(kana: kana, context: .start))
+        #expect(!converted.text.contains(word))
+        #expect(converted.clauses.flatMap(\.userWords).isEmpty)
+    }
+
     /// 置き換えると前の語は消える。採点の覚えが前の辞書の計算を使い回さない
     @Test func replacingDropsThePreviousWords() throws {
         converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索牌")])
