@@ -3,3 +3,5 @@
 /dist/
 /.zenz/
 /.eval/
+/.fonts/
+/scripts/node_modules/
