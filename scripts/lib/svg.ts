@@ -142,6 +142,16 @@ ${body}
 `;
 }
 
+/// Markdown の文書 doc で画像 name を参照する説明文（alt）に、生成した値 values がすべて含まれるかを確かめる。
+/// 説明文は手で書くので、変換の結果が変わったときに図だけ変わって説明文が古くなるのを止める
+export async function assertAlt(doc: string, name: string, values: string[]) {
+  const text = await Bun.file(join(root, doc)).text();
+  const alt = text.match(new RegExp(`!\\[([^\\]]*)\\]\\([^)]*${name.replace(/\./g, "\\.")}\\)`))?.[1];
+  if (alt === undefined) throw new Error(`${doc} に ${name} の参照が無い`);
+  const missing = values.filter((v) => !alt.includes(v));
+  if (missing.length) throw new Error(`${doc} の ${name} の説明文に ${missing.join(" / ")} が無い`);
+}
+
 export async function writeImage(name: string, svg: string) {
   await Bun.write(join(images, name), svg);
   console.error(`${name} 書き出し ${(svg.length / 1024).toFixed(0)}KB ${elapsed()}`);

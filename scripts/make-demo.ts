@@ -1,7 +1,7 @@
 // README の冒頭のデモを作る。docs/images/demo.svg は打鍵列を 1 打鍵ずつ tugime-cli に渡した表示を順に見せるアニメーション、
 // docs/images/demo-compare.svg は同じ打鍵列をほかの方式で打った結果と並べた静止画。
 // 使い方: bun install --cwd scripts && bun scripts/make-demo.ts
-import { Glyphs, cli, kindOf, prepare, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
+import { Glyphs, assertAlt, cli, kindOf, prepare, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
 
 const SOURCE = "scripts/make-demo.ts";
 
@@ -61,6 +61,8 @@ const final = frames[frames.length - 1];
 if (final !== expected) throw new Error(`最後まで打ったときの表示 ${final} が期待する文 ${expected} と違う`);
 const [dictionaryResult] = await step("辞書と統計の変換", async () => readLive(await run([cli, "--method", "azookey", "--live", input]), [input]));
 if (dictionaryResult === expected) throw new Error(`辞書と統計の変換も ${expected} になり、比べる意味が無い`);
+await assertAlt("README.md", "demo.svg", [input, expected]);
+await assertAlt("README.md", "demo-compare.svg", [expected, liveConversionResult, dictionaryResult]);
 
 // アニメーション: 打鍵列と、1 打鍵ごとの tugime の表示
 {
@@ -93,7 +95,7 @@ if (dictionaryResult === expected) throw new Error(`辞書と統計の変換も 
   const rows: [string, string, ReturnType<typeof marked> | typeof kindOf][] = [
     ["tugime", expected, kindOf],
     ["日本語モードのライブ変換", liveConversionResult, marked(liveConversionResult)],
-    ["辞書と統計の変換", dictionaryResult, marked(dictionaryResult)],
+    ["英語を見分けて辞書と統計で変換", dictionaryResult, marked(dictionaryResult)],
   ];
   const keysY = 40;
   const top = 92;
@@ -103,6 +105,6 @@ if (dictionaryResult === expected) throw new Error(`辞書と統計の変換も 
     g.draw(input, "bold", LEFT, keysY, keysSize, "key", KEYS_TRACKING) +
     rows.map(([name, text, paint], row) => g.draw(name, "bold", LEFT, top + row * rowGap, LABEL_SIZE, "sub") + g.draw(text, "bold", LEFT, top + row * rowGap + 32, COMPARE_SIZE, paint)).join("");
   const height = top + (rows.length - 1) * rowGap + 32 + 30;
-  const label = `${input} と打った結果。tugime は ${expected}、日本語モードのライブ変換は ${liveConversionResult}、辞書と統計の変換は ${dictionaryResult}`;
+  const label = `${input} と打った結果。tugime は ${expected}、日本語モードのライブ変換は ${liveConversionResult}、英語を見分けて辞書と統計で変換すると ${dictionaryResult}`;
   await writeImage("demo-compare.svg", svgDocument(SOURCE, WIDTH, height, label, g, body));
 }

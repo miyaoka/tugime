@@ -2,7 +2,7 @@
 //   docs/images/intro.svg      … 同じ文を打つとき、ふつうの日本語入力と tugime で文字のほかに押すキーを比べる
 //   docs/images/conversion.svg … 打鍵列を区切って変換するまで（比べた読み方の候補、打鍵ごとの区切り、最後に入れ替わる理由）
 // 使い方: bun install --cwd scripts && bun scripts/make-readme-figures.ts
-import { Glyphs, cli, kindOf, prepare, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
+import { Glyphs, assertAlt, cli, kindOf, prepare, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
 
 const SOURCE = "scripts/make-readme-figures.ts";
 
@@ -271,6 +271,7 @@ for (const [end, kind] of flippedKinds) {
   legend(`<rect class="chip" x="${lx}" y="${legendY - 12}" width="${keyW.toFixed(1)}" height="24" rx="6"/>${g.center("英数", "bold", lx + keyW / 2, legendY + 4.5, 12, "ink")}`, keyW, "文字のほかに押すキー");
 
   const height = legendY + 30;
+  await assertAlt("README.md", "intro.svg", [introExpected, `${keyCount(plainRuns)} 回`]);
   const label = `${introExpected} を打つとき、ふつうの日本語入力では文字のほかに英数・かな・変換・Enter を ${keyCount(plainRuns)} 回押す。tugime では Space がそのまま空白になり、文字のほかに押すのは最後の Enter だけ`;
   await writeImage("intro.svg", svgDocument(SOURCE, WIDTH, height, label, g, parts.join("")));
 }
