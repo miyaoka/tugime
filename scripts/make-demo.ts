@@ -99,7 +99,7 @@ if (final !== expected)
     `最後まで打ったときの表示 ${final} が期待する文 ${expected} と違う`,
   );
 const [dictionary] = await step("英語を見分けて辞書と統計で変換", async () =>
-  readLive(await run([cli, "--method", "azookey", "--live", input]), [input]),
+  readLive(await run([cli, "--method", "lattice", "--live", input]), [input]),
 );
 assert(dictionary !== undefined, `${input} の辞書と統計の変換の結果が無い`);
 const dictionaryResult = dictionary.shown;

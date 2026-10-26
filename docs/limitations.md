@@ -4,33 +4,23 @@
 
 文節だけを直す手順: Shift+Space で文節を選び、← / → で直したい語に合わせてから、F6（ひらがな）や F10（打ったまま）を押すか、候補から選ぶ。打っている途中に F6〜F10 を押すと、未確定の文字列の全体が変わる。
 
-## 英語だけの文で、短い語がかなになる
-
-1 つのかなになる綴り（`go` など）は、日本語として採れるなら英語にしない。
-
-| 打鍵列 | 表示 | 期待 |
-|---|---|---|
-| `i want to go` | i want to ご | i want to go |
-
-対処: 英語だけの文は英数モードで打つ。
-
 ## ローマ字としても読める英単語が日本語になる
 
 | 打鍵列 | 表示 | 期待 |
 |---|---|---|
 | `homenomenuwokaeru` | homeのメヌを飼える | homeのmenuを変える |
-| `modenokirikaewotuikasuru` | モデの切り替えを追加する | modeの切り替えを追加する |
+| `setteiwohidesitamamanisuru` | 設定を非でしたままにする | 設定をhideしたままにする |
 | `asitanomeetingmadeniapinosiyouwosiraberu` | 明日のmeetingまでにアピの仕様を調べる | 明日のmeetingまでにapiの仕様を調べる |
 
 対処: 大文字で打つ（`API`）、tugime の辞書に `en` で登録する、その文節だけを F10 で打ったままに戻す。issue: [#21](https://github.com/miyaoka/tugime/issues/21)
 
-## 日本語の読みの途中が英語の語に割れる
+## 日本語の語の頭が英語の語として残る
 
 | 打鍵列 | 表示 | 期待 |
 |---|---|---|
-| `diskniyouryougatarinai` | diskにyour用が足りない | diskに容量が足りない |
+| `sarigiwagakakkoii` | sariぎわがかっこいい | 去り際がかっこいい |
 
-対処: 文節を選び、伸縮して変換し直す。issue: [#61](https://github.com/miyaoka/tugime/issues/61)
+対処: Shift+Space で文節を選び、`sari` の文節は候補から「去り」を、続く `ぎわが` の文節は候補から「際が」を選ぶ。
 
 ## 表示が打った読みどおりにならない
 

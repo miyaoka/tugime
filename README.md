@@ -6,7 +6,7 @@
 
 ![slackdetodoitazipwokaitousitara,logniijougaatta. と 1 打鍵ずつ打つと、tugime は打つそばから変換して slackで届いたzipを解凍したら、logに異常があった。 と表示する](docs/images/demo.svg)
 
-![同じ打鍵列を打った結果。tugime は slackで届いたzipを解凍したら、logに異常があった。、日本語モードのライブ変換は sぁckで届いた自pを解凍したら、ぉgに異常があった。、英語を見分けて辞書と統計で変換すると slackで届いたzipを回答したら、logに以上があった。](docs/images/demo-compare.svg)
+![同じ打鍵列を打った結果。tugime は slackで届いたzipを解凍したら、logに異常があった。、日本語モードのライブ変換は sぁckで届いた自pを解凍したら、ぉgに異常があった。、英語を見分けて辞書と統計で変換すると slackで届いたzipを回答したら、logに異常があった。](docs/images/demo-compare.svg)
 
 英単語は英字のまま残り、日本語は文の流れに合った漢字になります。英語を打つたびに英数キーで英数モードに切り替えたり、変換し直したりしなくて大丈夫です。
 
@@ -21,7 +21,7 @@
 | `ok` | おk | ok |
 | `testgaotitanode` | てstが落ちたので | testが落ちたので |
 
-`api` や `hide` のようにローマ字としても読める語も、前後の文から英語か日本語かを決めます（[誤ることもあります](docs/limitations.md)）。
+`api` や `name` のようにローマ字としても読める語も、前後の文から英語か日本語かを決めます（[誤ることもあります](docs/limitations.md)）。
 
 ### 文の流れに合った漢字
 
@@ -46,14 +46,14 @@ tugime は、打った読みをまとめて読む変換モデルで漢字を選�
 
 ## 変換の仕組み
 
-![zipwokaitousita. と打つと、tugime は 1 受け取る、2 読み分ける（zip は p が読めないので英語）、3 区切りを決める（zip｜を回答した｜。）、4 漢字を仕上げる（zipを解凍した。）の工程で変換する。各工程では InputMethodKit、ローマ字の綴りの表、azooKey の変換エンジン、wordfreq と Webster's、tugime の検査係、genmai-310M、llama.cpp が働く](docs/images/pipeline.svg)
+![zipwokaitousita. と打つと、tugime は 1 受け取る、2 読み分ける（zip は p が読めないので英語）、3 区切りを決める（zip｜を回答した｜。）、4 漢字を仕上げる（zipを解凍した。）の工程で変換する。各工程では InputMethodKit、ローマ字の綴りの表、システム辞書、wordfreq と Webster's、tugime の検査係、genmai-310M、llama.cpp が働く](docs/images/pipeline.svg)
 
 tugime は 1 キー打つたびに、打鍵列の全部をこの 4 つの工程に流し直します。ほかの日本語入力で崩れるのは、この工程の一部が無いためです。
 
 - **日本語モードのライブ変換** には、工程 2 で読めない打鍵を英語にする分かれ道と、工程 3 で日本語と英語の区切り方を比べる処理がありません。日本語だけの文なら文脈に合った漢字を選べますが、英字もすべてローマ字として読むので、英単語が「おk」「てst」になります
-- **英語を見分けて辞書と統計で変換する方式** は、工程 3 の仮の漢字で止まります。英単語は英字のまま残りますが、漢字は隣り合う語の組がどれだけよく使われるかで選ぶので、「zipを回答した」「動機が遅い」のような組になることがあります
+- **英語を見分けて辞書と統計で変換する方式** は、工程 3 の仮の漢字で止まります。英単語は英字のまま残りますが、漢字は語の出やすさと隣り合う品詞の組の自然さで選ぶので、「zipを回答した」「動機が遅い」のような組になることがあります
 
-上のデモと表の「日本語モードのライブ変換」は macOS 27 で実際に打った結果、「英語を見分けて辞書と統計で変換」は tugime の比較用の方式（`tugime-cli --method azookey`）の結果です。詳しい仕組みは [変換の仕組み](docs/how-it-works.md) にあります。
+上のデモと表の「日本語モードのライブ変換」は macOS 27 で実際に打った結果、「英語を見分けて辞書と統計で変換」は tugime の比較用の方式（`tugime-cli --method lattice`）の結果です。詳しい仕組みは [変換の仕組み](docs/how-it-works.md) にあります。
 
 ## 安全性
 
@@ -135,9 +135,9 @@ mise exec -- bun scripts/build-app.ts   # dist/tugime Dev.app を組み立てて
 
 ## 使っているもの
 
-tugime の変換は、azooKey の変換エンジンと、それを元にしたモデルの上に作られています。
+tugime の変換は、次の辞書とモデルの上に作られています。
 
-- [AzooKeyKanaKanjiConverter](https://github.com/azooKey/AzooKeyKanaKanjiConverter)（MIT）と既定の辞書
+- システム辞書: [Mozc](https://github.com/google/mozc) の OSS 辞書・連接の表・文節の規則（BSD 3 条項。辞書は IPAdic と沖縄辞書の利用条件も伴う）
 - [genmai-310M](https://huggingface.co/subdiox/genmai-310M)（CC BY-SA 4.0。[zenz-v2.5-medium](https://huggingface.co/Miwa-Keita/zenz-v2.5-medium) を元にしたモデル）と [llama.cpp](https://github.com/azooKey/llama.cpp)（MIT）
 - 既定のローマ字の綴り: [Mozc](https://github.com/google/mozc) の `src/data/preedit/romanji-hiragana.tsv`（BSD 3 条項。ライセンスの全文は `Sources/TugimeCore/Resources/romaji.tsv` の先頭）
 - 英語の語の頻度: [wordfreq](https://github.com/rspeer/wordfreq) の日本語データ（CC BY-SA 4.0）
