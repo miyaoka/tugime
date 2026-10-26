@@ -1,7 +1,7 @@
 // README の変換の仕組みの図 docs/images/pipeline.svg を tugime-cli の出力から作る。
 // 打鍵列を工程ごとに形を変える素材として等角投影のコンベアに並べ、各工程で働く部品をキャラにして、この素材に何をしているかを吹き出しで言わせる
 // 使い方: bun install --cwd scripts && bun scripts/make-pipeline.ts
-import { type FontName, Glyphs, assertAlt, cli, prepare, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
+import { type FontName, Glyphs, type Span, assertAlt, bestPath, cli, parseSegments, prepare, readLattices, readLive, run, step, svgDocument, writeImage } from "./lib/svg";
 
 const SOURCE = "scripts/make-pipeline.ts";
 
@@ -9,41 +9,72 @@ const SOURCE = "scripts/make-pipeline.ts";
 const INPUT = "zipwokaitousita.";
 const SCORED = ["zip", "を回答した", "。"];
 const SHOWN = "zipを解凍した。";
-/// 工程 3 で比べて捨てる区切り方。--lattice に [始まり, 終わり, 種類, 出力] の区間があるかを確かめる
+/// 工程 3 で比べて捨てる区切り方。[始まり, 終わり, 種類, 出力] の区間が --lattice でつながった並びになるかを確かめる
 const REJECTED: [number, number, "J" | "E", string][] = [
   [0, 2, "J", "字"],
   [2, 3, "E", "p"],
   [3, 15, "J", "を回答した"],
 ];
-/// 同じ「かいとうした」が読みの全体で変わる例。[打鍵列, 吹き出しに書く読み, 表示されるはずの文]
-const EXAMPLES: [string, string, string][] = [
-  ["situmonnnikaitousita.", "しつもんにかいとうした", "質問に回答した。"],
-  ["tesutonimondaiwokaitousita.", "てすとにもんだいをかいとうした", "テストに問題を解答した。"],
+/// 同じ「かいとうした」が読みの全体で変わる例。[打鍵列, 表示されるはずの文]
+const EXAMPLES: [string, string][] = [
+  ["situmonnnikaitousita.", "質問に回答した。"],
+  ["tesutonimondaiwokaitousita.", "テストに問題を解答した。"],
 ];
 
 // ── tugime-cli から値を読む ─────────────────────────
 
-const segmentPattern = /([JEP])\[(.*?)→(.*?) (-?[\d.]+)\]/g;
+/// 打鍵列ごとの、日本語の文節の読みをつないだもの（--clauses）
+async function readReadings(inputs: string[]): Promise<Map<string, string>> {
+  const readings = new Map<string, string>();
+  let current: string | undefined;
+  for (const line of (await run([cli, "--clauses", ...inputs])).split("\n")) {
+    const head = line.match(/^== (\S+)$/);
+    if (head) {
+      current = head[1];
+      readings.set(current, "");
+      continue;
+    }
+    // 種類 読み<TAB>候補。変換エンジンのログも標準出力に混ざるので、種類と空白で始まりタブを含む行だけを文節として読む
+    const clause = line.match(/^([JEP]) ([^\t]+)\t/);
+    if (!clause) continue;
+    if (current === undefined) throw new Error(`== の行より前に文節がある: ${line}`);
+    if (clause[1] === "J") readings.set(current, readings.get(current) + clause[2]);
+  }
+  for (const i of inputs) if (!readings.get(i)) throw new Error(`--clauses に日本語の文節が無い: ${i}`);
+  return readings;
+}
 
 async function readValues(model: string) {
   // --explain は 1 行に「採点の変換の結果<TAB>区間の並び」を出す
   const explain = (await run([cli, "--explain", INPUT])).split("\n").find((l) => /\t[EJP]\[/.test(l));
   if (!explain) throw new Error(`--explain の結果が無い: ${INPUT}`);
-  const scored = [...explain.matchAll(segmentPattern)].map((m) => m[3]);
+  const segments = parseSegments(explain.split("\t")[1]);
+  const scored = segments.map((s) => s.output);
   if (scored.join("|") !== SCORED.join("|")) throw new Error(`採点の区切り ${scored.join("|")} が ${SCORED.join("|")} と違う`);
+  const japanese = segments.filter((s) => s.kind === "J");
+  if (japanese.length !== 1) throw new Error(`日本語の区間が 1 つでない: ${explain}`);
 
-  const lattice = (await run([cli, "--lattice", INPUT])).split("\n").map((l) => l.split("\t"));
-  for (const [s, e, kind, output] of REJECTED) {
-    if (!lattice.some((c) => c[0] === `${s}` && c[1] === `${e}` && c[3] === kind && c[5] === output)) throw new Error(`--lattice に ${s}-${e} ${kind} ${output} が無い`);
-  }
+  const lattice = (await readLattices([INPUT])).get(INPUT)!;
+  const isRejected = (span: Span) => REJECTED.some(([s, e, kind, output]) => span.s === s && span.e === e && span.kind === kind && span.output === output);
+  const rejected = bestPath(lattice, REJECTED[REJECTED.length - 1][1], isRejected);
+  if (rejected?.spans.length !== REJECTED.length) throw new Error(`--lattice で ${REJECTED.map((r) => r[3]).join("｜")} がつながった並びにならない`);
+  const japaneseCandidates = lattice.filter((s) => s.kind === "J").length;
 
   const inputs = [INPUT, ...EXAMPLES.map((e) => e[0])];
+  const readings = await readReadings(inputs);
   const shown = readLive(await run([cli, "--method", `direct:${model}`, "--live", ...inputs]), inputs);
-  const expected = [SHOWN, ...EXAMPLES.map((e) => e[2])];
+  const expected = [SHOWN, ...EXAMPLES.map((e) => e[1])];
   shown.forEach((s, i) => {
     if (s !== expected[i]) throw new Error(`${inputs[i]} の表示 ${s} が ${expected[i]} と違う`);
   });
-  return { scored, shown: shown[0], examples: shown.slice(1) };
+  return {
+    scored,
+    japaneseKeys: INPUT.slice(japanese[0].s, japanese[0].e),
+    reading: readings.get(INPUT)!,
+    japaneseCandidates,
+    shown: shown[0],
+    examples: EXAMPLES.map((e, i) => ({ reading: readings.get(e[0])!, shown: shown[i + 1] })),
+  };
 }
 
 // ── 等角投影 ────────────────────────────────────
@@ -91,6 +122,8 @@ type Kind = keyof typeof KIND;
 /// 1 行の文字の一部。col は文字の色
 type Part = { t: string; col: string; font?: FontName };
 const T = (t: string, col = INK): Part => ({ t, col });
+/// ひらがなをカタカナにする。genmai には読みをカタカナで渡す
+const toKatakana = (s: string) => s.replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
 const Bold = (t: string, col = INK): Part => ({ t, col, font: "bold" });
 const En = (t: string): Part => Bold(t, EN_INK);
 const Ja = (t: string): Part => Bold(t, JA_INK);
@@ -161,7 +194,7 @@ async function main() {
   const diffParts = (word: string, other: string, col: string): Part[] => [...word].map((ch, i) => Bold(ch, ch === [...other][i] ? KIND.ja.ink : col));
 
   const rowB: Piece[] = [piece("raw", INPUT)];
-  const rowC: Piece[] = [piece("en", en), piece("ja", "をかいとうした"), piece("raw", INPUT.slice(-1))];
+  const rowC: Piece[] = [piece("en", en), piece("ja", v.reading), piece("raw", INPUT.slice(-1))];
   const rowD: Piece[] = [piece("en", en), { kind: "ja", parts: diffParts(scoredJa, shownJa, BAD) }, piece("pn", punct)];
   const rowE: Piece[] = [piece("en", en), { kind: "ja", parts: diffParts(shownJa, scoredJa, GOOD) }, piece("pn", punct)];
 
@@ -332,7 +365,7 @@ async function main() {
   const glyph = (t: string, x: number, y: number, size: number, col: string, font: FontName = "bold") => text([{ t, col, font }], x, y, size, "middle");
   const PROP = {
     key: `<rect x="-2" y="-16" width="26" height="26" rx="5" fill="#fff" stroke="#94a3b8" stroke-width="1.5"/>${glyph(INPUT[0], 11, 3, 15, EN_INK)}`,
-    table: `<rect x="-4" y="-22" width="40" height="34" rx="3" fill="#fff" stroke="#16a34a" stroke-width="1.5"/><line x1="-4" y1="-11" x2="36" y2="-11" stroke="#86efac"/><line x1="-4" y1="0" x2="36" y2="0" stroke="#86efac"/><line x1="14" y1="-22" x2="14" y2="12" stroke="#86efac"/>${glyph("wo", 5, -14, 8, "#166534")}${glyph("を", 25, -14, 8, "#166534")}${glyph("ka", 5, -3, 8, "#166534")}${glyph("か", 25, -3, 8, "#166534")}`,
+    table: `<rect x="-4" y="-22" width="40" height="34" rx="3" fill="#fff" stroke="#16a34a" stroke-width="1.5"/><line x1="-4" y1="-11" x2="36" y2="-11" stroke="#86efac"/><line x1="-4" y1="0" x2="36" y2="0" stroke="#86efac"/><line x1="14" y1="-22" x2="14" y2="12" stroke="#86efac"/>`,
     dict: `<rect x="-2" y="-22" width="30" height="36" rx="3" fill="#0d9488"/><rect x="2" y="-18" width="22" height="28" rx="2" fill="#ccfbf1"/>${glyph("辞書", 13, -3, 9, "#115e59")}`,
     bars: `<rect x="-2" y="-22" width="40" height="36" rx="4" fill="#fff" stroke="#d97706" stroke-width="1.5"/><rect x="4" y="-2" width="6" height="12" fill="#f59e0b"/><rect x="13" y="-14" width="6" height="24" fill="#f59e0b"/><rect x="22" y="-8" width="6" height="18" fill="#f59e0b"/>`,
     scale: `<line x1="14" y1="-26" x2="14" y2="12" stroke="#334155" stroke-width="2.5"/><line x1="-6" y1="-18" x2="34" y2="-24" stroke="#334155" stroke-width="2.5"/><path d="M-14,-6 Q-6,2 2,-6 Z" fill="#22c55e"/><path d="M26,-12 Q34,-4 42,-12 Z" fill="#ef4444"/><line x1="-6" y1="-18" x2="-14" y2="-6" stroke="#334155"/><line x1="-6" y1="-18" x2="2" y2="-6" stroke="#334155"/><line x1="34" y1="-24" x2="26" y2="-12" stroke="#334155"/><line x1="34" y1="-24" x2="42" y2="-12" stroke="#334155"/>`,
@@ -353,18 +386,18 @@ async function main() {
   back(gateTop(G[0]), [120, -110], { col: "#94a3b8", name: "InputMethodKit", sub: "Apple（macOS の入力の仕組み）", prop: PROP.key },
     [[T("キーが届いたよ: "), En([...INPUT.slice(0, 5)].join(" ") + " …")], [T("入力欄のカーソルの前の文は空っぽ")], [T("出来上がった文字列は入力欄に出しておく")]], "#64748b", -160);
   back(gateTop(G[1]), [120, -110], { col: "#4ade80", name: "ローマ字の綴りの表", sub: "Mozc から借りた表", prop: PROP.table },
-    [[En("wo"), T(" は "), Ja("を"), T("、"), En("kaitousita"), T(" は "), Ja("かいとうした")], [En(en), T(" は "), En("p"), T(" が表に無いから、かなにできない")]], "#16a34a");
+    [[En(v.japaneseKeys), T(" は "), Ja(v.reading), T(" と読める")], [En(en), T(" は "), En(REJECTED[1][3]), T(" が表に無いから、かなにできない")]], "#16a34a");
   back(gateTop(G[2]), [110, -120], { col: "#2dd4bf", name: "azooKey の変換エンジン", sub: "辞書と n-gram の変換", prop: PROP.dict },
-    [[Ja("をかいとうした"), T(" なら "), Ja(scoredJa)], [T("日本語としての自然さを点にして返すよ")], [T("検査係が区切り方の候補ごとに聞いてくるので、")], [T("1 回のキーで何百回も答える。だから速さが大事")]], "#0d9488", -215);
+    [[Ja(v.reading), T(" なら "), Ja(scoredJa)], [T("日本語としての自然さを点にして返すよ")], [T("検査係が区切り方の候補ごとに聞いてくる。")], [T(`この打鍵列なら日本語の候補 ${v.japaneseCandidates} 個に点を付ける`)]], "#0d9488", -215);
   back(gateTop(G[2]), [400, 30], { col: "#fbbf24", name: "wordfreq・Webster's", sub: "英語の語の頻度と語表", prop: PROP.bars },
     [[En(en), T(" は日本語の文の中でも英字のまま")], [T("よく書かれる語。英語としての点を返すよ")]], "#d97706");
   front(gateFoot(G[2]), [-60, 170], { col: "#3b82f6", name: "tugime の検査係", sub: "tugime 自身", prop: PROP.scale },
     [[T("区切り方ごとに点を足して比べる")], [En(en), T("｜"), Ja(scoredJa), T("｜"), Ja(punct), T(" が最高点")], [T(rejected, BAD), T(" は捨てる")]], "#2563eb");
   front(gateFoot(G[3]), [-110, 200], { col: "#c084fc", name: "genmai-310M", sub: "変換モデル", prop: PROP.pen },
     [
-      [T("前の文は "), En(en), T("、読みは "), Ja("ヲカイトウシタ")],
+      [T("前の文は "), En(en), T("、読みは "), Ja(toKatakana(v.reading))],
       [T("続きを書くなら "), ...diffParts(shownJa, scoredJa, GOOD).map((p) => (p.col === KIND.ja.ink ? Bold(p.t) : p))],
-      ...EXAMPLES.map((e, i) => example(e[1], v.examples[i])),
+      ...v.examples.map((e) => example(e.reading, e.shown)),
     ], "#9333ea", -60);
   {
     const f = gateFoot(G[3]);
@@ -386,7 +419,7 @@ async function main() {
 
   const defs = `<defs><filter id="sh" x="-10%" y="-10%" width="120%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.10"/></filter><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#475569"/></marker></defs>`;
   const style = [...fills].map((c) => `\n  .f${c.slice(1)} { fill: ${c}; }`).join("");
-  const label = `${INPUT} と打ったときの tugime の工程。1 受け取る、2 読み分ける（${en} は読めないので英語）、3 区切りを決める（${v.scored.join("｜")}）、4 漢字を仕上げる（${v.shown}）`;
+  const label = `${INPUT} と打ったときの tugime の工程。1 受け取る、2 読み分ける（${en} は読めないので英語）、3 区切りを決める（${v.scored.join("｜")}）、4 漢字を仕上げる（${v.shown}）。各工程では InputMethodKit、ローマ字の綴りの表、azooKey の変換エンジン、wordfreq と Webster's、tugime の検査係、genmai-310M、llama.cpp が働く`;
   await assertAlt("README.md", "pipeline.svg", [INPUT, v.scored.join("｜"), v.shown]);
   await writeImage("pipeline.svg", svgDocument(SOURCE, W, H, label, g, defs + out.join(""), "light", style));
 }

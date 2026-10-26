@@ -36,7 +36,7 @@ model=$(scripts/convert-hf-to-gguf.sh <リポジトリ> <コミット> q8_0 <出
 
 ## README と docs の図を作り直す
 
-図は `tugime-cli` の出力から SVG に描く。手で書き換えない。字形はフォントから図形にして埋め込み、配色はライトとダークで切り替える（`scripts/lib/svg.ts`）。変換の仕組みの図は、色の多い絵なのでライトの配色だけで描く。
+図は `tugime-cli` の出力から SVG に描く。手で書き換えない。字形はフォントから図形にして埋め込み、配色はライトとダークで切り替える（`scripts/lib/svg.ts`）。
 
 ```bash
 bun install --cwd scripts
