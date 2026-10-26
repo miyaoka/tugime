@@ -22,6 +22,12 @@ let package = Package(
         ),
     ],
     targets: [
+        .target(name: "SystemDictionaryLayout"),
+        // システム辞書を組み立てる道具。scripts/fetch-dictionary.ts が呼ぶ
+        .executableTarget(
+            name: "tugime-dictionary",
+            dependencies: ["SystemDictionaryLayout"]
+        ),
         // llama.cpp（import llama）は、azooKey が trait Zenzai で載せる binaryTarget を推移的に使う。別の llama.cpp を足さない
         .target(
             name: "TugimeCore",
