@@ -1,5 +1,5 @@
 // README と docs の図を作るスクリプトが共有する部品。tugime-cli の実行と、フォントの字形を図形にして埋め込む SVG の組み立て。
-// 文字を図形にするので、見る人の環境のフォントに左右されない。配色は prefers-color-scheme でライトとダークを切り替える
+// 文字を図形にするので、見る人の環境のフォントに左右されない。配色は prefers-color-scheme でライトとダークを切り替える（図ごとにライトだけにもできる）
 import { dirname, join } from "node:path";
 import opentype from "opentype.js";
 
@@ -117,24 +117,29 @@ export class Glyphs {
   }
 }
 
-const STYLE = `<style>
+const LIGHT = `
   .bg { fill: #ffffff; } .panel { fill: #f6f8fa; } .sub { fill: #6b7280; } .ink { fill: #111827; } .en { fill: #c2410c; } .key { fill: #4b5563; }
   .bad { fill: #dc2626; } .good { fill: #15803d; } .line { fill: #9ca3af; } .chip { fill: #e5e7eb; }
-  .jtint { fill: #e7ecf4; } .etint { fill: #fbe7d8; }
+  .jtint { fill: #e7ecf4; } .etint { fill: #fbe7d8; }`;
+const DARK = `
   @media (prefers-color-scheme: dark) {
     .bg { fill: #0d1117; } .panel { fill: #161b22; } .sub { fill: #9ca3af; } .ink { fill: #f3f4f6; } .en { fill: #fb923c; } .key { fill: #d1d5db; }
     .bad { fill: #f87171; } .good { fill: #4ade80; } .line { fill: #6b7280; } .chip { fill: #30363d; }
     .jtint { fill: #1f2937; } .etint { fill: #3b2414; }
-  }
-</style>`;
+  }`;
+
+/// auto は見る人の設定でライトとダークを切り替え、light はダークでもライトの配色のまま描く
+export type Scheme = "auto" | "light";
 
 const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/// 字形の定義と背景を付けた SVG。body は glyphs で描き終えたものを渡す（<defs> は使った字形から作るため）。label は画像の説明
-export function svgDocument(source: string, width: number, height: number, label: string, glyphs: Glyphs, body: string): string {
+/// 字形の定義と背景を付けた SVG。body は glyphs で描き終えたものを渡す（<defs> は使った字形から作るため）。label は画像の説明。
+/// style は図が足す CSS
+export function svgDocument(source: string, width: number, height: number, label: string, glyphs: Glyphs, body: string, scheme: Scheme = "auto", style = ""): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="${escapeXml(label)}">
 <!-- ${source} が生成する。直接編集しない。字形は LINE Seed JP（SIL Open Font License 1.1） -->
-${STYLE}
+<style>${LIGHT}${scheme === "auto" ? DARK : ""}${style}
+</style>
 <defs>${glyphs.defsXml()}</defs>
 <rect class="bg" width="${width}" height="${height}" rx="12"/>
 ${body}
