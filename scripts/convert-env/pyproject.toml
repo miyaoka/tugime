@@ -4,14 +4,14 @@ name = "tugime-convert-env"
 version = "0"
 # パッチまで固定し、ランナーに入っている別のパッチの Python を使わせない
 requires-python = "==3.11.17"
-# torch・numpy・sentencepiece・transformers・protobuf は llama.cpp b4846 の変換が動いた組み合わせ。
+# torch・numpy・sentencepiece・transformers・protobuf は、変換に使う llama.cpp の requirements/requirements-convert_hf_to_gguf.txt に合わせる。
 # huggingface_hub は transformers 4.x が受け付ける 1.0 未満で、hf download がある版
 dependencies = [
-  "torch==2.2.2",
-  "numpy==1.26.4",
-  "sentencepiece==0.2.0",
-  "transformers>=4.45.1,<5",
-  "protobuf<5",
+  "torch==2.11.0",
+  "numpy~=2.2.6",
+  "sentencepiece>=0.1.98,<0.3.0",
+  "transformers==4.57.6",
+  "protobuf>=4.21.0,<5.0.0",
   "huggingface_hub>=0.34,<1",
 ]
 
