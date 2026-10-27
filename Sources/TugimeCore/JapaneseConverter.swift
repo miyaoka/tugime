@@ -2,8 +2,9 @@ import Foundation
 
 /// かなを変換した最良の結果と、その言語モデル上の評価値
 public struct JapaneseReading: Sendable, Equatable {
+    /// 最良の区切りの表記。区切りに収まる読みには、利用者の語の表記が入ることがある
     public var text: String
-    /// 変換エンジンの評価値。大きいほど自然
+    /// 区切りを決めた変換エンジンの評価値。大きいほど自然
     public var value: Double
     /// text を文節に分けたもの。読みを繋ぐと変換したかなに、表記を繋ぐと text になる
     public var clauses: [ScoredClause]

@@ -87,6 +87,38 @@ import Testing
         #expect(converter.alternatives(kana: "ゆーざーいおう", context: .start).contains("語142"))
     }
 
+    /// 登録数でコストが増え、読みを辞書の語（この｜へん）で覆う道が勝っても、その読みは利用者の語にする。
+    /// 表記が読みと同じ語も、使った語として文節に付く
+    @Test(arguments: ["此の邊", "このへん"])
+    func takesTheUserWordOverDictionaryWordsCoveringItsReading(word: String) throws {
+        let others = ["まんず", "いーそう", "りゃんそう"].map { UserWord(reading: $0, word: $0) }
+        converter.replaceUserWords([UserWord(reading: "このへん", word: word)] + others)
+        let reading = try #require(converter.convert(kana: "このへんで", context: .start))
+        #expect(reading.text == word + "で")
+        #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [[word]])
+    }
+
+    /// 文節の途中で助詞や活用の並びが登録した読みと重なっても、利用者の語にしない。英語の語の後で助詞から始まる区間も同じ
+    @Test(arguments: [
+        ("にし", "西", "かれにしては", JapaneseContext.start), ("から", "殻", "なにから", .start), ("かな", "カナ", "そうかな", .start),
+        ("にし", "西", "にしては", .afterWord),
+    ])
+    func keepsFunctionWordsThatShareTheReading(reading: String, word: String, kana: String, context: JapaneseContext) throws {
+        converter.replaceUserWords([UserWord(reading: reading, word: word)])
+        let converted = try #require(converter.convert(kana: kana, context: context))
+        #expect(!converted.text.contains(word))
+        #expect(converted.clauses.flatMap(\.userWords).isEmpty)
+    }
+
+    /// 利用者の語にした範囲の前後でも、文節の区切りは置き換える前と同じにする（たべてみる を たべて｜みる に割らない）
+    @Test func keepsClausesAroundTheUserWord() throws {
+        let before = try #require(converter.convert(kana: "たべてみる", context: .start)).clauses.map(\.clause.reading)
+        converter.replaceUserWords([UserWord(reading: "たべて", word: "食べて")])
+        let reading = try #require(converter.convert(kana: "たべてみる", context: .start))
+        #expect(reading.clauses.map(\.clause.reading) == before)
+        #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["食べて"]])
+    }
+
     /// 置き換えると前の語は消える。採点の覚えが前の辞書の計算を使い回さない
     @Test func replacingDropsThePreviousWords() throws {
         converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索牌")])
