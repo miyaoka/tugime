@@ -233,11 +233,6 @@ final class TugimeInputController: IMKInputController {
     // MARK: キー入力
 
     private func handleKeyDown(_ event: NSEvent, client: IMKTextInput) -> Bool {
-        // パスワード欄などで安全入力が有効なら、何も変換せずアプリに渡す
-        if IsSecureEventInputEnabled() {
-            commit(client)
-            return false
-        }
         switch event.keyCode {
         case KeyCode.eisu:
             commit(client)
