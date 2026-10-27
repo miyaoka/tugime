@@ -110,6 +110,15 @@ import Testing
         #expect(converted.clauses.flatMap(\.userWords).isEmpty)
     }
 
+    /// 利用者の語にした範囲の前後でも、文節の区切りは置き換える前と同じにする（たべてみる を たべて｜みる に割らない）
+    @Test func keepsClausesAroundTheUserWord() throws {
+        let before = try #require(converter.convert(kana: "たべてみる", context: .start)).clauses.map(\.clause.reading)
+        converter.replaceUserWords([UserWord(reading: "たべて", word: "食べて")])
+        let reading = try #require(converter.convert(kana: "たべてみる", context: .start))
+        #expect(reading.clauses.map(\.clause.reading) == before)
+        #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["食べて"]])
+    }
+
     /// 置き換えると前の語は消える。採点の覚えが前の辞書の計算を使い回さない
     @Test func replacingDropsThePreviousWords() throws {
         converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索牌")])

@@ -54,6 +54,8 @@ final class LatticeConverter: JapaneseConverting {
     private var userWordsByReading: [String: [Int]] = [:]
     private var userSpellings: [String: [String]] = [:]
     private var userCost: Int32 = 0
+    /// 利用者の語の読みの最長の文字数。これより長い読みは利用者の語を引かない
+    private var maxUserReadingChars = 0
     /// 語の読みの最長の文字数。格子はこれより前へ遡らない。システム辞書の最長と利用者の語の最長の大きい方
     private var maxReadingChars: Int
 
@@ -140,7 +142,7 @@ final class LatticeConverter: JapaneseConverting {
                 let entry = dictionary.entry(index)
                 relax(lid: entry.lid, rid: entry.rid, cost: entry.cost, kind: .dictionary, word: Int32(index))
             }
-            for index in userWordsByReading.isEmpty ? [] : userWordsByReading[String(kana[start..<end])] ?? [] {
+            for index in end - start > maxUserReadingChars ? [] : userWordsByReading[String(kana[start..<end])] ?? [] {
                 relax(lid: dictionary.properNounId, rid: dictionary.properNounId, cost: userCost, kind: .user, word: Int32(index))
             }
             if start == end - 1 {
@@ -247,7 +249,8 @@ final class LatticeConverter: JapaneseConverting {
         var i = 0
         while i < words.count {
             let starts = i == 0 ? startsClause(words[i], afterRid: startRid) : startsClause(words[i], after: words[i - 1])
-            let found = !starts ? nil : stride(from: words.count, through: i + 1, by: -1).lazy.compactMap { j in
+            let ends = (i + 1...words.count).prefix { words[$0 - 1].end - words[i].start <= maxUserReadingChars }
+            let found = !starts ? nil : ends.reversed().lazy.compactMap { j in
                 self.userWordsByReading[String(kana[words[i].start..<words[j - 1].end])].map { (end: j, index: $0[0]) }
             }.first
             guard let found else {
@@ -255,8 +258,9 @@ final class LatticeConverter: JapaneseConverting {
                 i += 1
                 continue
             }
-            let id = dictionary.properNounId
-            result.append(Word(start: words[i].start, end: words[found.end - 1].end, text: userEntries[found.index].word, lid: id, rid: id, user: found.index))
+            // 区切りは置き換える前の語の並びで決まっているので、前後の語との境目は範囲の両端の語で見る
+            let last = words[found.end - 1]
+            result.append(Word(start: words[i].start, end: last.end, text: userEntries[found.index].word, lid: words[i].lid, rid: last.rid, user: found.index, unknown: last.unknown))
             i = found.end
         }
         return result
@@ -349,6 +353,7 @@ final class LatticeConverter: JapaneseConverting {
         userWordsByReading = Dictionary(grouping: words.indices) { words[$0].reading }
         userSpellings = Dictionary(grouping: words, by: \.reading).mapValues { $0.map(\.word) }
         userCost = Int32((Self.userBaseCost + 500 * log(Double(words.count + 1))).rounded())
-        maxReadingChars = max(dictionary.maxReadingChars, words.map(\.reading.count).max() ?? 0)
+        maxUserReadingChars = words.map(\.reading.count).max() ?? 0
+        maxReadingChars = max(dictionary.maxReadingChars, maxUserReadingChars)
     }
 }
