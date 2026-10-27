@@ -72,6 +72,6 @@
 
 Chrome でパスワード欄にフォーカスしたまま別のアプリへ切り替えると、tugime がどのアプリでも動かなくなる。入力メニューでは tugime が灰色になり、ABC と Apple の日本語入力だけが選べる。
 
-Chrome 156 以降は、パスワード欄にフォーカスしたまま背面に回っても、パスワード欄で有効にした安全入力（Secure Event Input）を解除しない。macOS は安全入力が有効な間、Apple の入力ソースにしかキーを渡さないので、tugime の側では直せない。Chromium の不具合として報告されている（[577708579](https://issues.chromium.org/issues/577708579)、[567613584](https://issues.chromium.org/issues/567613584)）。
+Chrome 156 以降は、パスワード欄にフォーカスしたまま背面に回っても、パスワード欄で有効にした安全入力（Secure Event Input）を解除しない。macOS は安全入力が有効な間、Apple の入力ソースにしかキーを渡さないので、tugime の側では直せない。Chromium の不具合として報告されていて、Edge 157 でも起きる（[577708579](https://issues.chromium.org/issues/577708579)、[567613584](https://issues.chromium.org/issues/567613584)）。
 
-対処: パスワード欄のあるタブを閉じるか、Chrome を終了する。Chrome を `--disable-features=RWHVMacHasFocusReturnsFalseForNonKeyWindow` を付けて起動すると、背面に回ったときに解除する動きに戻る。このフラグで止まる変更は、背面のウィンドウの自動入力の候補が前面のウィンドウに重なるセキュリティの問題を直すためのもので、止めるとその問題も戻る。安全入力を持っているプロセスは、`ioreg -l -w 0 | grep SecureInput` の `kCGSSessionSecureInputPID` で分かる。
+対処: パスワード欄のあるタブを閉じるか、Chrome を終了する。Chrome を終了してから `/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --disable-features=RWHVMacHasFocusReturnsFalseForNonKeyWindow` で起動すると、その起動の間は、背面に回ったときに解除する動きに戻る。このフラグで止まる変更は、背面のウィンドウの自動入力の候補が前面のウィンドウに重なるセキュリティの問題を直すためのもので、止めるとその問題も戻る。安全入力を持っているプロセスは、`ioreg -l -w 0 | grep SecureInput` の `kCGSSessionSecureInputPID` で分かる。
