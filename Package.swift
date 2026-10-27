@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "TugimeCore", targets: ["TugimeCore"]),
         .executable(name: "tugime-cli", targets: ["tugime-cli"]),
         .executable(name: "tugime", targets: ["TugimeIME"]),
+        .executable(name: "tugime-sync", targets: ["TugimeSync"]),
     ],
     targets: [
         // 表示の変換のモデルを動かす llama.cpp
@@ -41,13 +42,16 @@ let package = Package(
             name: "tugime-eval",
             dependencies: ["TugimeCore", "TugimeEval"]
         ),
+        .target(name: "UserDictionaryLayout"),
         .executableTarget(
             name: "TugimeIME",
-            dependencies: ["TugimeCore"],
+            dependencies: ["TugimeCore", "UserDictionaryLayout"],
             // 入力メソッドの呼び出しはすべてメインスレッドで届くので、既定の隔離をメインアクターにする（SE-0466）
             swiftSettings: [.defaultIsolation(MainActor.self)],
             linkerSettings: [.linkedFramework("InputMethodKit")]
         ),
+        // 配布版の辞書を開発版の辞書へ写す道具。開発版にだけ同梱する
+        .executableTarget(name: "TugimeSync", dependencies: ["UserDictionaryLayout"]),
         .testTarget(
             name: "TugimeCoreTests",
             dependencies: ["TugimeCore"],

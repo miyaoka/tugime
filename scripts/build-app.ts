@@ -7,20 +7,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dictionary } from "./fetch-dictionary";
 import { genmai } from "./fetch-genmai";
+import { BUNDLE_ID, CHANNELS, SYNC_APP_KEY } from "./lib/channels";
 import { root } from "./lib/root";
-
-const BUNDLE_ID = "io.github.miyaoka.inputmethod.tugime";
-/// TUGIME_BUILD_CHANNEL ごとの bundle id と名前。無指定（空）は開発版
-const CHANNELS = new Map([
-  ["stable", { bundleId: BUNDLE_ID, name: "tugime" }],
-  ["", { bundleId: `${BUNDLE_ID}.dev`, name: "tugime Dev" }],
-]);
 
 const channelName = process.env.TUGIME_BUILD_CHANNEL ?? "";
 const channel = CHANNELS.get(channelName);
 if (!channel)
   throw new Error(`TUGIME_BUILD_CHANNEL は stable か無指定: ${channelName}`);
-const { bundleId, name } = channel;
+const { bundleId, name, sync } = channel;
 const version = process.env.TUGIME_VERSION || "0.0.0";
 const app = join(root, "dist", `${name}.app`);
 
@@ -60,6 +54,7 @@ const systemDictionary = await dictionary();
 
 console.log("== swift build");
 await $`${build} --product tugime`;
+if (sync) await $`${build} --product tugime-sync`;
 const bin = (await $`${build} --show-bin-path`.text()).trim();
 
 console.log(`== 組み立て ${app}`);
@@ -99,12 +94,35 @@ for (const lproj of ["en.lproj", "ja.lproj"]) {
     { NAME: name },
   );
 }
+// 配布版の辞書を写す道具。IME の Sandbox の外で動かすため、別の .app にして entitlements を付けずに署名する。
+// 置き場所は IME も読む Info.plist に書いてある
+const syncApp = join(
+  app,
+  (
+    await $`plutil -extract ${SYNC_APP_KEY} raw ${join(app, "Contents/Info.plist")}`.text()
+  ).trim(),
+);
+if (sync) {
+  await mkdir(join(syncApp, "Contents/MacOS"), { recursive: true });
+  await $`cp ${join(bin, "tugime-sync")} ${join(syncApp, "Contents/MacOS/tugime-sync")}`;
+  await fill(
+    join(root, "App/Sync-Info.plist"),
+    join(syncApp, "Contents/Info.plist"),
+    {
+      BUNDLE_ID: bundleId,
+      SOURCE_BUNDLE_ID: BUNDLE_ID,
+      VERSION: version,
+      NAME: name,
+    },
+  );
+}
 await $`swift ${join(root, "scripts/make-icons.swift")} ${join(app, "Contents/Resources")}`;
 await $`swift ${join(root, "scripts/collect-notices.swift")} ${root} ${join(app, "Contents/Resources")} ${join(app, "Contents/Resources/ThirdPartyNotices.txt")}`;
 
 console.log("== ad-hoc 署名");
 // 入れ子のフレームワークは外側の署名では署名されない。arm64 だけにして中身が変わったので署名し直す
 await $`codesign --force --timestamp=none --sign - ${join(app, "Contents/Frameworks/llama.framework")}`;
+if (sync) await $`codesign --force --timestamp=none --sign - ${syncApp}`;
 const work = await mkdtemp(join(tmpdir(), "tugime-build-"));
 try {
   const entitlements = join(work, "tugime.entitlements");

@@ -1,6 +1,7 @@
 import Cocoa
 import TugimeCore
 import UniformTypeIdentifiers
+import UserDictionaryLayout
 import os
 
 /// 入力メソッドが読む利用者の辞書のファイルと、最後に読んだときの状態。
@@ -21,7 +22,7 @@ final class UserDictionaryFile {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             fatalError("tugime を初期化できない: Application Support の場所が分からない")
         }
-        return UserDictionaryFile(url: support.appendingPathComponent("tugime/dictionary.tsv"))
+        return UserDictionaryFile(url: support.appendingPathComponent(UserDictionaryLayout.directory).appendingPathComponent(UserDictionaryLayout.fileName))
     }
 
     /// ファイルが無いときに作る中身。書式と例をコメントの行に書く

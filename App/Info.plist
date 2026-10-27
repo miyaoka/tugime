@@ -24,6 +24,9 @@
 	<string>NSApplication</string>
 	<key>InputMethodConnectionName</key>
 	<string>__BUNDLE_ID___Connection</string>
+	<!-- 配布版の辞書を写す道具の、.app の中の場所。開発版にだけ同梱する。組み立てと検査もここから読む -->
+	<key>TugimeSyncApp</key>
+	<string>Contents/Helpers/tugime Sync.app</string>
 	<key>InputMethodServerControllerClass</key>
 	<string>TugimeInputController</string>
 	<key>TISIntendedLanguage</key>
