@@ -57,9 +57,9 @@ api	API	en
 
 どちらも、打ったままの綴りや元の変換は候補の窓に残る。
 
-メニューバーの入力メニューの「tugime の辞書を編集…」で、辞書をテキストエディタ（プレーンテキストの既定のアプリ）で開く。辞書がまだ無ければ、書式の説明を書いた辞書を作ってから開く。
+メニューバーの入力メニューの「tugime の辞書を編集…」か、「設定…」の窓の辞書の「編集…」で、辞書をテキストエディタ（プレーンテキストの既定のアプリ）で開く。辞書がまだ無ければ、書式の説明を書いた辞書を作ってから開く。
 
-置き場所は次のとおり。開発版は `io.github.miyaoka.inputmethod.tugime.dev` の側に置く。
+置き場所は次のとおり。開発版は `io.github.miyaoka.inputmethod.tugime.dev` の側に置く。開発版の設定の窓の「写す…」で、開発版の辞書を配布版の辞書で置き換えられる。
 
 ```
 ~/Library/Containers/io.github.miyaoka.inputmethod.tugime/Data/Library/Application Support/tugime/dictionary.tsv

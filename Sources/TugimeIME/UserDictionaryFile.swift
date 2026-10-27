@@ -1,6 +1,7 @@
 import Cocoa
 import TugimeCore
 import UniformTypeIdentifiers
+import UserDictionaryLayout
 import os
 
 /// 入力メソッドが読む利用者の辞書のファイルと、最後に読んだときの状態。
@@ -21,7 +22,7 @@ final class UserDictionaryFile {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             fatalError("tugime を初期化できない: Application Support の場所が分からない")
         }
-        return UserDictionaryFile(url: support.appendingPathComponent("tugime/dictionary.tsv"))
+        return UserDictionaryFile(url: support.appendingPathComponent(UserDictionaryLayout.directory).appendingPathComponent(UserDictionaryLayout.fileName))
     }
 
     /// ファイルが無いときに作る中身。書式と例をコメントの行に書く
@@ -37,8 +38,15 @@ final class UserDictionaryFile {
 
     /// ファイルを、プレーンテキストの既定のアプリで開く。無ければ template で作ってから開く。
     /// 拡張子の .tsv に結び付いた表計算のアプリではなく、テキストとして編集させる。
-    /// 開けなければ failed をメインスレッドで呼ぶ。アプリを起こす失敗は後から届くので、作る失敗と同じ受け口にまとめる
-    func openInEditor(failed: @escaping @MainActor (any Error) -> Void) {
+    /// 開けなければ知らせる。アプリを起こす失敗は後から届くので、作る失敗と同じ受け口にまとめる
+    func openInEditor() {
+        let url = url
+        let failed: @MainActor (any Error) -> Void = { error in
+            let alert = NSAlert()
+            alert.messageText = "tugime の辞書を開けない"
+            alert.informativeText = "\(url.path)\n\(error.localizedDescription)"
+            alert.runModal()
+        }
         let manager = FileManager.default
         do {
             if !manager.fileExists(atPath: url.path) {

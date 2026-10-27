@@ -134,21 +134,20 @@ final class TugimeInputController: IMKInputController {
         nonisolated(unsafe) var menu: NSMenu?
         MainActor.assumeIsolated {
             let built = NSMenu()
+            // 設定は窓に集める。よく使うものは入口としてここにも並べる
             built.addItem(NSMenuItem(title: "tugime の辞書を編集…", action: #selector(openUserDictionary(_:)), keyEquivalent: ""))
+            built.addItem(NSMenuItem(title: "設定…", action: #selector(openSettings(_:)), keyEquivalent: ""))
             menu = built
         }
         return menu
     }
 
     @objc nonisolated func openUserDictionary(_ sender: Any?) {
-        onMain {
-            userDictionaryFile.openInEditor { error in
-                let alert = NSAlert()
-                alert.messageText = "tugime の辞書を開けない"
-                alert.informativeText = "\(userDictionaryFile.url.path)\n\(error.localizedDescription)"
-                alert.runModal()
-            }
-        }
+        onMain { userDictionaryFile.openInEditor() }
+    }
+
+    @objc nonisolated func openSettings(_ sender: Any?) {
+        onMain { settingsWindow.show() }
     }
 
     /// マウスで候補を選んだとき。自分で窓を動かしている間の通知は反映済みなので無視する

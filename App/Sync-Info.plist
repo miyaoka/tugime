@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>__BUNDLE_ID__.sync</string>
+	<key>CFBundleName</key>
+	<string>__NAME__ Sync</string>
+	<key>CFBundleExecutable</key>
+	<string>tugime-sync</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__VERSION__</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>TugimeDictionarySource</key>
+	<string>__SOURCE_BUNDLE_ID__</string>
+	<key>TugimeDictionaryTarget</key>
+	<string>__BUNDLE_ID__</string>
+</dict>
+</plist>

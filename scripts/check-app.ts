@@ -1,5 +1,5 @@
 // 引数の組み立てた .app について、組み立てたディレクトリ（.build）に頼らずに綴りの表・語表・システム辞書・表示の変換のモデル・llama.framework を
-// 読めることと、署名の entitlements が想定どおりであることと、実行ファイルと llama.framework が Apple Silicon 向け（arm64）だけを含むことを確かめる。
+// 読めることと、署名の entitlements と配布版の辞書を写す道具の有無が想定どおりであることと、実行ファイルと llama.framework が Apple Silicon 向け（arm64）だけを含むことを確かめる。
 // SwiftPM の生成するリソースの探し方はビルドの仕組みで違い、組み立てたマシンの絶対パスを探すものがあるので、.build を退避して実行する
 import { $ } from "bun";
 import assert from "node:assert";
@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { constants } from "node:os";
 import { join } from "node:path";
+import { CHANNELS, SYNC_APP_KEY } from "./lib/channels";
 import { root } from "./lib/root";
 
 const USAGE = "使い方: bun scripts/check-app.ts <.app>";
@@ -58,10 +59,41 @@ const actual: unknown =
 assert.deepStrictEqual(actual, expected, "entitlements が想定と違う");
 console.log(`entitlements ${JSON.stringify(actual)}`);
 
+// 配布版の辞書を写す道具は開発版にだけ同梱し、Sandbox の外で動かすので entitlements を持たない
+const bundleId = (
+  await $`plutil -extract CFBundleIdentifier raw ${join(app, "Contents/Info.plist")}`.text()
+).trim();
+const channel = [...CHANNELS.values()].find((c) => c.bundleId === bundleId);
+if (!channel) throw new Error(`どのチャネルの bundle id でもない: ${bundleId}`);
+// 置き場所は IME が読むのと同じ Info.plist のキーから取る
+const syncPath = (
+  await $`plutil -extract ${SYNC_APP_KEY} raw ${join(app, "Contents/Info.plist")}`.text()
+).trim();
+const syncApp = join(app, syncPath);
+assert.strictEqual(
+  existsSync(syncApp),
+  channel.sync,
+  `${channel.name} の配布版の辞書を写す道具の有無が想定と違う`,
+);
+if (channel.sync) {
+  const syncEntitlements = (
+    await $`codesign -d --entitlements - --xml ${syncApp}`.text()
+  ).trim();
+  assert.strictEqual(
+    syncEntitlements,
+    "",
+    "辞書を写す道具に entitlements がある",
+  );
+}
+console.log(
+  `辞書を写す道具 ${channel.sync ? "あり（entitlements なし）" : "なし"}`,
+);
+
 // 対象は Apple Silicon だけなので、実行ファイルと同梱のフレームワークは arm64 だけを含む
 for (const binary of [
   "Contents/MacOS/tugime",
   "Contents/Frameworks/llama.framework/llama",
+  ...(channel.sync ? [`${syncPath}/Contents/MacOS/tugime-sync`] : []),
 ]) {
   const archs = (await $`lipo -archs ${join(app, binary)}`.text()).trim();
   if (archs !== "arm64")
