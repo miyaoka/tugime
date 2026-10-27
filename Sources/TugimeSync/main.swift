@@ -59,9 +59,19 @@ func replace(in directory: Int32, with data: Data) throws {
     }
 }
 
+/// 読む元を、ハードリンクが 1 本の通常のファイルのときだけ読む。コンテナの外のファイルへのハードリンクは写さない。
+/// FIFO で止まらないよう O_NONBLOCK で開き、通常のファイルかを確かめてから読む
+func readRegularFile(_ path: String) throws -> Data {
+    let fd = try openNoFollow(path, O_RDONLY | O_UNIQUE | O_NONBLOCK)
+    let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    var status = stat()
+    guard fstat(fd, &status) == 0 else { throw SyncError.errno("調べられない \(path)") }
+    guard status.st_mode & S_IFMT == S_IFREG else { throw SyncError(description: "通常のファイルではない \(path)") }
+    return try handle.readToEnd() ?? Data()
+}
+
 do {
-    let from = try openNoFollow("\(directory(of: source))/\(UserDictionaryLayout.fileName)", O_RDONLY)
-    let data = try FileHandle(fileDescriptor: from, closeOnDealloc: true).readToEnd() ?? Data()
+    let data = try readRegularFile("\(directory(of: source))/\(UserDictionaryLayout.fileName)")
     let to = try openNoFollow(directory(of: target), O_RDONLY | O_DIRECTORY)
     defer { close(to) }
     try replace(in: to, with: data)

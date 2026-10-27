@@ -99,8 +99,12 @@ enum DictionarySync {
         let before = modified(url)
         NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration()) { running, error in
             Task { @MainActor in
+                if let error {
+                    report("配布版の辞書を写す道具を起動できない", "\(app.path)\n\(error.localizedDescription)")
+                    return
+                }
                 guard let running else {
-                    report("配布版の辞書を写す道具を起動できない", "\(app.path)\n\(String(describing: error))")
+                    report("配布版の辞書を写す道具を起動できない", app.path)
                     return
                 }
                 watch(running, url: url, before: before)
@@ -118,7 +122,7 @@ enum DictionarySync {
                 if modified(url) != before {
                     report("配布版の辞書を写した", "次に打ち始めたときから効きます。")
                 } else {
-                    report("配布版の辞書を写せない", "理由は Console.app の tugime Sync のログ（カテゴリ sync）に出ています。")
+                    report("配布版の辞書を写せない", "理由は Console.app で tugime-sync を検索すると出ます。")
                 }
             }
         }
