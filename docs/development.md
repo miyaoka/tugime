@@ -18,7 +18,7 @@ swift test
 
 ## 変換の精度を測る
 
-変換の方式・モデル・綴りの表・日英判定の変更は `tugime-eval` で比べる。精度は、問題（AJIMEE-Bench と Mozc の回帰テスト）の読みを利用者の綴りで打ったときに確定する文字列で測る。問題は版を固定して `.eval/` に取得する。CI では動かさない。
+変換の方式・モデル・綴りの表・日英判定の変更は `tugime-eval` で比べる。精度は、問題（AJIMEE-Bench と Mozc の回帰テスト）の読みを利用者の綴りで打ったときに確定する文字列で測る。打っている途中の表示は、確定する文字列とは別に `keystrokes` が許容解と照らして測る。問題は版を固定して `.eval/` に取得する。CI では動かさない。
 
 ```bash
 swift build -c release --product tugime-eval
@@ -27,7 +27,7 @@ model=$(bun scripts/fetch-genmai.ts)                                            
 .build/release/tugime-eval accuracy --method lattice --problems "$problems" --out .eval/lattice.jsonl
 .build/release/tugime-eval accuracy --method "direct:$model" --problems "$problems" --out .eval/genmai.jsonl
 .build/release/tugime-eval compare .eval/lattice.jsonl .eval/genmai.jsonl         # 片方だけが正解した問題
-.build/release/tugime-eval keystrokes --method "direct:$model" --problems "$problems" --out .eval/keys.tsv
+.build/release/tugime-eval keystrokes --method "direct:$model" --problems "$problems" --out .eval/keys.tsv   # 途中の表示と 1 打鍵の時間
 ```
 
 別のモデルを測るときは、Hugging Face の safetensors を GGUF にして、そのパスを `model` にする。
