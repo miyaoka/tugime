@@ -16,15 +16,18 @@ public struct KeystrokeScript: Sendable {
     /// 打ち始めに入力欄のカーソルより前にあるもの
     public var leading: Segmenter.Leading
     public var reading: String
+    /// 打ち終えたときの許容解。途中の表示の判定に使う
+    public var answers: [String]
     public var spelled: [SpelledKana]
     /// spelled の keys を繋いだもの
     public var keys: String
 
-    init(id: String, context: Context, field: String, reading: String, spelled: [SpelledKana]) {
+    init(id: String, context: Context, field: String, reading: String, answers: [String], spelled: [SpelledKana]) {
         self.id = id
         self.context = context
         leading = Segmenter.Leading(field: field)
         self.reading = reading
+        self.answers = answers
         self.spelled = spelled
         keys = spelled.map(\.keys).joined()
     }
@@ -44,12 +47,13 @@ public struct KeystrokeScript: Sendable {
         let filler = ajimee.map(\.left).joined()
         var full: [KeystrokeScript] = []
         for problem in ajimee {
+            guard case .oneOf(let answers) = problem.check else { preconditionFailure("AJIMEE-Bench の問題 \(problem.id) の判定が許容解でない") }
             guard let spelled = Segmenter.spelling(of: problem.kana, table: table) else {
                 selection.skipped.append(problem)
                 continue
             }
-            selection.scripts.append(KeystrokeScript(id: problem.id, context: .problem, field: problem.left, reading: problem.kana, spelled: spelled))
-            full.append(KeystrokeScript(id: problem.id + "@full", context: .full, field: filler + problem.left, reading: problem.kana, spelled: spelled))
+            selection.scripts.append(KeystrokeScript(id: problem.id, context: .problem, field: problem.left, reading: problem.kana, answers: answers, spelled: spelled))
+            full.append(KeystrokeScript(id: problem.id + "@full", context: .full, field: filler + problem.left, reading: problem.kana, answers: answers, spelled: spelled))
         }
         selection.scripts += full
         return selection
@@ -82,6 +86,15 @@ public enum KeystrokeBench {
         public var seconds: Double
     }
 
+    /// 問題の文脈で打った文の 1 打鍵の表示と、その判定
+    public struct Live: Sendable {
+        public var typed: String
+        public var display: String
+        /// 文の最後の打鍵か。最後の打鍵の表示は確定する文字列で、精度の物差しが測るので、途中の表示の集計に入れない
+        public var isLast: Bool
+        public var check: LiveCheck
+    }
+
     public struct Report: Sendable {
         public var method: String
         /// ConversionMethod.make(dictionary:) と区切りの準備にかかった時間。モデルの先読みを含む。システム辞書は mmap で開いてから渡すので、引いたページを読む時間は打鍵の側に入る
@@ -91,9 +104,11 @@ public enum KeystrokeBench {
         public var peakBytes: Int
         public var skipped: Int
         public var samples: [Sample]
-        /// 問題の left で打った文ごとの打鍵列と最後の liveText。`tugime-cli --before <left> --live <打鍵列>` と一致するはずのもの。
+        /// 問題の left で打った文の、打鍵ごとの表示。`tugime-cli --before <left> --typing <打鍵列>` の表示と一致するはずのもの。
         /// 上限の長さの文脈で打った文は時間を測るためのもので、含めない
-        public var finalTexts: [(keys: String, liveText: String)]
+        public var lives: [Live]
+        /// 問題の left で打った文の数
+        public var scriptCount: Int
     }
 
     public enum Failure: Error, CustomStringConvertible {
@@ -113,6 +128,7 @@ public enum KeystrokeBench {
         selection: KeystrokeScript.Selection,
         method: ConversionMethod,
         dictionary: SystemDictionary,
+        table: RomajiTable,
         watchdog: Watchdog,
         progress: (String) -> Void
     ) throws -> Report {
@@ -126,28 +142,32 @@ public enum KeystrokeBench {
         progress("変換器の読み込み \(String(format: "%.2f", loadSeconds))s、文 \(selection.scripts.count) 件（綴りで書けず外した文 \(selection.skipped.count) 件）")
 
         var samples: [Sample] = []
-        var finalTexts: [(keys: String, liveText: String)] = []
+        var lives: [Live] = []
         for (n, script) in selection.scripts.enumerated() {
             segmenter.endComposition()
             let keys = Array(script.keys)
             let kanaCounts = script.kanaCounts
-            var last = ""
             var slowest = 0.0
             for i in 1...keys.count {
                 watchdog.arm(item: "\(script.id) の \(i) 打鍵目")
+                let typed = String(keys[..<i])
                 let start = clock.now
-                last = segmenter.liveText(String(keys[..<i]), leading: script.leading)
+                let display = segmenter.liveText(typed, leading: script.leading)
                 let elapsed = seconds(clock.now - start)
                 slowest = max(slowest, elapsed)
                 samples.append(Sample(scriptID: script.id, keystroke: i, kanaCount: kanaCounts[i - 1], context: script.context, hasLeft: !script.leading.text.isEmpty, seconds: elapsed))
+                if script.context == .problem {
+                    let check = LiveCheck.judge(display: display, typed: typed, answers: script.answers, reading: script.reading, table: table)
+                    lives.append(Live(typed: typed, display: display, isLast: i == keys.count, check: check))
+                }
             }
-            if script.context == .problem { finalTexts.append((script.keys, last)) }
             progress("[\(n + 1)/\(selection.scripts.count)] \(script.id) \(keys.count) 打鍵 最大 \(String(format: "%.1f", slowest * 1000))ms")
         }
         segmenter.endComposition()
         return Report(
             method: method.spec, loadSeconds: loadSeconds, peakBytesAfterLoad: peakAfterLoad, peakBytes: maxResidentBytes(),
-            skipped: selection.skipped.count, samples: samples, finalTexts: finalTexts
+            skipped: selection.skipped.count, samples: samples, lives: lives,
+            scriptCount: selection.scripts.filter { $0.context == .problem }.count
         )
     }
 }
@@ -185,15 +205,18 @@ extension KeystrokeBench.Report {
             "方式\t\(method)",
             "読み込み\t\(String(format: "%.2f", loadSeconds))s",
             "最大常駐量\t読み込み直後 \(mib(peakBytesAfterLoad))\t全打鍵の後 \(mib(peakBytes))",
-            "文\t\(finalTexts.count) 件 × 文脈 \(KeystrokeScript.Context.allCases.count) 通り（外した文 \(skipped) 件）",
+            "文\t\(scriptCount) 件 × 文脈 \(KeystrokeScript.Context.allCases.count) 通り（外した文 \(skipped) 件）",
             "打鍵\t\(samples.count) 回",
-            ["読みの文字数", "打鍵数", "中央値ms", "90%ms", "99%ms", "最大ms"].joined(separator: "\t"),
         ]
         func row(_ label: String, _ group: [KeystrokeBench.Sample]) -> String {
             let s = LatencyStats(group.map(\.seconds))
             let ms = { (x: Double) in String(format: "%.1f", x * 1000) }
             return [label, String(s.count), ms(s.median), ms(s.p90), ms(s.p99), ms(s.max)].joined(separator: "\t")
         }
+        let midway = lives.filter { !$0.isLast }
+        lines.append((["途中の表示", "打鍵数"] + LiveCheck.allCases.map(\.rawValue)).joined(separator: "\t"))
+        lines.append((["全体", String(midway.count)] + LiveCheck.allCases.map { check in String(midway.filter { $0.check == check }.count) }).joined(separator: "\t"))
+        lines.append(["読みの文字数", "打鍵数", "中央値ms", "90%ms", "99%ms", "最大ms"].joined(separator: "\t"))
         lines.append(row("全体", samples))
         let groups: [(label: String, matches: (KeystrokeBench.Sample) -> Bool)] = [
             ("文脈なし", { $0.context == .problem && !$0.hasLeft }),
@@ -212,9 +235,9 @@ extension KeystrokeBench.Report {
         return lines
     }
 
-    /// 文ごとに 打鍵列 \t 最後の liveText。`tugime-cli --live` の出力と同じ形なので diff できる（文脈のある文は --before に left を渡す）
-    public var finalTextLines: [String] {
-        finalTexts.map { "\($0.keys)\t\($0.liveText)" }
+    /// 打鍵ごとに 打鍵列 \t 表示 \t 判定。方式や版の間で diff して、途中の表示が変わった打鍵を見る
+    public var liveLines: [String] {
+        lives.map { "\($0.typed)\t\($0.display)\t\($0.check.rawValue)" }
     }
 }
 
