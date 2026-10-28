@@ -51,7 +51,8 @@ public final class Segmenter {
     static let continuingJapanesePenalty = 2.0
     /// 英語の区間を 1 つ増やすごとに引く値。負なので、英語の区間は増やすほど点が上がる
     static let englishSpanPenalty = -2.0
-    /// 英字が 1 文字だけの英語の区間で、さらに引く値
+    /// 英字が 1 文字だけの英語の区間で、さらに引く値。入力の末尾の区間には引かない。
+    /// 末尾の 1 文字は打ちかけの綴り（ことばh の h）で、引くと前のかなを巻き込んだ英語の区間（こと + bah）が勝ち、出ていた変換が崩れる
     static let singleLetterEnglishPenalty = 3.0
     /// 利用者の辞書で英語として扱う打鍵の区間の評価値の下限と、日本語として扱う読めない打鍵の区間の評価値。
     /// かな漢字変換に入れた利用者の語 1 つの点の基準（登録数による減点と前後の連接を除いたもの）から作り、登録数によらず一定にする
@@ -273,7 +274,7 @@ public final class Segmenter {
             guard let mark else { continue }
             var runSpans: [ScoredSpan] = []
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
-            let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, observe: collect)
+            let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, endsInput: false, observe: collect)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runContinuation == .afterEnglish)
             if symbol == nil, previousIsEnglish { continue }
             runSpans.forEach { observe?($0) }
@@ -283,7 +284,7 @@ public final class Segmenter {
             runContinuation = Self.continuation(after: key)
             runContext = runContinuation.japaneseContext
         }
-        return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe)
+        return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, endsInput: true, observe: observe)
     }
 
     /// i から始まる記号の打鍵のうち最も長いもの
@@ -296,8 +297,8 @@ public final class Segmenter {
     }
 
     /// 句読点を含まない部分を、日本語区間と英語区間の並びに分ける。空でない入力には必ず 1 つ以上の区間を返す。
-    /// offset は input が入力全体のどの位置から始まるかで、observe に渡す区間の候補の位置に足す
-    private func segmentRun(_ input: String, leading: JapaneseContext, offset: Int, observe: ((ScoredSpan) -> Void)?) -> [Segment] {
+    /// offset は input が入力全体のどの位置から始まるかで、observe に渡す区間の候補の位置に足す。endsInput は input が入力の末尾までか
+    private func segmentRun(_ input: String, leading: JapaneseContext, offset: Int, endsInput: Bool, observe: ((ScoredSpan) -> Void)?) -> [Segment] {
         let chars = Array(input)
         let n = chars.count
         guard n > 0 else { return [] }
@@ -373,7 +374,7 @@ public final class Segmenter {
                 }
                 if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseReach.contains(end) { continue }
                 for previous in start == 0 ? [nil] : [Segment.Kind.japanese, .word] {
-                    relax(end, start, englishSegment(source, context: context), after: previous)
+                    relax(end, start, englishSegment(source, context: context, atInputEnd: endsInput && end == n), after: previous)
                 }
             }
         }
@@ -395,7 +396,7 @@ public final class Segmenter {
     /// 利用者の辞書で日本語として扱う読めない打鍵ならその語の区間、読めない箇所を含めば英語、日本語として採れて英語にしない綴りなら日本語にする
     func singleSpan(_ source: String, context: JapaneseContext) -> Segment {
         if let word = wordSegment(source, context: context) { return word }
-        let english = englishSegment(source, context: context)
+        let english = englishSegment(source, context: context, atInputEnd: false)
         guard let kana = table.reading(of: source), Self.canBeJapanese(kana),
               let japanese = japaneseSegment(source, kana: kana, context: context, penalty: Self.japaneseSpanPenalty)
         else { return english }
@@ -420,8 +421,8 @@ public final class Segmenter {
         typedJapaneseWords[source].map { Segment(kind: .word, source: source, reading: source, output: $0[0], score: Self.registeredScore, context: context) }
     }
 
-    private func englishSegment(_ source: String, context: JapaneseContext) -> Segment {
-        let singleLetter = source.filter(\.isLetter).count == 1 ? Self.singleLetterEnglishPenalty : 0
+    private func englishSegment(_ source: String, context: JapaneseContext, atInputEnd: Bool) -> Segment {
+        let singleLetter = !atInputEnd && source.filter(\.isLetter).count == 1 ? Self.singleLetterEnglishPenalty : 0
         let spelled = Self.englishWeight * english.logProbability(source) - Self.englishSpanPenalty - singleLetter
         let score = typedWords[source] == nil ? spelled : max(spelled, Self.registeredScore)
         return Segment(kind: .english, source: source, reading: source, output: englishOutput(source), score: score, context: context)
