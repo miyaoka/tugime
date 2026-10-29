@@ -156,6 +156,12 @@ import Testing
         #expect(segmenter.liveText("nodewoinsuto-rusuru").hasPrefix("Node.js"))
     }
 
+    /// 登録した打鍵は、両側が区切りの端なら日本語の読み（ので）より優先し、語の途中で一致しただけなら優先しない
+    @Test func prefersRegisteredKeysOnlyWhereTheyStandAsAWord() {
+        #expect(segmenter.liveText("node") == "Node.js")
+        #expect(!segmenter.liveText("sukinanodesu").contains("Node.js"))
+    }
+
     /// 英語として扱う打鍵は、日本語として読める綴りでも英語の区間にする（tugime は継ぎ目にならない）
     @Test func makesEnglishKeysAnEnglishSpan() {
         #expect(segmenter.liveText("tugime") == "tugime")

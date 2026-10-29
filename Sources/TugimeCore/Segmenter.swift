@@ -344,7 +344,7 @@ public final class Segmenter {
         let ranked = { self.judge(self.rankedCandidates(input, leading: leading, offset: offset, ending: ending, constraint: registered, observe: observe), left: left) }
         let words = ambiguousWords(chars).map { WordSpan(start: $0.start + offset, text: $0.text) }
         guard !words.isEmpty, japaneseConverter.evaluatesSentences else { return ranked() }
-        // 診断（--lattice）には、条件を課さない採点で比べた区間の候補を渡す
+        // 診断（--lattice）には、語の英語か日本語かの条件を課さない採点で比べた区間の候補を渡す（登録した打鍵の条件は課す）
         if observe != nil { _ = rankedCandidates(input, leading: leading, offset: offset, ending: ending, constraint: registered, observe: observe) }
         // 診断（--stages）に渡すのは、部分そのものを決める最後の段だけにする
         let observer = judgeObserver
@@ -467,14 +467,16 @@ public final class Segmenter {
     /// 利用者の辞書に登録した打鍵とちょうど一致し、両側が区切りの端（部分の先頭か末尾、句読点、空白）の範囲。
     /// 登録した打鍵は利用者が決めた語なので、日本語の読みと点で比べさせない。語の途中で一致したもの（sukinanodesu の node）は含めない
     private func registeredSpans(_ chars: [Character]) -> [Range<Int>] {
-        let isEdge = { (i: Int) in i < 0 || i >= chars.count || chars[i] == " " || Self.punctuation[chars[i]] != nil }
+        // 範囲の両側は区切りの端なので、端の位置の組ごとに辞書を引けば足りる。費用は登録した語の数によらない
+        let breaks = chars.indices.filter { chars[$0] == " " || Self.punctuation[chars[$0]] != nil }
+        let starts = [0] + breaks.map { $0 + 1 }
+        let ends = breaks + [chars.count]
         var spans: [Range<Int>] = []
-        for keys in Array(typedWords.keys) + Array(typedJapaneseWords.keys) {
-            let key = Array(keys)
-            guard !key.isEmpty, key.count <= chars.count else { continue }
-            for start in 0...(chars.count - key.count) where Array(chars[start..<(start + key.count)]) == key {
-                guard isEdge(start - 1), isEdge(start + key.count) else { continue }
-                spans.append(start..<(start + key.count))
+        for start in starts {
+            for end in ends where end > start {
+                let keys = String(chars[start..<end])
+                guard typedWords[keys] != nil || typedJapaneseWords[keys] != nil else { continue }
+                spans.append(start..<end)
             }
         }
         return spans
