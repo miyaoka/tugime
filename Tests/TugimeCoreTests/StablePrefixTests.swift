@@ -17,6 +17,15 @@ import Testing
         #expect(stable.prefix(keyCount: 10) == nil)
     }
 
+    /// 設定は 3 つの 1 以上の整数をコンマで区切ったもの
+    @Test func readsTheSpec() {
+        #expect(StablePrefix(spec: "3,20,10")?.spec == "3,20,10")
+        #expect(StablePrefix(spec: StablePrefix.standard.spec)?.spec == StablePrefix.standard.spec)
+        for spec in ["3,20", "3,20,10,1", "3,0,10", "3,,10", "a,20,10", "3, 20,10"] {
+            #expect(StablePrefix(spec: spec) == nil, "\(spec)")
+        }
+    }
+
     /// 確定するのは先頭に収まる文節までで、後ろに残す打鍵の数を守る
     @Test func commitsClausesWithinThePrefixAndKeepsKeys() throws {
         let segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: ConversionMethod.baseline.make(dictionary: TestDictionary.shared))

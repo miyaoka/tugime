@@ -20,6 +20,18 @@ public struct StablePrefix: Sendable {
         self.keptKeys = keptKeys
     }
 
+    /// `<打鍵数>,<最小の打鍵数>,<残す打鍵数>` の形の設定。どれも 1 以上の整数でなければ nil
+    public init?(spec: String) {
+        let parts = spec.split(separator: ",", omittingEmptySubsequences: false).map { Int($0) }
+        guard parts.count == 3, let keystrokes = parts[0], let minimum = parts[1], let kept = parts[2],
+              [keystrokes, minimum, kept].allSatisfy({ $0 >= 1 })
+        else { return nil }
+        self.init(keystrokes: keystrokes, minimumKeys: minimum, keptKeys: kept)
+    }
+
+    /// init(spec:) が読む形
+    public var spec: String { "\(keystrokes),\(minimumKeys),\(keptKeys)" }
+
     /// 打鍵 1 つ分の表示を覚える
     mutating func record(_ text: String) {
         recent.append(text)

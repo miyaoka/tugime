@@ -12,10 +12,12 @@ let usage = """
           モデルを使う方式の出力が、打てた問題の全件で基準と一致したら、記録を書き、集計を出さずに終了コード 1
       tugime-eval compare <記録.jsonl> <記録.jsonl>
           片方だけが正解した問題を 1 件 1 行で出す
-      tugime-eval keystrokes --method <方式> --problems <dir> --out <途中の表示.tsv>
+      tugime-eval keystrokes --method <方式> --problems <dir> --out <途中の表示.tsv> [--stable <打鍵数>,<最小の打鍵数>,<残す打鍵数>]
           AJIMEE-Bench の文を、問題の文脈と、上限の長さまで文をつないだ文脈の後に 1 打鍵ずつ打ち、1 打鍵の時間・読み込み時間・最大常駐量と、
-          問題の文脈で打った途中の表示（最後の打鍵を除く）が許容解に向かっているかの判定ごとの打鍵数を出す。
-          --out には問題の文脈で打った全打鍵の 打鍵列 表示 判定 をタブ区切りで書く。方式や版の間で diff できる
+          問題の文脈で打った途中の画面（最後の打鍵を除く）が許容解に向かっているかの判定ごとの打鍵数を出す。
+          入力メソッドと同じく、表示の前の部分が変わらなくなったら確定し、画面は確定した文字列と未確定の表示をつないだもの。
+          --stable は確定の設定で、意味は tugime-cli と同じ。既定は入力メソッドと同じ \(StablePrefix.standard.spec)。確定しない流れは最小の打鍵数を大きくして見る。
+          --out には問題の文脈で打った全打鍵の 打鍵列 画面 判定 をタブ区切りで書く。方式や版の間で diff できる
     方式: \(ConversionMethod.forms)
     問題の dir は scripts/fetch-eval.ts が出す。入力メソッドと同じモデルは scripts/fetch-genmai.ts が、ほかのモデルは scripts/convert-hf-to-gguf.ts が出す
     終了コード: 0 成功 / 1 モデルが効いていない / 2 使い方の誤り / 3 時間の上限を超えた / 4 それ以外のエラー。
@@ -27,12 +29,12 @@ struct UsageError: Error, CustomStringConvertible {
     var description: String { "\(message)\n\(usage)" }
 }
 
-/// `--name value` の組を読む。知らない名前・値の欠け・重複・足りない名前は使い方の誤り
-func options(_ args: ArraySlice<String>, required: Set<String>) throws -> [String: String] {
+/// `--name value` の組を読む。optional の名前は省いてよい。知らない名前・値の欠け・重複・足りない名前は使い方の誤り
+func options(_ args: ArraySlice<String>, required: Set<String>, optional: Set<String> = []) throws -> [String: String] {
     var values: [String: String] = [:]
     var rest = args
     while let name = rest.popFirst() {
-        guard required.contains(name) else { throw UsageError(message: "知らない引数: \(name)") }
+        guard required.contains(name) || optional.contains(name) else { throw UsageError(message: "知らない引数: \(name)") }
         guard let value = rest.popFirst() else { throw UsageError(message: "\(name) の値が無い") }
         guard values.updateValue(value, forKey: name) == nil else { throw UsageError(message: "\(name) を 2 回渡した") }
     }
@@ -73,8 +75,12 @@ let commands: [String: (ArraySlice<String>) throws -> Void] = [
     },
     "keystrokes": { args in
         let watchdog = Watchdog(limits: .keystroke)
-        let o = try options(args, required: problemOptions)
+        let o = try options(args, required: problemOptions, optional: ["--stable"])
         let method = try ConversionMethod(spec: o["--method"]!)
+        let stable = try o["--stable"].map { spec in
+            guard let stable = StablePrefix(spec: spec) else { throw UsageError(message: "--stable の形が違う: \(spec)") }
+            return stable
+        } ?? .standard
         let problems = try ProblemFiles(directory: URL(fileURLWithPath: o["--problems"]!)).load()
         let table = try RomajiTable.bundled()
         let selection = KeystrokeScript.select(from: problems.problems, table: table)
@@ -82,7 +88,7 @@ let commands: [String: (ArraySlice<String>) throws -> Void] = [
             stderr("綴りで書けないので外す: \(problem.id) \(problem.kana)")
         }
         let report = try KeystrokeBench.run(
-            selection: selection, method: method, dictionary: try repositoryDictionary(), table: table, watchdog: watchdog, progress: stderr
+            selection: selection, method: method, dictionary: try repositoryDictionary(), table: table, stable: stable, watchdog: watchdog, progress: stderr
         )
         watchdog.arm(item: "書き出し")
         try (report.liveLines.joined(separator: "\n") + "\n").write(toFile: o["--out"]!, atomically: true, encoding: .utf8)

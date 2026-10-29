@@ -86,9 +86,10 @@ public enum KeystrokeBench {
         public var seconds: Double
     }
 
-    /// 問題の文脈で打った文の 1 打鍵の表示と、その判定
+    /// 問題の文脈で打った文の 1 打鍵の画面と、その判定
     public struct Live: Sendable {
         public var typed: String
+        /// 確定した文字列と未確定の表示をつないだもの
         public var display: String
         /// 文の最後の打鍵か。最後の打鍵の表示は確定する文字列で、精度の物差しが測るので、途中の表示の集計に入れない
         public var isLast: Bool
@@ -104,7 +105,7 @@ public enum KeystrokeBench {
         public var peakBytes: Int
         public var skipped: Int
         public var samples: [Sample]
-        /// 問題の left で打った文の、打鍵ごとの表示。前の部分を確定しないので、`tugime-cli --stable 3,1000,10 --before <left> --typing <打鍵列>` のように確定が起きない設定の表示と一致するはずのもの。
+        /// 問題の left で打った文の、打鍵ごとの画面。同じ確定の設定の `tugime-cli --stable <設定> --before <left> --typing <打鍵列>` の画面と一致するはずのもの。
         /// 上限の長さの文脈で打った文は時間を測るためのもので、含めない
         public var lives: [Live]
         /// 問題の left で打った文の数
@@ -122,13 +123,15 @@ public enum KeystrokeBench {
     }
 
     /// 不変条件:
-    /// - 文ごとに、打鍵列の先頭 1 文字から全体まで 1 打鍵ずつ伸ばして liveText(prefix, leading: leading) を呼ぶ。入力メソッドと違い、前の部分を確定しない
+    /// - 文ごとに、入力メソッドと同じく StablePrefix.append で 1 打鍵ずつ足し、表示の前の部分が変わらなくなったら確定する。
+    ///   1 打鍵の時間は確定を含み、判定は確定した文字列と未確定の表示をつないだ画面に対して行う
     /// - 文の前に endComposition を呼ぶ。文の中では呼ばない（入力メソッドは打ち終えるまで覚えを持ち越す）
     public static func run(
         selection: KeystrokeScript.Selection,
         method: ConversionMethod,
         dictionary: SystemDictionary,
         table: RomajiTable,
+        stable: StablePrefix,
         watchdog: Watchdog,
         progress: (String) -> Void
     ) throws -> Report {
@@ -148,12 +151,18 @@ public enum KeystrokeBench {
             let keys = Array(script.keys)
             let kanaCounts = script.kanaCounts
             var slowest = 0.0
+            var stable = stable
+            var open = ""
+            var leading = script.leading
+            var committed = ""
             for i in 1...keys.count {
                 watchdog.arm(item: "\(script.id) の \(i) 打鍵目")
                 let typed = String(keys[..<i])
                 let start = clock.now
-                let display = segmenter.liveText(typed, leading: script.leading)
+                let (live, done) = stable.append(String(keys[i - 1]), to: &open, leading: &leading, segmenter: segmenter)
                 let elapsed = seconds(clock.now - start)
+                committed += done ?? ""
+                let display = committed + live.text
                 slowest = max(slowest, elapsed)
                 samples.append(Sample(scriptID: script.id, keystroke: i, kanaCount: kanaCounts[i - 1], context: script.context, hasLeft: !script.leading.text.isEmpty, seconds: elapsed))
                 if script.context == .problem {

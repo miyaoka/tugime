@@ -10,7 +10,7 @@ let usage = """
     --judge <数> は、英語にも日本語にも読める語の無い部分で、表示にして文として比べる区切りの候補の数。既定は \(Segmenter.defaultJudgedCandidates)。1 なら比べない。
     --stable <打鍵数>,<最小の打鍵数>,<残す打鍵数> は、--typing と --timing で、未確定の打鍵が最小の打鍵数に届いてから、表示の先頭が打鍵数だけ続けて変わらなければ、
     その先頭に収まり、後ろに残す打鍵数以上の打鍵が残る文節までを確定する設定。
-    既定は入力メソッドと同じ \(StablePrefix.standard.keystrokes),\(StablePrefix.standard.minimumKeys),\(StablePrefix.standard.keptKeys)。
+    既定は入力メソッドと同じ \(StablePrefix.standard.spec)。
     --explain・--lattice・--span の出力の表記は、区切りを採点したシステム辞書の変換で、表示の変換ではない）:
       tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す。
@@ -97,12 +97,11 @@ while let option = args.first, ["--before", "--method", "--dictionary", "--judge
         }
         judgedCandidates = count
     case "--stable":
-        let parts = args[1].split(separator: ",").compactMap { Int($0) }
-        guard parts.count == 3, parts.allSatisfy({ $0 >= 1 }) else {
+        guard let stable = StablePrefix(spec: args[1]) else {
             print(usage)
             exit(2)
         }
-        stablePrefix = StablePrefix(keystrokes: parts[0], minimumKeys: parts[1], keptKeys: parts[2])
+        stablePrefix = stable
     default:
         dictionaryPath = args[1]
     }
