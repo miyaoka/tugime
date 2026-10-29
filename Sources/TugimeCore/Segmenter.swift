@@ -43,6 +43,8 @@ public final class Segmenter {
     var typedWords: [String: [String]] = [:]
     /// 利用者の辞書で日本語として扱う、かなに読めない打鍵ごとの表記。ファイルの行の順に持つ
     var typedJapaneseWords: [String: [String]] = [:]
+    /// 利用者の辞書で日本語として扱う、かなに読める打鍵。語はその読みでかな漢字変換に入れる
+    var typedReadableJapanese: Set<String> = []
     /// 英語の綴りの評価値を、日本語の変換の評価値と同じ尺度に揃える倍率
     static let englishWeight = 1.4
     /// 日本語の区間を 1 つ増やすごとに引く値
@@ -443,19 +445,26 @@ public final class Segmenter {
     private static let maxAmbiguousWordLength = 12
 
     /// 区切りに課す条件。english の範囲はちょうどその範囲の英語区間にし、notEnglish の範囲はちょうどその範囲の英語区間にしない。
-    /// registered の範囲には日本語区間を重ねない（英語区間か利用者の語の区間で覆う）
+    /// registered の words の範囲には日本語区間を重ねない（英語区間か利用者の語の区間で覆う）。japanese の範囲には英語区間を重ねない
     private struct SpanConstraint {
         var english: [Range<Int>] = []
         var notEnglish: [Range<Int>] = []
-        var registered: [Range<Int>] = []
+        var registered = RegisteredSpans()
 
         func allows(_ range: Range<Int>, kind: Segment.Kind) -> Bool {
             for forced in english where forced.overlaps(range) {
                 guard kind == .english, forced == range else { return false }
             }
-            if kind == .japanese, registered.contains(where: { $0.overlaps(range) }) { return false }
+            if kind == .japanese, registered.words.contains(where: { $0.overlaps(range) }) { return false }
+            if kind == .english, registered.japanese.contains(where: { $0.overlaps(range) }) { return false }
             return !(kind == .english && notEnglish.contains(range))
         }
+    }
+
+    /// 利用者の辞書に登録した打鍵の範囲。words は英語の語とかなに読めない日本語の語、japanese はかなに読める日本語の語
+    private struct RegisteredSpans {
+        var words: [Range<Int>] = []
+        var japanese: [Range<Int>] = []
     }
 
     /// 採点の点の上位 judgedCandidates 個の区切り。constraint を満たす区切りが無ければ、条件を課さずに採る
@@ -466,17 +475,17 @@ public final class Segmenter {
 
     /// 利用者の辞書に登録した打鍵とちょうど一致し、両側が区切りの端（部分の先頭か末尾、句読点、空白）の範囲。
     /// 登録した打鍵は利用者が決めた語なので、日本語の読みと点で比べさせない。語の途中で一致したもの（sukinanodesu の node）は含めない
-    private func registeredSpans(_ chars: [Character]) -> [Range<Int>] {
+    private func registeredSpans(_ chars: [Character]) -> RegisteredSpans {
         // 範囲の両側は区切りの端なので、端の位置の組ごとに辞書を引けば足りる。費用は登録した語の数によらない
         let breaks = chars.indices.filter { chars[$0] == " " || Self.punctuation[chars[$0]] != nil }
         let starts = [0] + breaks.map { $0 + 1 }
         let ends = breaks + [chars.count]
-        var spans: [Range<Int>] = []
+        var spans = RegisteredSpans()
         for start in starts {
             for end in ends where end > start {
                 let keys = String(chars[start..<end])
-                guard typedWords[keys] != nil || typedJapaneseWords[keys] != nil else { continue }
-                spans.append(start..<end)
+                if typedWords[keys] != nil || typedJapaneseWords[keys] != nil { spans.words.append(start..<end) }
+                if typedReadableJapanese.contains(keys) { spans.japanese.append(start..<end) }
             }
         }
         return spans

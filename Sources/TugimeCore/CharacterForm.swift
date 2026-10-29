@@ -82,17 +82,20 @@ extension Segmenter {
     public func replaceUserDictionary(_ dictionary: UserDictionary) {
         var converted: [UserWord] = []
         var typed: [String: [String]] = [:]
+        var readable: Set<String> = []
         for (keys, words) in dictionary.words(of: .japanese) {
             guard let kana = table.reading(of: keys), Self.canBeJapanese(kana) else {
                 typed[keys] = words
                 continue
             }
             converted += words.map { UserWord(reading: kana, word: $0) }
+            readable.insert(keys)
         }
         japaneseConverter.replaceUserWords(converted)
         closedRuns = [:]
         wordSteps = [:]
         typedWords = dictionary.words(of: .english)
         typedJapaneseWords = typed
+        typedReadableJapanese = readable
     }
 }
