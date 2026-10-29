@@ -110,18 +110,53 @@ public enum JapaneseContext: Sendable, Hashable {
     case afterNumber(String)
 }
 
+/// 日本語区間の後ろに続くもの。区間の終わりのつながりは、実際に後ろにあるもので決める（PRINCIPLES.md）
+public enum JapaneseEnding: Sendable, Hashable {
+    /// 後ろにまだ何も打たれていない（入力の末尾）か、後ろの日本語区間と後でまとめて変換し直す切れ目。つながりを足さない
+    case open
+    /// 後ろに英語区間か利用者の語の区間が続く。その語の後に続く形（afterWord）と同じく名詞として読む
+    case beforeWord
+    /// 後ろに句読点か記号の打鍵が続く。値は日本語の記号（、。「 など）
+    case beforeMark(String)
+}
+
 public protocol JapaneseConverting: AnyObject {
     /// 区切りの採点に使う最良の変換
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading?
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading?
     /// 候補の窓に並べる変換結果。評価値の高い順で、重複は除く。件数は変換エンジンが決める。context に afterCaret は渡さず、convert が返した context を渡す
     func alternatives(kana: String, context: JapaneseContext) -> [String]
     /// 区切りが決まった区間を表示するための変換。採点のように何百回も呼ばないので、重くて質の高い変換を使ってよい。
     /// left は入力欄のカーソルより前の文字列に、入力の中でこの区間より前に表示している文字列をつないだもの。context は afterCaret を渡さず、convert が返した context を渡す。
     /// convert が変換を返すかなと文脈には、必ず変換を返す
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay?
+    /// requests のそれぞれの display。requests と同じ順に返す。まとめて渡したものは同時に計算してよい
+    func displays(_ requests: [DisplayRequest]) -> [JapaneseDisplay?]
+    /// left に続く texts のそれぞれの、文としての確からしさ（対数確率）。texts と同じ順に返す。日英の区切りの候補を表示にした文どうしを比べるのに使う。
+    /// 文を評価するモデルを持たない変換器は nil を返し、区切りは採点の点だけで決まる
+    func naturalness(texts: [String], left: String) -> [Double]?
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
     func endComposition()
     /// 利用者の語を words に丸ごと置き換える。endComposition で捨てるものも捨てるので、呼ぶと未確定の文字列が終わる。
     /// 作った直後の変換器は利用者の語を持たない
     func replaceUserWords(_ words: [UserWord])
+}
+
+extension JapaneseConverting {
+    /// まとめて計算する仕組みを持たない変換器は、1 つずつ display にする
+    public func displays(_ requests: [DisplayRequest]) -> [JapaneseDisplay?] {
+        requests.map { display(kana: $0.kana, context: $0.context, left: $0.left) }
+    }
+}
+
+/// display に渡す 1 つの要求
+public struct DisplayRequest: Sendable, Hashable {
+    public var kana: String
+    public var context: JapaneseContext
+    public var left: String
+
+    public init(kana: String, context: JapaneseContext, left: String) {
+        self.kana = kana
+        self.context = context
+        self.left = left
+    }
 }

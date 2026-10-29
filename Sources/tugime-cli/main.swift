@@ -7,12 +7,17 @@ let usage = """
     リポジトリの直下から実行し、モデルは bun scripts/fetch-genmai.ts で、システム辞書は bun scripts/fetch-dictionary.ts で用意する。
     システム辞書だけで変換するときは --method lattice。direct は表示の変換にモデルを使う。ほかのモデルは scripts/convert-hf-to-gguf.ts が出す。
     --dictionary <ファイル> は利用者の辞書（書式は入力メソッドと同じ）。渡さなければ利用者の語は無く、入力メソッドの辞書は読まない。
+    --judge <数> は、英語にも日本語にも読める語の無い部分で、表示にして文として比べる区切りの候補の数。既定は \(Segmenter.defaultJudgedCandidates)。1 なら比べない。
     --explain・--lattice・--span の出力の表記は、区切りを採点したシステム辞書の変換で、表示の変換ではない）:
       tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す。
                                               入力メソッドが未確定の文字列の下に知らせを出す表示なら、打鍵列 と知らせを標準エラーに出す（既定の形も同じ）
       tugime-cli --typing <打鍵列>...         入力メソッドで 1 打鍵ずつ打ったときの表示を出す。1 打鍵 1 行のタブ区切りで
                                               ここまでの打鍵列 表示 未確定の文字列の下に出る知らせ（出なければ空）
+      tugime-cli --timing <打鍵列>...         --typing と同じく 1 打鍵ずつ打ち、1 打鍵 1 行のタブ区切りで ここまでの打鍵列 表示 その打鍵の表示にかかった ms を出す
+      tugime-cli --stages <打鍵列>...         打鍵列ごとに、句読点で切った部分ごとの 4 段を出す。1 区切りの候補（区間と評価値）、
+                                              2 辞書の変換の表記、3 モデルが比べた文の確からしさ（辞書の表記の文と、モデルが書いた表記の文の両方）と選んだ候補、
+                                              最後に 4 画面の表記
       tugime-cli --explain <打鍵列>...        区切りと区間ごとの評価値を出す
       tugime-cli --lattice <打鍵列>...        区切りを決めた部分の採点で比べた区間の候補を出す。打鍵列ごとに == 打鍵列 の行の後、
                                               1 候補 1 行のタブ区切りで 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点
@@ -41,7 +46,8 @@ var args = Array(CommandLine.arguments.dropFirst())
 var leading = Segmenter.Leading.start
 var methodSpec = ConversionMethod.inputMethod(modelDirectory: URL(fileURLWithPath: ".zenz")).spec
 var dictionaryPath: String?
-while let option = args.first, ["--before", "--method", "--dictionary"].contains(option) {
+var judgedCandidates = Segmenter.defaultJudgedCandidates
+while let option = args.first, ["--before", "--method", "--dictionary", "--judge"].contains(option) {
     guard args.count >= 2 else {
         print(usage)
         exit(2)
@@ -51,6 +57,12 @@ while let option = args.first, ["--before", "--method", "--dictionary"].contains
         leading = Segmenter.Leading(field: args[1])
     case "--method":
         methodSpec = args[1]
+    case "--judge":
+        guard let count = Int(args[1]), count >= 1 else {
+            print(usage)
+            exit(2)
+        }
+        judgedCandidates = count
     default:
         dictionaryPath = args[1]
     }
@@ -72,6 +84,7 @@ do {
     func makeSegmenter() throws -> Segmenter {
         let segmenter = try method.makeSegmenter(dictionary: system)
         segmenter.replaceUserDictionary(dictionary)
+        segmenter.judgedCandidates = judgedCandidates
         return segmenter
     }
     switch args.first {
@@ -83,8 +96,8 @@ do {
         for arg in args.dropFirst() {
             let isKana = arg.unicodeScalars.contains { $0.value > 0x3000 }
             if isKana {
-                let start = japanese.convert(kana: arg, context: .start)
-                let after = japanese.convert(kana: arg, context: .afterWord)
+                let start = japanese.convert(kana: arg, context: .start, ending: .open)
+                let after = japanese.convert(kana: arg, context: .afterWord, ending: .open)
                 print("J \(arg)\t先頭: \(start.map { "\($0.text) \($0.value)" } ?? "なし")\t英語の後: \(after.map { "\($0.text) \($0.value)" } ?? "なし")")
                 continue
             }
@@ -146,6 +159,33 @@ do {
                 let live = segmenter.liveDisplay(keys, leading: leading)
                 print("\(keys)\t\(live.text)\t\(live.differsFromInput ? Segmenter.LiveDisplay.warning : "")")
             }
+            segmenter.endComposition()
+        }
+    case "--timing":
+        let segmenter = try makeSegmenter()
+        for input in args.dropFirst() {
+            for end in input.indices.dropFirst() + [input.endIndex] {
+                let keys = String(input[..<end])
+                let start = ContinuousClock.now
+                let live = segmenter.liveDisplay(keys, leading: leading)
+                let elapsed = ContinuousClock.now - start
+                let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
+                print("\(keys)\t\(live.text)\t\(String(format: "%.1f", ms))")
+            }
+            segmenter.endComposition()
+        }
+    case "--stages":
+        let segmenter = try makeSegmenter()
+        func value(_ values: [Double]?, _ i: Int) -> String { values.map { String(format: "%.2f", $0[i]) } ?? "-" }
+        for input in args.dropFirst() {
+            print("== \(input)")
+            for (part, judgement) in segmenter.judgements(input, leading: leading).enumerated() {
+                for (i, candidate) in judgement.candidates.enumerated() {
+                    let mark = i == judgement.chosen ? "*" : " "
+                    print("  部分\(part + 1) 候補\(i + 1)\(mark)\t1 \(describe(candidate))\t2 \(judgement.dictionaryTexts[i]) (\(value(judgement.dictionaryValues, i)))\t3 \(judgement.shownTexts[i]) (\(value(judgement.shownValues, i)))")
+                }
+            }
+            print("  4 \(segmenter.liveText(input, leading: leading))")
             segmenter.endComposition()
         }
     case "--explain":

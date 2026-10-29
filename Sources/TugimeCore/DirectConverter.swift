@@ -2,11 +2,20 @@ import Foundation
 
 /// 区間の読みと左の文脈から、表示の文字列を生成するもの。DirectConverter はモデルをこれ越しにだけ使うので、テストではモデルなしに差し替えられる
 protocol DirectDisplayGenerating: AnyObject {
-    /// left に続く kana の出力。前の生成で覚えたものを使って速くしてよく、そのために出力がそれまでの呼び出しに左右されることがある。
+    /// requests のそれぞれの、left に続く kana の出力。requests と同じ順に返す。まとめて渡したものは同時に生成してよい。
+    /// 前の生成で覚えたものを使って速くしてよく、そのために出力がそれまでの呼び出しに左右されることがある。
     /// reset の直後の呼び出しは、前の呼び出しに左右されない
-    func generate(left: String, kana: String) -> String
+    func generate(_ requests: [GenerationRequest]) -> [String]
+    /// left の後に texts のそれぞれを置いたときの、文ごとのトークン列の対数確率の和。texts と同じ順に返す
+    func naturalness(left: String, texts: [String]) -> [Double]
     /// 生成を速くするために覚えたものを捨てる。次の未確定の文字列は前の文字列の計算を引き継がない
     func reset()
+}
+
+/// 生成の 1 つの要求。left に続く kana を生成する
+struct GenerationRequest: Hashable {
+    var left: String
+    var kana: String
 }
 
 /// 表示の変換だけを zenz 形式のモデルの出力にし、区切りの採点と候補の窓はシステム辞書の格子に任せる変換器。
@@ -24,11 +33,13 @@ final class DirectConverter: JapaneseConverting {
     private let scorer: any JapaneseConverting
     private let generator: any DirectDisplayGenerating
     /// 区間・文脈・左の文字列ごとの表示。Segmenter は 1 打鍵の中で同じ区間を何度も表示にするので、生成を 1 回にする。未確定の文字列の寿命だけ持つ
-    private var displays: [DisplayKey: JapaneseDisplay?] = [:]
+    private var displays: [DisplayRequest: JapaneseDisplay?] = [:]
 
-    private struct DisplayKey: Hashable {
-        var kana: String
-        var context: JapaneseContext
+    /// 文と左の文字列ごとの確からしさ。区切りが変わらない部分（句読点より前）は打鍵ごとに同じ文を測るので、1 回にする。未確定の文字列の寿命だけ持つ
+    private var naturalnesses: [NaturalnessKey: Double] = [:]
+
+    private struct NaturalnessKey: Hashable {
+        var text: String
         var left: String
     }
 
@@ -37,8 +48,8 @@ final class DirectConverter: JapaneseConverting {
         self.generator = generator
     }
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
-        scorer.convert(kana: kana, context: context)
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading? {
+        scorer.convert(kana: kana, context: context, ending: ending)
     }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] {
@@ -46,18 +57,28 @@ final class DirectConverter: JapaneseConverting {
     }
 
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
-        let key = DisplayKey(kana: kana, context: context, left: left)
-        if let cached = displays[key] { return cached }
-        let shown = scorer.convert(kana: kana, context: context).map { scored in
-            let text = generator.generate(left: ZenzPrompt.leftContext(context: context, left: left), kana: kana)
+        displays([DisplayRequest(kana: kana, context: context, left: left)])[0]
+    }
+
+    /// 覚えていない要求だけを、まとめて生成するものに生成させる
+    func displays(_ requests: [DisplayRequest]) -> [JapaneseDisplay?] {
+        var missing: [(request: DisplayRequest, scored: JapaneseReading)] = []
+        for request in requests where displays[request] == nil && !missing.contains(where: { $0.request == request }) {
+            guard let scored = scorer.convert(kana: request.kana, context: request.context, ending: .open) else {
+                displays[request] = .some(nil)
+                continue
+            }
+            missing.append((request, scored))
+        }
+        let texts = generator.generate(missing.map { GenerationRequest(left: ZenzPrompt.leftContext(context: $0.request.context, left: $0.request.left), kana: $0.request.kana) })
+        for ((request, scored), text) in zip(missing, texts) {
             var cuts: [Int] = []
             for scoredClause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + scoredClause.clause.reading.count) }
-            let output = ReadingAlignment(text: text, reading: kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: kana, text: text)]
+            let output = ReadingAlignment(text: text, reading: request.kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: request.kana, text: text)]
             let clauses = Self.keepingUserWords(output, scored: scored.clauses)
-            return JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses, userWords: scored.clauses.flatMap(\.userWords))
+            displays[request] = JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses, userWords: scored.clauses.flatMap(\.userWords))
         }
-        displays[key] = shown
-        return shown
+        return requests.map { displays[$0]! }
     }
 
     /// 出力の文節のうち、束ねる採点の文節が使った利用者の語のどれかを、同じ読みに登録したどの表記でも含まないものを、採点の文節の表記を繋いだものにする。
@@ -78,10 +99,22 @@ final class DirectConverter: JapaneseConverting {
         }
     }
 
+    /// 覚えていない文だけを、まとめて生成するものに測らせる
+    func naturalness(texts: [String], left: String) -> [Double]? {
+        let missing = Array(Set(texts.filter { naturalnesses[NaturalnessKey(text: $0, left: left)] == nil }))
+        if !missing.isEmpty {
+            for (text, value) in zip(missing, generator.naturalness(left: left, texts: missing)) {
+                naturalnesses[NaturalnessKey(text: text, left: left)] = value
+            }
+        }
+        return texts.map { naturalnesses[NaturalnessKey(text: $0, left: left)]! }
+    }
+
     func endComposition() {
         scorer.endComposition()
         generator.reset()
         displays = [:]
+        naturalnesses = [:]
     }
 
     /// 生成するものは辞書を知らないが、未確定の文字列が終わるので、覚えた生成も捨てる
@@ -89,5 +122,6 @@ final class DirectConverter: JapaneseConverting {
         scorer.replaceUserWords(words)
         generator.reset()
         displays = [:]
+        naturalnesses = [:]
     }
 }

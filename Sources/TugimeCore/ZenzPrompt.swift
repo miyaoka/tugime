@@ -33,6 +33,17 @@ enum ZenzPrompt {
         return preprocess((context.isEmpty ? "" : contextMark + context) + inputMark + Kana.katakana(kana) + outputMark)
     }
 
+    /// 文の確からしさを測るときに、文の前に置く入力。文脈の目印 + 左の文脈（最後の 500 字）。先頭の BOS はモデルの側で足す。
+    /// 読みの目印を置かないので、モデルは読みに縛られずに、左の文脈に続く文としての確率を返す
+    static func naturalnessPrefix(left: String) -> String {
+        preprocess(contextMark + String(String.UnicodeScalarView(left.unicodeScalars.suffix(maxContextLength))))
+    }
+
+    /// 文の確からしさを測る文。入力と同じく、空白は全角の空白にし、改行は除く
+    static func naturalnessBody(_ text: String) -> String {
+        preprocess(text)
+    }
+
     /// モデルの出力の全角の空白を、入力の空白に戻す
     static func restoreSpaces(_ output: String) -> String {
         output.replacingOccurrences(of: "\u{3000}", with: " ")

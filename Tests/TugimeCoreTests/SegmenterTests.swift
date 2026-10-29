@@ -19,7 +19,7 @@ private final class LeftRecorder: JapaneseConverting {
     private let base: JapaneseConverting = Shared.converter
     private(set) var lefts: [String] = []
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { base.convert(kana: kana, context: context) }
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading? { base.convert(kana: kana, context: context, ending: ending) }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
 
@@ -27,6 +27,8 @@ private final class LeftRecorder: JapaneseConverting {
         lefts.append(left)
         return base.display(kana: kana, context: context, left: left)
     }
+
+    func naturalness(texts: [String], left: String) -> [Double]? { base.naturalness(texts: texts, left: left) }
 
     func endComposition() { base.endComposition() }
     func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
@@ -251,7 +253,7 @@ private final class LeftRecorder: JapaneseConverting {
 private final class RewritingConverter: JapaneseConverting {
     private let base: JapaneseConverting = Shared.converter
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { base.convert(kana: kana, context: context) }
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading? { base.convert(kana: kana, context: context, ending: ending) }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
 
@@ -262,6 +264,8 @@ private final class RewritingConverter: JapaneseConverting {
             return JapaneseDisplay(text: shown.text + "ゑ", clauses: clauses)
         }
     }
+
+    func naturalness(texts: [String], left: String) -> [Double]? { base.naturalness(texts: texts, left: left) }
 
     func endComposition() { base.endComposition() }
     func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
@@ -296,20 +300,21 @@ private final class RewritingConverter: JapaneseConverting {
         let leading = Segmenter.Leading("奈良")
         let left = try convertedLeft(leading: leading)
         _ = segmenter.liveText(input, leading: leading)
-        #expect(recorder.lefts == ["奈良", "奈良" + left])
+        // 区切りの候補を比べるときにも同じ左の文脈で表示にするので、表示を作る最後の 2 回を見る
+        #expect(recorder.lefts.suffix(2) == ["奈良", "奈良" + left])
     }
 
     @Test func liveTextPassesTheConvertedSpanToTheRight() throws {
         let left = try convertedLeft()
         #expect(segmenter.segment(input).map(\.kind) == [.japanese, .english, .japanese])
         #expect(segmenter.liveText(input).hasPrefix(left))
-        #expect(recorder.lefts == ["", left])
+        #expect(recorder.lefts.suffix(2) == ["", left])
     }
 
     @Test func clausesPassTheSameLeftAsLiveText() throws {
         let left = try convertedLeft()
         _ = segmenter.clauses(input)
-        #expect(recorder.lefts == ["", left])
+        #expect(recorder.lefts.suffix(2) == ["", left])
         let leading = Segmenter.Leading("奈良")
         let leftAfterLeading = try convertedLeft(leading: leading)
         _ = segmenter.clauses(input, leading: leading)
