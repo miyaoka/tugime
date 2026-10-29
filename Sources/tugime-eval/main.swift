@@ -12,9 +12,10 @@ let usage = """
           モデルを使う方式の出力が、打てた問題の全件で基準と一致したら、記録を書き、集計を出さずに終了コード 1
       tugime-eval compare <記録.jsonl> <記録.jsonl>
           片方だけが正解した問題を 1 件 1 行で出す
-      tugime-eval keystrokes --method <方式> --problems <dir> --out <最後の表示.tsv>
-          AJIMEE-Bench の文を、問題の文脈と、上限の長さまで文をつないだ文脈の後に 1 打鍵ずつ打ち、1 打鍵の時間・読み込み時間・最大常駐量を出す。
-          --out には 打鍵列 と最後の表示 をタブ区切りで書く（tugime-cli --live の出力と同じ形）
+      tugime-eval keystrokes --method <方式> --problems <dir> --out <途中の表示.tsv>
+          AJIMEE-Bench の文を、問題の文脈と、上限の長さまで文をつないだ文脈の後に 1 打鍵ずつ打ち、1 打鍵の時間・読み込み時間・最大常駐量と、
+          問題の文脈で打った途中の表示（最後の打鍵を除く）が許容解に向かっているかの判定ごとの打鍵数を出す。
+          --out には問題の文脈で打った全打鍵の 打鍵列 表示 判定 をタブ区切りで書く。方式や版の間で diff できる
     方式: \(ConversionMethod.forms)
     問題の dir は scripts/fetch-eval.ts が出す。入力メソッドと同じモデルは scripts/fetch-genmai.ts が、ほかのモデルは scripts/convert-hf-to-gguf.ts が出す
     終了コード: 0 成功 / 1 モデルが効いていない / 2 使い方の誤り / 3 時間の上限を超えた / 4 それ以外のエラー。
@@ -80,9 +81,11 @@ let commands: [String: (ArraySlice<String>) throws -> Void] = [
         for problem in selection.skipped {
             stderr("綴りで書けないので外す: \(problem.id) \(problem.kana)")
         }
-        let report = try KeystrokeBench.run(selection: selection, method: method, dictionary: try repositoryDictionary(), watchdog: watchdog, progress: stderr)
+        let report = try KeystrokeBench.run(
+            selection: selection, method: method, dictionary: try repositoryDictionary(), table: table, watchdog: watchdog, progress: stderr
+        )
         watchdog.arm(item: "書き出し")
-        try (report.finalTextLines.joined(separator: "\n") + "\n").write(toFile: o["--out"]!, atomically: true, encoding: .utf8)
+        try (report.liveLines.joined(separator: "\n") + "\n").write(toFile: o["--out"]!, atomically: true, encoding: .utf8)
         watchdog.finish()
         report.lines.forEach { print($0) }
     },

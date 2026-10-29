@@ -41,7 +41,7 @@ import Testing
     /// 入力全体が利用者の語 1 つでも、その語に変換し、候補の窓にも並べる
     @Test func convertsAndListsTheUserWord() throws {
         converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索牌")])
-        let reading = try #require(converter.convert(kana: "いーそう", context: .start))
+        let reading = try #require(converter.convert(kana: "いーそう", context: .start, ending: .open))
         #expect(reading.text == "一索牌")
         #expect(reading.clauses.map { $0.userWords.map(\.spellings) } == [[["一索牌"]]])
         #expect(converter.alternatives(kana: "いーそう", context: .start).contains("一索牌"))
@@ -50,7 +50,7 @@ import Testing
     /// 英語の後の文脈でも、利用者の語はその語の文節に付く
     @Test func marksTheUserWordAfterAWord() throws {
         converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索牌")])
-        let reading = try #require(converter.convert(kana: "いーそうをきる", context: .afterWord))
+        let reading = try #require(converter.convert(kana: "いーそうをきる", context: .afterWord, ending: .open))
         #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["一索牌"]])
         #expect(reading.text.hasPrefix("一索牌"))
     }
@@ -58,7 +58,7 @@ import Testing
     /// 使った語には、同じ読みに登録した表記をすべて添える。表示はそのどれかを含めばよい
     @Test func listsEverySpellingOfTheReading() throws {
         converter.replaceUserWords([UserWord(reading: "まんず", word: "萬子"), UserWord(reading: "まんず", word: "マンズ")])
-        let reading = try #require(converter.convert(kana: "まんず", context: .start))
+        let reading = try #require(converter.convert(kana: "まんず", context: .start, ending: .open))
         #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["萬子", "マンズ"]])
         let listed = converter.alternatives(kana: "まんず", context: .start)
         #expect(listed.contains("萬子") && listed.contains("マンズ"))
@@ -83,7 +83,7 @@ import Testing
         let digits = Array("あいうえおかきくけこ")
         let words = (0..<5000).map { n in UserWord(reading: "ゆーざー" + String(String(n).map { digits[$0.wholeNumberValue!] }), word: "語\(n)") }
         converter.replaceUserWords(words + [UserWord(reading: "いーそう", word: "一索牌")])
-        #expect(converter.convert(kana: "いーそう", context: .start)?.text == "一索牌")
+        #expect(converter.convert(kana: "いーそう", context: .start, ending: .open)?.text == "一索牌")
         #expect(converter.alternatives(kana: "ゆーざーいおう", context: .start).contains("語142"))
     }
 
@@ -93,7 +93,7 @@ import Testing
     func takesTheUserWordOverDictionaryWordsCoveringItsReading(word: String) throws {
         let others = ["まんず", "いーそう", "りゃんそう"].map { UserWord(reading: $0, word: $0) }
         converter.replaceUserWords([UserWord(reading: "このへん", word: word)] + others)
-        let reading = try #require(converter.convert(kana: "このへんで", context: .start))
+        let reading = try #require(converter.convert(kana: "このへんで", context: .start, ending: .open))
         #expect(reading.text == word + "で")
         #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [[word]])
     }
@@ -105,16 +105,16 @@ import Testing
     ])
     func keepsFunctionWordsThatShareTheReading(reading: String, word: String, kana: String, context: JapaneseContext) throws {
         converter.replaceUserWords([UserWord(reading: reading, word: word)])
-        let converted = try #require(converter.convert(kana: kana, context: context))
+        let converted = try #require(converter.convert(kana: kana, context: context, ending: .open))
         #expect(!converted.text.contains(word))
         #expect(converted.clauses.flatMap(\.userWords).isEmpty)
     }
 
     /// 利用者の語にした範囲の前後でも、文節の区切りは置き換える前と同じにする（たべてみる を たべて｜みる に割らない）
     @Test func keepsClausesAroundTheUserWord() throws {
-        let before = try #require(converter.convert(kana: "たべてみる", context: .start)).clauses.map(\.clause.reading)
+        let before = try #require(converter.convert(kana: "たべてみる", context: .start, ending: .open)).clauses.map(\.clause.reading)
         converter.replaceUserWords([UserWord(reading: "たべて", word: "食べて")])
-        let reading = try #require(converter.convert(kana: "たべてみる", context: .start))
+        let reading = try #require(converter.convert(kana: "たべてみる", context: .start, ending: .open))
         #expect(reading.clauses.map(\.clause.reading) == before)
         #expect(reading.clauses.flatMap(\.userWords).map(\.spellings) == [["食べて"]])
     }
@@ -122,9 +122,9 @@ import Testing
     /// 置き換えると前の語は消える。採点の覚えが前の辞書の計算を使い回さない
     @Test func replacingDropsThePreviousWords() throws {
         converter.replaceUserWords([UserWord(reading: "いーそう", word: "一索牌")])
-        #expect(converter.convert(kana: "いーそう", context: .start)?.text == "一索牌")
+        #expect(converter.convert(kana: "いーそう", context: .start, ending: .open)?.text == "一索牌")
         converter.replaceUserWords([])
-        let reading = try #require(converter.convert(kana: "いーそう", context: .start))
+        let reading = try #require(converter.convert(kana: "いーそう", context: .start, ending: .open))
         #expect(reading.text != "一索牌")
         #expect(reading.clauses.flatMap(\.userWords).isEmpty)
     }
@@ -151,10 +151,15 @@ import Testing
         #expect(first.candidates.prefix(2) == ["GitHub", "github"])
     }
 
-    /// 英語として扱う打鍵は、かな漢字変換に入れないので英語の語を割らない（nodes は Node.js と s にならない）
+    /// 英語として扱う打鍵は、かな漢字変換に入れないので英語の語を割らない
     @Test func keepsEnglishKeysOutOfKanaConversion() {
         #expect(segmenter.liveText("nodewoinsuto-rusuru").hasPrefix("Node.js"))
-        #expect(segmenter.liveText("nodes") == "nodes")
+    }
+
+    /// 登録した打鍵は、両側が区切りの端なら日本語の読み（ので）より優先し、語の途中で一致しただけなら優先しない
+    @Test func prefersRegisteredKeysOnlyWhereTheyStandAsAWord() {
+        #expect(segmenter.liveText("node") == "Node.js")
+        #expect(!segmenter.liveText("sukinanodesu").contains("Node.js"))
     }
 
     /// 英語として扱う打鍵は、日本語として読める綴りでも英語の区間にする（tugime は継ぎ目にならない）

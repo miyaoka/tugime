@@ -19,7 +19,7 @@ private final class LeftRecorder: JapaneseConverting {
     private let base: JapaneseConverting = Shared.converter
     private(set) var lefts: [String] = []
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { base.convert(kana: kana, context: context) }
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading? { base.convert(kana: kana, context: context, ending: ending) }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
 
@@ -27,6 +27,9 @@ private final class LeftRecorder: JapaneseConverting {
         lefts.append(left)
         return base.display(kana: kana, context: context, left: left)
     }
+
+    var evaluatesSentences: Bool { base.evaluatesSentences }
+    func naturalness(texts: [String], left: String) -> [Double]? { base.naturalness(texts: texts, left: left) }
 
     func endComposition() { base.endComposition() }
     func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
@@ -251,7 +254,7 @@ private final class LeftRecorder: JapaneseConverting {
 private final class RewritingConverter: JapaneseConverting {
     private let base: JapaneseConverting = Shared.converter
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { base.convert(kana: kana, context: context) }
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading? { base.convert(kana: kana, context: context, ending: ending) }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
 
@@ -262,6 +265,9 @@ private final class RewritingConverter: JapaneseConverting {
             return JapaneseDisplay(text: shown.text + "ゑ", clauses: clauses)
         }
     }
+
+    var evaluatesSentences: Bool { base.evaluatesSentences }
+    func naturalness(texts: [String], left: String) -> [Double]? { base.naturalness(texts: texts, left: left) }
 
     func endComposition() { base.endComposition() }
     func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }

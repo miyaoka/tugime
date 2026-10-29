@@ -41,13 +41,16 @@ private final class FixedScorer: JapaneseConverting {
     var clauses: [String: [ScoredClause]] = [:]
     private(set) var ended = 0
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading? {
         clauses[kana].map { JapaneseReading(text: $0.map(\.clause.text).joined(), value: 0, clauses: $0, context: context) }
     }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { [] }
 
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? { nil }
+
+    var evaluatesSentences: Bool { false }
+    func naturalness(texts: [String], left: String) -> [Double]? { nil }
 
     func endComposition() { ended += 1 }
 
@@ -60,10 +63,14 @@ private final class FixedGenerator: DirectDisplayGenerating {
     private(set) var calls: [(left: String, kana: String)] = []
     private(set) var resets = 0
 
-    func generate(left: String, kana: String) -> String {
-        calls.append((left, kana))
-        return outputs[kana]!
+    func generate(_ requests: [GenerationRequest]) -> [String] {
+        requests.map { request in
+            calls.append((request.left, request.kana))
+            return outputs[request.kana]!
+        }
     }
+
+    func naturalness(left: String, texts: [String]) -> [Double]? { texts.map { _ in 0 } }
 
     func reset() { resets += 1 }
 }

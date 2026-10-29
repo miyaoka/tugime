@@ -77,6 +77,11 @@ public struct ReadingAlignment: Sendable, Equatable {
         self.fixed = fixed
     }
 
+    /// 出力の位置 index に当たる読みの位置。どの食い方でも同じ位置に当たるときだけ返す
+    public func readingPosition(atText index: Int) -> Int? {
+        fixed[index]
+    }
+
     /// 読みの位置 cuts（0 と読みの終わりを含まない昇順）で出力を文節に切る。出力の側で確定した位置に当たらない cut は捨て、
     /// その両側を 1 つの文節にする。返す文節は 1 つ以上で、どれも読みと表記が空でなく、読みを繋ぐと reading、表記を繋ぐと text になる
     public func clauses(cutAt cuts: [Int]) -> [JapaneseClause] {
@@ -90,7 +95,7 @@ public struct ReadingAlignment: Sendable, Equatable {
     }
 
     /// 錨として扱う文字なら、比べるためのひらがな。小さい か・け（ゕ ゖ ヵ ヶ）は「か」「が」「こ」と読まれるので錨にしない
-    static func anchor(_ c: Character) -> Character? {
+    public static func anchor(_ c: Character) -> Character? {
         guard c.unicodeScalars.count == 1, let s = c.unicodeScalars.first else { return nil }
         switch s.value {
         case 0x3041...0x3094, 0x30FC:

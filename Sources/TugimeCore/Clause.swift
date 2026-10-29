@@ -237,7 +237,8 @@ extension Segmenter {
             of: segment(
                 String(keys[end...]),
                 after: fixed.kind == .english ? .afterEnglish : .afterJapanese,
-                context: context(after: resized, keys: keys[..<end], leading: leading)
+                context: context(after: resized, keys: keys[..<end], leading: leading),
+                left: left + resized.output
             ),
             left: left + resized.output,
             firstIndex: span.index + 1
@@ -427,7 +428,7 @@ extension Segmenter {
                 let head = String(kana.prefix { $0 == " " })
                 let tail = String(kana.reversed().prefix { $0 == " " })
                 let word = kana.trimmingCharacters(in: .init(charactersIn: " "))
-                if !word.contains(" "), let resolved = japaneseConverter.convert(kana: word, context: segment.context)?.context {
+                if !word.contains(" "), let resolved = japaneseConverter.convert(kana: word, context: segment.context, ending: .open)?.context {
                     list += japaneseConverter.alternatives(kana: word, context: resolved).map { head + $0 + tail }
                 }
             }
