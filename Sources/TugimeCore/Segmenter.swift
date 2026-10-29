@@ -578,6 +578,9 @@ public final class Segmenter {
         return nil
     }
 
+    /// 句読点と記号の打鍵から作る日本語の記号。読みにも表示にも、打った順にそのまま出る
+    public static let marks = Set((Array(punctuation.values) + Array(symbols.values)).joined())
+
     /// 最後の句読点か記号の打鍵の終わりの位置。無ければ 0
     public static func lastMarkEnd(in chars: [Character]) -> Int {
         var last = 0

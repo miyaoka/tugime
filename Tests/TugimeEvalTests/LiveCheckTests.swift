@@ -24,6 +24,8 @@ import TugimeCore
         #expect(judge("愛、け", "ai,ke", "愛、明るい", "あい、あかるい") == .offAnswer)
         #expect(judge("会、あ", "ai,a", "愛、明るい", "あい、あかるい") == .offAnswer)
         #expect(judge("「ai", "[ai", "「愛」", "「あい」") == .leftLetters)
+        // 変換で出る記号は読みに無いので、記号として突き合わせない
+        #expect(judge("℃をこ", "dosiwoko", "℃を超える", "どしをこえる") == .followsAnswer)
     }
 
     /// 打っている語をかなのまま見せるのは正解に向かっている。かなが読みと違えば外れる

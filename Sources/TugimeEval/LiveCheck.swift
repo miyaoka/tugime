@@ -28,7 +28,7 @@ public enum LiveCheck: String, Sendable, CaseIterable {
     /// shown が answer の先頭か、answer の読みの位置が確定した箇所までの先頭に、その先の読みのかなを続けたものか
     static func follows(_ shown: String, answer: String, reading: String) -> Bool {
         if answer.hasPrefix(shown) { return true }
-        // 句読点と記号は正解にも読みにもそのまま出る。表示の最後の記号までが正解の先頭に一致すれば、その後ろを正解と読みの残りで判定する
+        // 打鍵から作る句読点と記号は正解にも読みにもそのまま出る。表示の最後の記号までが正解の先頭に一致すれば、その後ろを正解と読みの残りで判定する
         if let last = shown.lastIndex(where: isMark) {
             let head = shown[...last]
             guard answer.hasPrefix(head) else { return false }
@@ -51,7 +51,7 @@ public enum LiveCheck: String, Sendable, CaseIterable {
     }
 
     private static func isMark(_ c: Character) -> Bool {
-        c.isPunctuation || c.isSymbol
+        Segmenter.marks.contains(c)
     }
 
     private static func hasLetter(_ text: String) -> Bool {
