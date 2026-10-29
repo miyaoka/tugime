@@ -493,8 +493,8 @@ final class TugimeInputController: IMKInputController {
         self.clauses = result.rest
         focus = 0
         stablePrefix.reset()
-        // 残りを打っている途中の表示に戻したときは、確定した文字列の後ろとして区切る
-        leading = readLeading(of: client)
+        // 残りを打っている途中の表示に戻したときは、確定した文字列の後ろとして区切る。前の部分の確定と同じく、入力欄から読み直さない
+        leading = Segmenter.Leading(field: leading.text + result.text)
         showMarkedText(client)
     }
 
