@@ -41,7 +41,7 @@ private final class FixedScorer: JapaneseConverting {
     var clauses: [String: [ScoredClause]] = [:]
     private(set) var ended = 0
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading? {
         clauses[kana].map { JapaneseReading(text: $0.map(\.clause.text).joined(), value: 0, clauses: $0, context: context) }
     }
 

@@ -275,7 +275,7 @@ public final class Segmenter {
             guard let mark else { continue }
             var runSpans: [ScoredSpan] = []
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
-            let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, endsInput: false, observe: collect)
+            let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, ending: .beforeMark(mark), observe: collect)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runContinuation == .afterEnglish)
             if symbol == nil, previousIsEnglish { continue }
             runSpans.forEach { observe?($0) }
@@ -285,7 +285,7 @@ public final class Segmenter {
             runContinuation = Self.continuation(after: key)
             runContext = runContinuation.japaneseContext
         }
-        return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, endsInput: true, observe: observe)
+        return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, ending: .open, observe: observe)
     }
 
     /// i から始まる記号の打鍵のうち最も長いもの
@@ -297,35 +297,51 @@ public final class Segmenter {
         return nil
     }
 
+    /// 区切りの DP の状態。日本語区間の終わりのつながりは後ろに続くもので変わるので、後ろに英語区間か利用者の語の区間が続くときの点を、
+    /// 後ろに日本語区間が続くか input の終わりに来るときの点と分けて持つ
+    private enum Slot: Hashable {
+        case kind(Segment.Kind)
+        case japaneseBeforeWord
+
+        var kind: Segment.Kind {
+            switch self {
+            case .kind(let kind): kind
+            case .japaneseBeforeWord: .japanese
+            }
+        }
+    }
+
     /// 句読点を含まない部分を、日本語区間と英語区間の並びに分ける。空でない入力には必ず 1 つ以上の区間を返す。
-    /// offset は input が入力全体のどの位置から始まるかで、observe に渡す区間の候補の位置に足す。endsInput は input が入力の末尾までか
-    private func segmentRun(_ input: String, leading: JapaneseContext, offset: Int, endsInput: Bool, observe: ((ScoredSpan) -> Void)?) -> [Segment] {
+    /// offset は input が入力全体のどの位置から始まるかで、observe に渡す区間の候補の位置に足す。
+    /// ending は input の後ろに続くもの。input が入力の末尾までなら open、句読点か記号の手前までならその記号
+    private func segmentRun(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, observe: ((ScoredSpan) -> Void)?) -> [Segment] {
         let chars = Array(input)
         let n = chars.count
         guard n > 0 else { return [] }
+        let endsInput = ending == .open
 
-        // best[位置][直前の区間の種類] = (評価値, 区間)。英語区間は英語区間に続けない。日本語区間は日本語区間にも続けられる
+        // best[位置][状態] = (評価値, 区間)。英語区間は英語区間に続けない。日本語区間は日本語区間にも続けられる
         struct Cell {
             var score: Double
             var segment: Segment
             var from: Int
-            var previousKind: Segment.Kind?
+            var previous: Slot?
         }
-        var best: [[Segment.Kind: Cell]] = Array(repeating: [:], count: n + 1)
+        var best: [[Slot: Cell]] = Array(repeating: [:], count: n + 1)
 
-        /// pos で終わる、直前の種類が previous の区切りの評価値。pos が 0 なら入力の先頭
-        func score(at pos: Int, after previous: Segment.Kind?) -> Double? {
+        /// pos で終わる、直前の状態が previous の区切りの評価値。pos が 0 なら入力の先頭
+        func score(at pos: Int, after previous: Slot?) -> Double? {
             if pos == 0 { return previous == nil ? 0 : nil }
             guard let previous else { return nil }
             return best[pos][previous]?.score
         }
 
-        func relax(_ end: Int, _ start: Int, _ segment: Segment, after previous: Segment.Kind?) {
+        func relax(_ end: Int, _ start: Int, _ segment: Segment, after previous: Slot?, into slot: Slot) {
             guard let base = score(at: start, after: previous) else { return }
-            observe?(ScoredSpan(start: offset + start, end: offset + end, after: previous, segment: segment))
+            observe?(ScoredSpan(start: offset + start, end: offset + end, after: previous?.kind, segment: segment))
             let total = base + segment.score
-            if let current = best[end][segment.kind], current.score >= total { return }
-            best[end][segment.kind] = Cell(score: total, segment: segment, from: start, previousKind: previous)
+            if let current = best[end][slot], current.score >= total { return }
+            best[end][slot] = Cell(score: total, segment: segment, from: start, previous: previous)
         }
 
         // 位置ごとの、綴りの表で最後まで読める終端とかな
@@ -335,7 +351,7 @@ public final class Segmenter {
         var chained: [Set<Int>] = Array(repeating: [], count: n + 1)
         for start in stride(from: n - 1, through: 1, by: -1) {
             for (end, kana) in readingsAt[start] where Self.isScoredJapanese(kana) {
-                guard japaneseConverter.convert(kana: kana, context: .start) != nil else { continue }
+                guard japaneseConverter.convert(kana: kana, context: .start, ending: .open) != nil else { continue }
                 chained[start].insert(end)
                 chained[start].formUnion(chained[end])
             }
@@ -349,19 +365,27 @@ public final class Segmenter {
             // 英語区間の後は前の語に続く形（数字の後は助数詞）、日本語区間の後は文頭の形で採点する。
             // 日本語区間の後の切れ目は採点のためのもので、区切りが決まったら前の日本語区間とまとめて変換し直す
             let context = start == 0 ? leading : Self.context(after: chars[..<start])
-            let predecessors: [(kind: Segment.Kind?, context: JapaneseContext, penalty: Double)] = start == 0
+            let predecessors: [(slot: Slot?, context: JapaneseContext, penalty: Double)] = start == 0
                 ? [(nil, leading, Self.japaneseSpanPenalty)]
-                : [(.english, context, Self.japaneseSpanPenalty), (.japanese, .start, Self.continuingJapanesePenalty), (.word, context, Self.japaneseSpanPenalty)]
+                : [(.kind(.english), context, Self.japaneseSpanPenalty), (.kind(.japanese), .start, Self.continuingJapanesePenalty), (.kind(.word), context, Self.japaneseSpanPenalty)]
+            // 日本語区間が英語区間か利用者の語の区間の後ろに来るときの、前の日本語区間の状態
+            let wordPredecessors: [Slot?] = start == 0 ? [nil] : [.japaneseBeforeWord, .kind(.word)]
             let readings = readingsAt[start]
             // この位置から綴りの表で最後まで読める終端。英語区間の候補が読める綴りかを引くのに使う
             let readableEnds = Set(readings.map(\.end))
             for (end, kana) in readings where Self.isScoredJapanese(kana) {
+                // input の終わりで終わる区間は input の後ろに続くものとつなぐ。途中で終わる区間は、後ろの日本語区間と後でまとめるか、英語区間か語の区間が続く
+                let endings: [(ending: JapaneseEnding, slot: Slot)] = end == n
+                    ? [(ending, .kind(.japanese))]
+                    : [(.open, .kind(.japanese)), (.beforeWord, .japaneseBeforeWord)]
                 for predecessor in predecessors {
-                    guard score(at: start, after: predecessor.kind) != nil,
-                          let segment = japaneseSegment(String(chars[start..<end]), kana: kana, context: predecessor.context, penalty: predecessor.penalty)
-                    else { continue }
-                    japaneseEnds.insert(end)
-                    relax(end, start, segment, after: predecessor.kind)
+                    guard score(at: start, after: predecessor.slot) != nil else { continue }
+                    for (spanEnding, slot) in endings {
+                        guard let segment = japaneseSegment(String(chars[start..<end]), kana: kana, context: predecessor.context, ending: spanEnding, penalty: predecessor.penalty)
+                        else { continue }
+                        japaneseEnds.insert(end)
+                        relax(end, start, segment, after: predecessor.slot, into: slot)
+                    }
                 }
             }
             let japaneseReach = japaneseEnds.reduce(into: japaneseEnds) { $0.formUnion(chained[$1]) }
@@ -370,27 +394,29 @@ public final class Segmenter {
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
                 if let segment = wordSegment(source, context: context) {
-                    for predecessor in predecessors { relax(end, start, segment, after: predecessor.kind) }
+                    for previous in start == 0 ? [nil] : wordPredecessors + [.kind(.english)] {
+                        relax(end, start, segment, after: previous, into: .kind(.word))
+                    }
                     continue
                 }
                 if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseReach.contains(end) { continue }
-                for previous in start == 0 ? [nil] : [Segment.Kind.japanese, .word] {
-                    relax(end, start, englishSegment(source, context: context, atInputEnd: endsInput && end == n), after: previous)
+                for previous in wordPredecessors {
+                    relax(end, start, englishSegment(source, context: context, atInputEnd: endsInput && end == n), after: previous, into: .kind(.english))
                 }
             }
         }
 
         var segments: [Segment] = []
         var pos = n
-        var kind = best[n].max { $0.value.score < $1.value.score }?.key
-        while pos > 0, let k = kind, let cell = best[pos][k] {
+        var slot = best[n].max { $0.value.score < $1.value.score }?.key
+        while pos > 0, let s = slot, let cell = best[pos][s] {
             segments.append(cell.segment)
             pos = cell.from
-            kind = cell.previousKind
+            slot = cell.previous
         }
         // どの区間も、日本語として採れなければ英語として採れるので、空でない入力には必ず区切りがある
         precondition(pos == 0 && !segments.isEmpty, "区切りが見つからない: \(input)")
-        return mergeJapanese(segments.reversed())
+        return mergeJapanese(segments.reversed(), ending: ending)
     }
 
     /// source の全体を 1 区間として、日本語区間と英語区間のうち評価値の高い方にする。区切りの選択と同じく、
@@ -399,7 +425,7 @@ public final class Segmenter {
         if let word = wordSegment(source, context: context) { return word }
         let english = englishSegment(source, context: context, atInputEnd: false)
         guard let kana = table.reading(of: source), Self.canBeJapanese(kana),
-              let japanese = japaneseSegment(source, kana: kana, context: context, penalty: Self.japaneseSpanPenalty)
+              let japanese = japaneseSegment(source, kana: kana, context: context, ending: .open, penalty: Self.japaneseSpanPenalty)
         else { return english }
         return prefersJapanese(source, readable: true) || japanese.score >= english.score ? japanese : english
     }
@@ -411,8 +437,8 @@ public final class Segmenter {
         return table.isSingleKana(source) || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
     }
 
-    private func japaneseSegment(_ source: String, kana: String, context: JapaneseContext, penalty: Double) -> Segment? {
-        guard let reading = japaneseConverter.convert(kana: kana, context: context) else { return nil }
+    private func japaneseSegment(_ source: String, kana: String, context: JapaneseContext, ending: JapaneseEnding, penalty: Double) -> Segment? {
+        guard let reading = japaneseConverter.convert(kana: kana, context: context, ending: ending) else { return nil }
         let score = reading.value - penalty
         return Segment(kind: .japanese, source: source, reading: kana, output: reading.text, score: score, context: reading.context)
     }
@@ -455,16 +481,23 @@ public final class Segmenter {
 
     /// 隣り合う日本語区間を 1 つにまとめ、まとめた読みを最初の区間の文脈で変換し直す。
     /// まとめた読みを変換できなければまとめない。各区間は採点のときに自分の文脈で変換できているので、文節に分けても同じ変換になる。
-    /// まとめた区間の点は、区切りを決めた区間ごとの点の和にする
-    private func mergeJapanese(_ segments: [Segment]) -> [Segment] {
+    /// まとめた区間の点は、区切りを決めた区間ごとの点の和にする。まとめた読みの終わりは、まとめた最後の区間の後ろに続くものとつなぐ。
+    /// ending は segments の後ろに続くもの
+    private func mergeJapanese(_ segments: [Segment], ending: JapaneseEnding) -> [Segment] {
         var merged: [Segment] = []
-        for segment in segments {
+        for (i, segment) in segments.enumerated() {
             guard segment.kind == .japanese, let last = merged.last, last.kind == .japanese else {
                 merged.append(segment)
                 continue
             }
             let reading = last.reading + segment.reading
-            guard let whole = japaneseConverter.convert(kana: reading, context: last.context) else {
+            let next = segments.indices.contains(i + 1) ? segments[i + 1] : nil
+            let following: JapaneseEnding = switch next?.kind {
+            case nil: ending
+            case .japanese: .open
+            default: .beforeWord
+            }
+            guard let whole = japaneseConverter.convert(kana: reading, context: last.context, ending: following) else {
                 merged.append(segment)
                 continue
             }

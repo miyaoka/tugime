@@ -83,8 +83,8 @@ do {
         for arg in args.dropFirst() {
             let isKana = arg.unicodeScalars.contains { $0.value > 0x3000 }
             if isKana {
-                let start = japanese.convert(kana: arg, context: .start)
-                let after = japanese.convert(kana: arg, context: .afterWord)
+                let start = japanese.convert(kana: arg, context: .start, ending: .open)
+                let after = japanese.convert(kana: arg, context: .afterWord, ending: .open)
                 print("J \(arg)\t先頭: \(start.map { "\($0.text) \($0.value)" } ?? "なし")\t英語の後: \(after.map { "\($0.text) \($0.value)" } ?? "なし")")
                 continue
             }

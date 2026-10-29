@@ -110,9 +110,19 @@ public enum JapaneseContext: Sendable, Hashable {
     case afterNumber(String)
 }
 
+/// 日本語区間の後ろに続くもの。区間の終わりのつながりは、実際に後ろにあるもので決める（PRINCIPLES.md）
+public enum JapaneseEnding: Sendable, Hashable {
+    /// 後ろにまだ何も打たれていない（入力の末尾）か、後ろの日本語区間と後でまとめて変換し直す切れ目。つながりを足さない
+    case open
+    /// 後ろに英語区間か利用者の語の区間が続く。その語の後に続く形（afterWord）と同じく名詞として読む
+    case beforeWord
+    /// 後ろに句読点か記号の打鍵が続く。値は日本語の記号（、。「 など）
+    case beforeMark(String)
+}
+
 public protocol JapaneseConverting: AnyObject {
     /// 区切りの採点に使う最良の変換
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading?
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading?
     /// 候補の窓に並べる変換結果。評価値の高い順で、重複は除く。件数は変換エンジンが決める。context に afterCaret は渡さず、convert が返した context を渡す
     func alternatives(kana: String, context: JapaneseContext) -> [String]
     /// 区切りが決まった区間を表示するための変換。採点のように何百回も呼ばないので、重くて質の高い変換を使ってよい。

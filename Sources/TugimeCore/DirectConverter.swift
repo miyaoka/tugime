@@ -37,8 +37,8 @@ final class DirectConverter: JapaneseConverting {
         self.generator = generator
     }
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
-        scorer.convert(kana: kana, context: context)
+    func convert(kana: String, context: JapaneseContext, ending: JapaneseEnding) -> JapaneseReading? {
+        scorer.convert(kana: kana, context: context, ending: ending)
     }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] {
@@ -48,7 +48,7 @@ final class DirectConverter: JapaneseConverting {
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
         let key = DisplayKey(kana: kana, context: context, left: left)
         if let cached = displays[key] { return cached }
-        let shown = scorer.convert(kana: kana, context: context).map { scored in
+        let shown = scorer.convert(kana: kana, context: context, ending: .open).map { scored in
             let text = generator.generate(left: ZenzPrompt.leftContext(context: context, left: left), kana: kana)
             var cuts: [Int] = []
             for scoredClause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + scoredClause.clause.reading.count) }
