@@ -360,6 +360,8 @@ final class LatticeConverter: JapaneseConverting {
         }
     }
 
+    var evaluatesSentences: Bool { false }
+
     func naturalness(texts: [String], left: String) -> [Double]? { nil }
 
     func endComposition() {

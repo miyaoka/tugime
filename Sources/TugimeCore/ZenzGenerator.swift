@@ -104,11 +104,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
 
     /// 文ごとに系列を 1 つ使い、naturalnessSequences 個ずつ 1 回の decode で測る。表示の生成の系列には触れないので、生成の使い回しは壊れない。
     /// 文の前に置く入力は全系列で同じなので、前と同じなら計算し直さず、文の部分だけを消して入れ直す。
-    /// 文の前に置く入力と最も長い文が位置の上限に収まるよう、左の文脈を前から削る。左の文脈を空にしても収まらない文があれば nil
+    /// 文の前に置く入力は、生成で出力に位置の半分を充てるのと同じく、位置の半分までに左の文脈を前から削る。
+    /// 削る量は一緒に測る文によらず左の文脈だけで決まるので、同じ文と左の文脈は、いつ測っても同じ値になる。残りに収まらない文があれば nil
     func naturalness(left: String, texts: [String]) -> [Double]? {
         let bodies = texts.map { Array(tokenize(ZenzPrompt.naturalnessBody($0)).dropFirst()) }
         guard let longest = bodies.map(\.count).max() else { return [] }
-        guard let prefix = fittedNaturalnessPrefix(left: left, room: maxPositions - longest) else { return nil }
+        guard let prefix = fittedNaturalnessPrefix(left: left, room: maxPositions / 2), prefix.count + longest <= maxPositions else { return nil }
         var values: [Double] = []
         var rest = bodies[...]
         while !rest.isEmpty {

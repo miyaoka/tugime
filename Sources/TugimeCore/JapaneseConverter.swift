@@ -144,8 +144,6 @@ public protocol JapaneseConverting: AnyObject {
 }
 
 extension JapaneseConverting {
-    public var evaluatesSentences: Bool { false }
-
     /// まとめて計算する仕組みを持たない変換器は、1 つずつ display にする
     public func displays(_ requests: [DisplayRequest]) -> [JapaneseDisplay?] {
         requests.map { display(kana: $0.kana, context: $0.context, left: $0.left) }

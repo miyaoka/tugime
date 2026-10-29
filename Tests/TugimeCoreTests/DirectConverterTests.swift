@@ -49,6 +49,7 @@ private final class FixedScorer: JapaneseConverting {
 
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? { nil }
 
+    var evaluatesSentences: Bool { false }
     func naturalness(texts: [String], left: String) -> [Double]? { nil }
 
     func endComposition() { ended += 1 }

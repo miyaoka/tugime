@@ -28,6 +28,7 @@ private final class LeftRecorder: JapaneseConverting {
         return base.display(kana: kana, context: context, left: left)
     }
 
+    var evaluatesSentences: Bool { base.evaluatesSentences }
     func naturalness(texts: [String], left: String) -> [Double]? { base.naturalness(texts: texts, left: left) }
 
     func endComposition() { base.endComposition() }
@@ -265,6 +266,7 @@ private final class RewritingConverter: JapaneseConverting {
         }
     }
 
+    var evaluatesSentences: Bool { base.evaluatesSentences }
     func naturalness(texts: [String], left: String) -> [Double]? { base.naturalness(texts: texts, left: left) }
 
     func endComposition() { base.endComposition() }
@@ -300,21 +302,20 @@ private final class RewritingConverter: JapaneseConverting {
         let leading = Segmenter.Leading("奈良")
         let left = try convertedLeft(leading: leading)
         _ = segmenter.liveText(input, leading: leading)
-        // 区切りを決めた部分は、後ろの部分の左の文脈にするために一度表示にする。表示を出す最後の 2 回を見る
-        #expect(recorder.lefts.suffix(2) == ["奈良", "奈良" + left])
+        #expect(recorder.lefts == ["奈良", "奈良" + left])
     }
 
     @Test func liveTextPassesTheConvertedSpanToTheRight() throws {
         let left = try convertedLeft()
         #expect(segmenter.segment(input).map(\.kind) == [.japanese, .english, .japanese])
         #expect(segmenter.liveText(input).hasPrefix(left))
-        #expect(recorder.lefts.suffix(2) == ["", left])
+        #expect(recorder.lefts == ["", left])
     }
 
     @Test func clausesPassTheSameLeftAsLiveText() throws {
         let left = try convertedLeft()
         _ = segmenter.clauses(input)
-        #expect(recorder.lefts.suffix(2) == ["", left])
+        #expect(recorder.lefts == ["", left])
         let leading = Segmenter.Leading("奈良")
         let leftAfterLeading = try convertedLeft(leading: leading)
         _ = segmenter.clauses(input, leading: leading)

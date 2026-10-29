@@ -71,9 +71,9 @@ public final class Segmenter {
     /// 打鍵ごとに同じ段を計算し直さないために未確定の文字列の寿命だけ持つ。結果は入力だけで決まり、覚えていなくても同じになる
     var wordSteps: [RunKey: WordStep] = [:]
 
-    /// 語を決める 1 つの段の結果。best は選んだ区切りとその表示、beam は次の段に残す語の割り当て
+    /// 語を決める 1 つの段の結果。best は選んだ区切り、beam は次の段に残す語の割り当て
     struct WordStep {
-        var best: (segments: [Segment], text: String)
+        var best: [Segment]
         var beam: [[WordSpan: Bool]]
     }
 
@@ -320,15 +320,16 @@ public final class Segmenter {
             runContinuation = Self.continuation(after: key)
             runContext = runContinuation.japaneseContext
         }
-        return segments + judgeRun(String(chars[runStart...]), leading: runContext, offset: runStart, ending: .open, observe: observe, left: shown).segments
+        return segments + judgeRun(String(chars[runStart...]), leading: runContext, offset: runStart, ending: .open, observe: observe, left: shown)
     }
 
-    /// 句読点か記号の手前で終わる部分の judgeRun。後ろに打鍵が続いても部分の中身は変わらないので、未確定の文字列の間は 1 回だけ計算する。
-    /// observe があるとき（診断）は覚えたものを使わない
+    /// 句読点か記号の手前で終わる部分の judgeRun と、その表示。表示は後ろの部分の左の文脈になる。
+    /// 後ろに打鍵が続いても部分の中身は変わらないので、未確定の文字列の間は 1 回だけ計算する。observe があるとき（診断）は覚えたものを使わない
     private func closedRun(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, observe: ((ScoredSpan) -> Void)?, left: String) -> (segments: [Segment], text: String) {
         let key = RunKey(input: input, leading: leading, offset: offset, ending: ending, left: left)
         if observe == nil, judgeObserver == nil, let cached = closedRuns[key] { return cached }
-        let result = judgeRun(input, leading: leading, offset: offset, ending: ending, observe: observe, left: left)
+        let segments = judgeRun(input, leading: leading, offset: offset, ending: ending, observe: observe, left: left)
+        let result = (segments, shownText(segments, left: left))
         closedRuns[key] = result
         return result
     }
@@ -337,7 +338,7 @@ public final class Segmenter {
     /// 英語にも日本語にも読める語が無いか、変換器が文を評価するモデルを持たなければ、採点の点の上位 judgedCandidates 個を候補にする。
     /// あれば、利用者が前から打つのと同じ順に語を決めていく。部分を語の終わりまで打った入力を段とし、段ごとに wordStep で決める。
     /// 結果は入力だけで決まる。段の結果は覚えて使い回すので、1 打鍵ずつ打つときは新しく現れた段だけを計算する
-    private func judgeRun(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, observe: ((ScoredSpan) -> Void)?, left: String) -> (segments: [Segment], text: String) {
+    private func judgeRun(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, observe: ((ScoredSpan) -> Void)?, left: String) -> [Segment] {
         let ranked = { self.judge(self.segmentRun(input, leading: leading, offset: offset, ending: ending, width: self.judgedCandidates, constraint: nil, observe: observe), left: left) }
         let chars = Array(input)
         let words = ambiguousWords(chars).map { WordSpan(start: $0.start + offset, text: $0.text) }
@@ -361,9 +362,12 @@ public final class Segmenter {
     private func wordStep(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, left: String, beam: [[WordSpan: Bool]]) -> WordStep {
         let key = RunKey(input: input, leading: leading, offset: offset, ending: ending, left: left)
         if judgeObserver == nil, let cached = wordSteps[key] { return cached }
+        // 組み合わせを比べない段も、結果を覚えて打鍵ごとに計算し直さない
         let ranked = { () -> WordStep in
             let best = self.judge(self.segmentRun(input, leading: leading, offset: offset, ending: ending, width: self.judgedCandidates, constraint: nil, observe: nil), left: left)
-            return WordStep(best: best, beam: beam)
+            let step = WordStep(best: best, beam: beam)
+            self.wordSteps[key] = step
+            return step
         }
         let words = ambiguousWords(Array(input)).map { WordSpan(start: $0.start + offset, text: $0.text) }
         let present = Set(words)
@@ -409,7 +413,7 @@ public final class Segmenter {
             next.append(assignment)
             if next.count == Self.decidedBeamWidth { break }
         }
-        let step = WordStep(best: (candidates[order[0]].segments, texts[order[0]]), beam: next)
+        let step = WordStep(best: candidates[order[0]].segments, beam: next)
         wordSteps[key] = step
         return step
     }
@@ -452,10 +456,10 @@ public final class Segmenter {
     /// 区切りの候補のうち、表示にした文が left に続く文として最も確からしいもの。候補は採点の点の高い順に並ぶ。
     /// 文法として成り立つ候補が複数あるとき、選択を変換器のモデルによる文の評価で行う（PRINCIPLES.md）。
     /// 候補が 1 つか、変換器が文を評価するモデルを持たなければ、採点の点が最も高い候補にする
-    private func judge(_ candidates: [[Segment]], left: String) -> (segments: [Segment], text: String) {
+    private func judge(_ candidates: [[Segment]], left: String) -> [Segment] {
         let chosen = chosenCandidate(candidates, left: left)
         judgeObserver?(candidates, left, chosen)
-        return (candidates[chosen], shownText(candidates[chosen], left: left))
+        return candidates[chosen]
     }
 
     /// judge が選ぶ候補の番号
