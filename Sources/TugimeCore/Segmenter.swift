@@ -70,8 +70,27 @@ public final class Segmenter {
     /// 句読点か記号の手前で終わる部分の、区切りと表示。未確定の文字列の寿命だけ持つ
     var closedRuns: [RunKey: (segments: [Segment], text: String)] = [:]
     /// 英語にも日本語にも読める語を前から決めていく途中の段の結果。段は、部分をその語の終わりまで打った入力で、
-    /// 打鍵ごとに同じ段を計算し直さないために未確定の文字列の寿命だけ持つ。結果は入力だけで決まり、覚えていなくても同じになる
+    /// 打鍵ごとに同じ段を計算し直さないために未確定の文字列の寿命だけ持つ。結果は入力と、前の部分を確定したときに引き継いだ割り当てで決まり、
+    /// 覚えていなくても同じになる
     var wordSteps: [RunKey: WordStep] = [:]
+    /// 入力の最後の部分で、最後に計算した途中の段の終わり（入力の中の位置）と、その段が次に残した語の割り当て。前の部分を確定するときに引き継ぐ
+    var openRunBeam: (offset: Int, upTo: Int, beam: [[WordSpan: Bool]])?
+    /// 前の部分を確定したときに、確定した後の入力に引き継いだ語の割り当て
+    var carriedBeam: CarriedBeam?
+
+    /// 前の部分を確定した後の入力の先頭の部分で、head までの段を計算し直さず、beam から続ける。
+    /// head は確定した後の入力の先頭で、確定の前に段を計算した範囲。位置は確定した後の入力の中
+    struct CarriedBeam {
+        var head: String
+        var leading: JapaneseContext
+        var left: String
+        var beam: [[WordSpan: Bool]]
+
+        /// 確定したときと同じ打鍵・文脈に続く部分にだけ使う。消して打ち直したり、さらに確定して入力の先頭が変わったりすれば使わない
+        func applies(to input: String, leading: JapaneseContext, offset: Int, left: String) -> Bool {
+            offset == 0 && leading == self.leading && left == self.left && input.hasPrefix(head)
+        }
+    }
 
     /// 語を決める 1 つの段の結果。best は選んだ区切り、beam は次の段に残す語の割り当て
     struct WordStep {
@@ -339,22 +358,33 @@ public final class Segmenter {
     /// 句読点を含まない部分の区切りの候補を作り、文として最も確からしいものに決める。
     /// 英語にも日本語にも読める語が無いか、変換器が文を評価するモデルを持たなければ、採点の点の上位 judgedCandidates 個を候補にする。
     /// あれば、利用者が前から打つのと同じ順に語を決めていく。部分を語の終わりまで打った入力を段とし、段ごとに wordStep で決める。
-    /// 結果は入力だけで決まる。段の結果は覚えて使い回すので、1 打鍵ずつ打つときは新しく現れた段だけを計算する
+    /// 結果は入力と、前の部分を確定したときに引き継いだ割り当てで決まる。段の結果は覚えて使い回すので、1 打鍵ずつ打つときは新しく現れた段だけを計算する
     private func judgeRun(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, observe: ((ScoredSpan) -> Void)?, left: String) -> [Segment] {
         let chars = Array(input)
         let registered = SpanConstraint(registered: registeredSpans(chars))
         let ranked = { self.judge(self.rankedCandidates(input, leading: leading, offset: offset, ending: ending, constraint: registered, observe: observe), left: left) }
         let words = ambiguousWords(chars).map { WordSpan(start: $0.start + offset, text: $0.text) }
-        guard !words.isEmpty, japaneseConverter.evaluatesSentences else { return ranked() }
+        guard !words.isEmpty, japaneseConverter.evaluatesSentences else {
+            if ending == .open { openRunBeam = nil }
+            return ranked()
+        }
         // 診断（--lattice）には、語の英語か日本語かの条件を課さない採点で比べた区間の候補を渡す（登録した打鍵の条件は課す）
         if observe != nil { _ = rankedCandidates(input, leading: leading, offset: offset, ending: ending, constraint: registered, observe: observe) }
         // 診断（--stages）に渡すのは、部分そのものを決める最後の段だけにする
         let observer = judgeObserver
         judgeObserver = nil
         var beam: [[WordSpan: Bool]] = [[:]]
-        for end in Set(words.map { $0.range.upperBound - offset }).sorted() where end < chars.count {
-            beam = wordStep(String(chars[..<end]), leading: leading, offset: offset, ending: .open, left: left, beam: beam).beam
+        var upTo = offset
+        // 前の部分を確定した後は、確定の前に決めた語の割り当てから続け、確定の前に計算した段を計算し直さない
+        if let carried = carriedBeam, carried.applies(to: input, leading: leading, offset: offset, left: left) {
+            beam = carried.beam
+            upTo = carried.head.count
         }
+        for end in Set(words.map { $0.range.upperBound - offset }).sorted() where end < chars.count && end + offset > upTo {
+            beam = wordStep(String(chars[..<end]), leading: leading, offset: offset, ending: .open, left: left, beam: beam).beam
+            upTo = end + offset
+        }
+        if ending == .open { openRunBeam = (offset, upTo, beam) }
         judgeObserver = observer
         return wordStep(input, leading: leading, offset: offset, ending: ending, left: left, beam: beam).best
     }

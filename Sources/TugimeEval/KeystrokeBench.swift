@@ -104,7 +104,7 @@ public enum KeystrokeBench {
         public var peakBytes: Int
         public var skipped: Int
         public var samples: [Sample]
-        /// 問題の left で打った文の、打鍵ごとの表示。`tugime-cli --before <left> --typing <打鍵列>` の表示と一致するはずのもの。
+        /// 問題の left で打った文の、打鍵ごとの表示。前の部分を確定しないので、`tugime-cli --stable 3,1000,10 --before <left> --typing <打鍵列>` のように確定が起きない設定の表示と一致するはずのもの。
         /// 上限の長さの文脈で打った文は時間を測るためのもので、含めない
         public var lives: [Live]
         /// 問題の left で打った文の数
@@ -122,7 +122,7 @@ public enum KeystrokeBench {
     }
 
     /// 不変条件:
-    /// - 文ごとに、打鍵列の先頭 1 文字から全体まで 1 打鍵ずつ伸ばして liveText(prefix, leading: leading) を呼ぶ。入力メソッドが打鍵ごとに呼ぶのと同じ
+    /// - 文ごとに、打鍵列の先頭 1 文字から全体まで 1 打鍵ずつ伸ばして liveText(prefix, leading: leading) を呼ぶ。入力メソッドと違い、前の部分を確定しない
     /// - 文の前に endComposition を呼ぶ。文の中では呼ばない（入力メソッドは打ち終えるまで覚えを持ち越す）
     public static func run(
         selection: KeystrokeScript.Selection,

@@ -8,13 +8,16 @@ let usage = """
     システム辞書だけで変換するときは --method lattice。direct は表示の変換にモデルを使う。ほかのモデルは scripts/convert-hf-to-gguf.ts が出す。
     --dictionary <ファイル> は利用者の辞書（書式は入力メソッドと同じ）。渡さなければ利用者の語は無く、入力メソッドの辞書は読まない。
     --judge <数> は、英語にも日本語にも読める語の無い部分で、表示にして文として比べる区切りの候補の数。既定は \(Segmenter.defaultJudgedCandidates)。1 なら比べない。
+    --stable <打鍵数>,<最小の打鍵数>,<残す打鍵数> は、--typing と --timing で、未確定の打鍵が最小の打鍵数に届いてから、表示の先頭が打鍵数だけ続けて変わらなければ、
+    その先頭に収まり、後ろに残す打鍵数以上の打鍵が残る文節までを確定する設定。
+    既定は入力メソッドと同じ \(StablePrefix.standard.keystrokes),\(StablePrefix.standard.minimumKeys),\(StablePrefix.standard.keptKeys)。
     --explain・--lattice・--span の出力の表記は、区切りを採点したシステム辞書の変換で、表示の変換ではない）:
       tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す。
                                               入力メソッドが未確定の文字列の下に知らせを出す表示なら、打鍵列 と知らせを標準エラーに出す（既定の形も同じ）
       tugime-cli --typing <打鍵列>...         入力メソッドで 1 打鍵ずつ打ったときの表示を出す。1 打鍵 1 行のタブ区切りで
-                                              ここまでの打鍵列 表示 未確定の文字列の下に出る知らせ（出なければ空）
-      tugime-cli --timing <打鍵列>...         --typing と同じく 1 打鍵ずつ打ち、1 打鍵 1 行のタブ区切りで ここまでの打鍵列 表示 その打鍵の表示にかかった ms を出す
+                                              ここまでの打鍵列 画面（確定した文字列と未確定の表示） 未確定の文字列の下に出る知らせ（出なければ空） この打鍵で確定した文字列（無ければ空）
+      tugime-cli --timing <打鍵列>...         --typing と同じく 1 打鍵ずつ打ち、1 打鍵 1 行のタブ区切りで ここまでの打鍵列 画面 その打鍵の表示と確定にかかった ms この打鍵で確定した文字列 未確定の打鍵の数 を出す
       tugime-cli --stages <打鍵列>...         打鍵列ごとに、句読点で切った部分ごとの 4 段を出す。1 区切りの候補（区間と評価値）、
                                               2 辞書の変換の表記、3 モデルが比べた文の確からしさ（辞書の表記の文と、モデルが書いた表記の文の両方）と選んだ候補、
                                               最後に 4 画面の表記
@@ -42,12 +45,42 @@ func describe(_ segments: [Segment]) -> String {
     }.joined(separator: " ")
 }
 
+/// 1 打鍵の結果。typed はここまでの打鍵列の全体、shown は確定した文字列と未確定の表示をつないだ画面の文字列、
+/// committed はこの打鍵で確定した文字列、open はこの打鍵の後の未確定の打鍵の数、ms は表示と確定にかかった時間
+struct TypingStep {
+    var typed: String
+    var shown: String
+    var live: Segmenter.LiveDisplay
+    var committed: String?
+    var open: Int
+    var ms: Double
+}
+
+/// 入力メソッドと同じく、1 つの未確定の文字列の中で 1 打鍵ずつ伸ばし、変わらなくなった表示の先頭を確定して外す。
+/// 確定した後は、入力欄のカーソルの前にその文字列が続いたものとして打ち続ける。打ち終えたら未確定の文字列を終える
+func typeThrough(_ input: String, segmenter: Segmenter, leading: Segmenter.Leading, stable: StablePrefix, each: (TypingStep) -> Void) {
+    var committed = ""
+    var keys = ""
+    var before = leading
+    var stable = stable
+    for (offset, key) in input.enumerated() {
+        let start = ContinuousClock.now
+        let (live, done) = stable.append(String(key), to: &keys, leading: &before, segmenter: segmenter)
+        let elapsed = ContinuousClock.now - start
+        committed += done ?? ""
+        let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
+        each(TypingStep(typed: String(input.prefix(offset + 1)), shown: committed + live.text, live: live, committed: done, open: keys.count, ms: ms))
+    }
+    segmenter.endComposition()
+}
+
 var args = Array(CommandLine.arguments.dropFirst())
 var leading = Segmenter.Leading.start
+var stablePrefix = StablePrefix.standard
 var methodSpec = ConversionMethod.inputMethod(modelDirectory: URL(fileURLWithPath: ".zenz")).spec
 var dictionaryPath: String?
 var judgedCandidates = Segmenter.defaultJudgedCandidates
-while let option = args.first, ["--before", "--method", "--dictionary", "--judge"].contains(option) {
+while let option = args.first, ["--before", "--method", "--dictionary", "--judge", "--stable"].contains(option) {
     guard args.count >= 2 else {
         print(usage)
         exit(2)
@@ -63,6 +96,13 @@ while let option = args.first, ["--before", "--method", "--dictionary", "--judge
             exit(2)
         }
         judgedCandidates = count
+    case "--stable":
+        let parts = args[1].split(separator: ",").compactMap { Int($0) }
+        guard parts.count == 3, parts.allSatisfy({ $0 >= 1 }) else {
+            print(usage)
+            exit(2)
+        }
+        stablePrefix = StablePrefix(keystrokes: parts[0], minimumKeys: parts[1], keptKeys: parts[2])
     default:
         dictionaryPath = args[1]
     }
@@ -151,28 +191,18 @@ do {
             warnIfDiffers(live, input: input)
         }
     case "--typing":
-        // 入力メソッドと同じく、1 つの未確定の文字列の中で 1 打鍵ずつ伸ばし、打ち終えたら未確定の文字列を終える
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
-            for end in input.indices.dropFirst() + [input.endIndex] {
-                let keys = String(input[..<end])
-                let live = segmenter.liveDisplay(keys, leading: leading)
-                print("\(keys)\t\(live.text)\t\(live.differsFromInput ? Segmenter.LiveDisplay.warning : "")")
+            typeThrough(input, segmenter: segmenter, leading: leading, stable: stablePrefix) { step in
+                print("\(step.typed)\t\(step.shown)\t\(step.live.differsFromInput ? Segmenter.LiveDisplay.warning : "")\t\(step.committed ?? "")")
             }
-            segmenter.endComposition()
         }
     case "--timing":
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
-            for end in input.indices.dropFirst() + [input.endIndex] {
-                let keys = String(input[..<end])
-                let start = ContinuousClock.now
-                let live = segmenter.liveDisplay(keys, leading: leading)
-                let elapsed = ContinuousClock.now - start
-                let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
-                print("\(keys)\t\(live.text)\t\(String(format: "%.1f", ms))")
+            typeThrough(input, segmenter: segmenter, leading: leading, stable: stablePrefix) { step in
+                print("\(step.typed)\t\(step.shown)\t\(String(format: "%.1f", step.ms))\t\(step.committed ?? "")\t\(step.open)")
             }
-            segmenter.endComposition()
         }
     case "--stages":
         let segmenter = try makeSegmenter()
