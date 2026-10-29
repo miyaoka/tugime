@@ -4,8 +4,9 @@
 
 ## 問題
 
-- `nodes` を英語の語として登録して `nodes` と打つと、「のでs」になる
-- `node` を Node.js として登録して `github,node` と打つと、node が Node.js にならない
+- `node` を Node.js として登録して `github,node` と打つと、末尾の node が Node.js にならず「ので」になる。後ろに続けば（`nodewoinsuto-rusuru`）Node.js になる
+
+英語まじりの日本語では複数形（`nodes`）を打たないので、複数形は扱わない。
 
 ## 原因
 

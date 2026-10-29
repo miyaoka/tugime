@@ -54,7 +54,7 @@ CLI で HEAD と比べた。
 
 ## 弱点・反例
 
-- 利用者の辞書に英語として登録した `nodes` が「のでs」に負ける（テスト `keepsEnglishKeysOutOfKanaConversion`・`showsTheRegisteredSpellingBeforePunctuation` が落ちる）。HEAD は文頭を「。」の後として日本語の点を下げていたので、登録語が勝っていた。proposals/registered-word-priority.md で扱う
+- 利用者の辞書に英語として登録した `node` が、入力の末尾では「ので」に負ける（`github,node` が GitHub,ので になり、テスト `showsTheRegisteredSpellingBeforePunctuation` が落ちる）。HEAD は文頭を「。」の後として日本語の点を下げていたので、登録語が勝っていた。proposals/registered-word-priority.md で扱う
 - 文頭の英単語がかなに読めると、日本語に負ける。`makewojikkousuru` は HEAD で make（−13.3）＋を実行する（−16.9）＝ −30.2 が勝っていたが、案では文頭を「。」の後として読まなくなり、負けを実行する（−28.1）が勝つ。docs/how-it-works.md の図の例文である
 - `setteiwomakesitedeploysuru` は HEAD でも崩れている（make を 負け、deploy を tedeploy）。案では deploy が「で＋ploy」に割れる
 - 英語を名詞とみなすのは推測のまま

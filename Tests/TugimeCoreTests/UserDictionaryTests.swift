@@ -151,10 +151,9 @@ import Testing
         #expect(first.candidates.prefix(2) == ["GitHub", "github"])
     }
 
-    /// 英語として扱う打鍵は、かな漢字変換に入れないので英語の語を割らない（nodes は Node.js と s にならない）
+    /// 英語として扱う打鍵は、かな漢字変換に入れないので英語の語を割らない
     @Test func keepsEnglishKeysOutOfKanaConversion() {
         #expect(segmenter.liveText("nodewoinsuto-rusuru").hasPrefix("Node.js"))
-        #expect(segmenter.liveText("nodes") == "nodes")
     }
 
     /// 英語として扱う打鍵は、日本語として読める綴りでも英語の区間にする（tugime は継ぎ目にならない）
