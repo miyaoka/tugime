@@ -51,8 +51,9 @@ public final class Segmenter {
     static let continuingJapanesePenalty = 2.0
     /// 英語の区間を 1 つ増やすごとに引く値。負なので、英語の区間は増やすほど点が上がる
     static let englishSpanPenalty = -2.0
-    /// 英字が 1 文字だけの英語の区間で、さらに引く値。入力の末尾の区間には引かない。
-    /// 末尾の 1 文字は打ちかけの綴り（ことばh の h）で、引くと前のかなを巻き込んだ英語の区間（こと + bah）が勝ち、出ていた変換が崩れる
+    /// 英字が 1 文字だけの英語の区間で、さらに引く値。入力の末尾にあって、かなに読めないその 1 文字で終わる区間には引かない。
+    /// その 1 文字は打ちかけの綴り（ことばh の h）で、引くと前のかなを巻き込んだ英語の区間（こと + bah）が勝ち、出ていた変換が崩れる。
+    /// かなに読める 1 文字（3i の i）は打ちかけではないので引く
     static let singleLetterEnglishPenalty = 3.0
     /// 利用者の辞書で英語として扱う打鍵の区間の評価値の下限と、日本語として扱う読めない打鍵の区間の評価値。
     /// かな漢字変換に入れた利用者の語 1 つの点の基準（登録数による減点と前後の連接を除いたもの）から作り、登録数によらず一定にする
@@ -422,7 +423,9 @@ public final class Segmenter {
     }
 
     private func englishSegment(_ source: String, context: JapaneseContext, atInputEnd: Bool) -> Segment {
-        let singleLetter = !atInputEnd && source.filter(\.isLetter).count == 1 ? Self.singleLetterEnglishPenalty : 0
+        let letters = source.filter(\.isLetter)
+        let typingSpelling = atInputEnd && source.last?.isLetter == true && table.reading(of: letters) == nil
+        let singleLetter = letters.count == 1 && !typingSpelling ? Self.singleLetterEnglishPenalty : 0
         let spelled = Self.englishWeight * english.logProbability(source) - Self.englishSpanPenalty - singleLetter
         let score = typedWords[source] == nil ? spelled : max(spelled, Self.registeredScore)
         return Segment(kind: .english, source: source, reading: source, output: englishOutput(source), score: score, context: context)
