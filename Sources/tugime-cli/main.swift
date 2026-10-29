@@ -17,7 +17,7 @@ let usage = """
                                               入力メソッドが未確定の文字列の下に知らせを出す表示なら、打鍵列 と知らせを標準エラーに出す（既定の形も同じ）
       tugime-cli --typing <打鍵列>...         入力メソッドで 1 打鍵ずつ打ったときの表示を出す。1 打鍵 1 行のタブ区切りで
                                               ここまでの打鍵列 画面（確定した文字列と未確定の表示） 未確定の文字列の下に出る知らせ（出なければ空） この打鍵で確定した文字列（無ければ空）
-      tugime-cli --timing <打鍵列>...         --typing と同じく 1 打鍵ずつ打ち、1 打鍵 1 行のタブ区切りで ここまでの打鍵列 画面 その打鍵の表示と確定にかかった ms この打鍵で確定した文字列 を出す
+      tugime-cli --timing <打鍵列>...         --typing と同じく 1 打鍵ずつ打ち、1 打鍵 1 行のタブ区切りで ここまでの打鍵列 画面 その打鍵の表示と確定にかかった ms この打鍵で確定した文字列 未確定の打鍵の数 を出す
       tugime-cli --stages <打鍵列>...         打鍵列ごとに、句読点で切った部分ごとの 4 段を出す。1 区切りの候補（区間と評価値）、
                                               2 辞書の変換の表記、3 モデルが比べた文の確からしさ（辞書の表記の文と、モデルが書いた表記の文の両方）と選んだ候補、
                                               最後に 4 画面の表記
@@ -46,12 +46,13 @@ func describe(_ segments: [Segment]) -> String {
 }
 
 /// 1 打鍵の結果。typed はここまでの打鍵列の全体、shown は確定した文字列と未確定の表示をつないだ画面の文字列、
-/// committed はこの打鍵で確定した文字列、ms は表示と確定にかかった時間
+/// committed はこの打鍵で確定した文字列、open はこの打鍵の後の未確定の打鍵の数、ms は表示と確定にかかった時間
 struct TypingStep {
     var typed: String
     var shown: String
     var live: Segmenter.LiveDisplay
     var committed: String?
+    var open: Int
     var ms: Double
 }
 
@@ -79,7 +80,7 @@ func typeThrough(_ input: String, segmenter: Segmenter, leading: Segmenter.Leadi
         }
         let elapsed = ContinuousClock.now - start
         let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
-        each(TypingStep(typed: String(input.prefix(offset + 1)), shown: committed + live.text, live: live, committed: done, ms: ms))
+        each(TypingStep(typed: String(input.prefix(offset + 1)), shown: committed + live.text, live: live, committed: done, open: keys.count, ms: ms))
     }
     segmenter.endComposition()
 }
@@ -211,7 +212,7 @@ do {
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
             typeThrough(input, segmenter: segmenter, leading: leading, stable: stablePrefix) { step in
-                print("\(step.typed)\t\(step.shown)\t\(String(format: "%.1f", step.ms))\t\(step.committed ?? "")")
+                print("\(step.typed)\t\(step.shown)\t\(String(format: "%.1f", step.ms))\t\(step.committed ?? "")\t\(step.open)")
             }
         }
     case "--stages":
