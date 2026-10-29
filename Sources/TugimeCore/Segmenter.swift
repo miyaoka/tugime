@@ -72,6 +72,10 @@ public final class Segmenter {
     /// 英語にも日本語にも読める語を前から決めていく途中の段の結果。段は、部分をその語の終わりまで打った入力で、
     /// 打鍵ごとに同じ段を計算し直さないために未確定の文字列の寿命だけ持つ。結果は入力だけで決まり、覚えていなくても同じになる
     var wordSteps: [RunKey: WordStep] = [:]
+    /// 入力の最後の部分で、最後に計算した途中の段の終わり（入力の中の位置）と、その段が次に残した語の割り当て。前半を確定するときに引き継ぐ
+    var openRunBeam: (offset: Int, upTo: Int, beam: [[WordSpan: Bool]])?
+    /// 前半を確定した後の入力の先頭の部分で、upTo までの段を計算し直さず、beam から続ける。位置は確定した後の入力の中
+    var carriedBeam: (upTo: Int, beam: [[WordSpan: Bool]])?
 
     /// 語を決める 1 つの段の結果。best は選んだ区切り、beam は次の段に残す語の割り当て
     struct WordStep {
@@ -345,16 +349,27 @@ public final class Segmenter {
         let registered = SpanConstraint(registered: registeredSpans(chars))
         let ranked = { self.judge(self.rankedCandidates(input, leading: leading, offset: offset, ending: ending, constraint: registered, observe: observe), left: left) }
         let words = ambiguousWords(chars).map { WordSpan(start: $0.start + offset, text: $0.text) }
-        guard !words.isEmpty, japaneseConverter.evaluatesSentences else { return ranked() }
+        guard !words.isEmpty, japaneseConverter.evaluatesSentences else {
+            if ending == .open { openRunBeam = nil }
+            return ranked()
+        }
         // 診断（--lattice）には、語の英語か日本語かの条件を課さない採点で比べた区間の候補を渡す（登録した打鍵の条件は課す）
         if observe != nil { _ = rankedCandidates(input, leading: leading, offset: offset, ending: ending, constraint: registered, observe: observe) }
         // 診断（--stages）に渡すのは、部分そのものを決める最後の段だけにする
         let observer = judgeObserver
         judgeObserver = nil
         var beam: [[WordSpan: Bool]] = [[:]]
-        for end in Set(words.map { $0.range.upperBound - offset }).sorted() where end < chars.count {
-            beam = wordStep(String(chars[..<end]), leading: leading, offset: offset, ending: .open, left: left, beam: beam).beam
+        var upTo = offset
+        // 前半を確定した後は、確定の前に決めた語の割り当てから続け、確定の前に計算した段を計算し直さない
+        if offset == 0, ending == .open, let carried = carriedBeam {
+            beam = carried.beam
+            upTo = carried.upTo
         }
+        for end in Set(words.map { $0.range.upperBound - offset }).sorted() where end < chars.count && end + offset > upTo {
+            beam = wordStep(String(chars[..<end]), leading: leading, offset: offset, ending: .open, left: left, beam: beam).beam
+            upTo = end + offset
+        }
+        if ending == .open { openRunBeam = (offset, upTo, beam) }
         judgeObserver = observer
         return wordStep(input, leading: leading, offset: offset, ending: ending, left: left, beam: beam).best
     }

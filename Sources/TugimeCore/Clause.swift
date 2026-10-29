@@ -70,13 +70,23 @@ extension Segmenter {
         clauses(of: segment(input, leading: leading), left: leading.text, firstIndex: 0)
     }
 
-    /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る
-    private func clauses(of segments: [Segment], left: String, firstIndex: Int) -> [Clause] {
+    /// clauses と同じ文節に分け、候補は表示している 1 つだけにする。確定する位置を決めるときに使う
+    func shownClauses(_ input: String, leading: Leading) -> [Clause] {
+        clauses(of: segment(input, leading: leading), left: leading.text, firstIndex: 0, listsCandidates: false)
+    }
+
+    /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る。
+    /// listsCandidates が偽なら、候補の一覧を引かずに表示している 1 つだけを候補にする
+    private func clauses(of segments: [Segment], left: String, firstIndex: Int, listsCandidates: Bool = true) -> [Clause] {
         zip(segments, displays(of: segments.map(ShownSpan.init), left: left)).enumerated().flatMap { offset, pair in
             let (segment, display) = pair
             let span = ClauseSpan(index: firstIndex + offset, source: segment.source, reading: segment.reading, context: segment.context)
             guard let display else {
-                return [Clause(kind: Clause.Kind(segment.kind), reading: segment.reading, candidates: candidates(for: segment), selected: 0, span: span)]
+                let list = listsCandidates ? candidates(for: segment) : [segment.output]
+                return [Clause(kind: Clause.Kind(segment.kind), reading: segment.reading, candidates: list, selected: 0, span: span)]
+            }
+            guard listsCandidates else {
+                return display.clauses.map { Clause(kind: .japanese, reading: $0.reading, candidates: [$0.text], selected: 0, span: span) }
             }
             return japaneseClauses(display.clauses, context: span.context, in: span)
         }

@@ -70,6 +70,8 @@ final class TugimeInputController: IMKInputController {
     private var leading: Segmenter.Leading = .start
     /// 入力欄が前の文字列を返さないときの代わりに、tugime が確定した文字列を持つ
     private var leadingContext = LeadingContext()
+    /// 打っている途中の表示のうち、変わらなくなった先頭を確定する
+    private var stablePrefix = StablePrefix.standard
 
     /// 入力欄のカーソルより前の文字列を読む。入力欄が返さなければ、tugime が続けて確定した文字列を使う
     private func readLeading(of client: IMKTextInput) -> Segmenter.Leading {
@@ -307,12 +309,15 @@ final class TugimeInputController: IMKInputController {
             guard !keys.isEmpty else { return false }
             keys.removeLast()
             if keys.isEmpty { sharedSegmenter.endComposition() }
+            // 消した後は、打ち直した表示が続けて変わらなくなるまで確定しない
+            stablePrefix.reset()
             showMarkedText(client)
             return true
         case KeyCode.escape:
             guard !keys.isEmpty else { return false }
             keys = ""
             sharedSegmenter.endComposition()
+            stablePrefix.reset()
             showMarkedText(client)
             return true
         default:
@@ -413,7 +418,21 @@ final class TugimeInputController: IMKInputController {
         }
         keys.append(text)
         showMarkedText(client)
+        commitStablePrefix(client)
         return true
+    }
+
+    /// 打っている途中の表示の先頭が変わらなくなったら、その先頭に収まる文節までを確定する。確定した文字列は変換し直さない
+    private func commitStablePrefix(_ client: IMKTextInput) {
+        guard clauses == nil, let prefix = stablePrefix.prefix(keyCount: keys.count),
+              let result = sharedSegmenter.commit(keys, leading: leading, within: prefix, keeping: stablePrefix.keptKeys)
+        else { return }
+        insert(result.text, client: client)
+        keys = result.keys
+        // 残りは、確定した文字列の後ろとして区切る
+        leading = readLeading(of: client)
+        stablePrefix.reset()
+        showMarkedText(client)
     }
 
     // MARK: 表示と確定
@@ -432,6 +451,7 @@ final class TugimeInputController: IMKInputController {
             let live = sharedSegmenter.liveDisplay(keys, leading: leading)
             marked.append(styled(live.text, style: kTSMHiliteRawText, at: 0))
             differs = live.differsFromInput
+            stablePrefix.record(live.text)
         }
         // カーソルは常に末尾に置く。ターミナル（xterm.js）はカーソルの位置を未確定の文字列の終わりとして読むので、途中に置くと確定する文字列が欠ける
         client.setMarkedText(
@@ -478,6 +498,7 @@ final class TugimeInputController: IMKInputController {
         keys = result.keys
         self.clauses = result.rest
         focus = 0
+        stablePrefix.reset()
         // 残りを打っている途中の表示に戻したときは、確定した文字列の後ろとして区切る
         leading = readLeading(of: client)
         showMarkedText(client)
@@ -493,6 +514,7 @@ final class TugimeInputController: IMKInputController {
         clauses = nil
         focus = 0
         sharedSegmenter.endComposition()
+        stablePrefix.reset()
     }
 
     private func insert(_ text: String, client: IMKTextInput) {

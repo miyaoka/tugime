@@ -74,6 +74,8 @@ extension Segmenter {
         japaneseConverter.endComposition()
         closedRuns = [:]
         wordSteps = [:]
+        openRunBeam = nil
+        carriedBeam = nil
     }
 
     /// 利用者の語を置き換える。未確定の文字列は終わる。
