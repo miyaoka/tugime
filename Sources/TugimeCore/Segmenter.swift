@@ -339,12 +339,13 @@ public final class Segmenter {
     /// あれば、利用者が前から打つのと同じ順に語を決めていく。部分を語の終わりまで打った入力を段とし、段ごとに wordStep で決める。
     /// 結果は入力だけで決まる。段の結果は覚えて使い回すので、1 打鍵ずつ打つときは新しく現れた段だけを計算する
     private func judgeRun(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, observe: ((ScoredSpan) -> Void)?, left: String) -> [Segment] {
-        let ranked = { self.judge(self.segmentRun(input, leading: leading, offset: offset, ending: ending, width: self.judgedCandidates, constraint: nil, observe: observe), left: left) }
         let chars = Array(input)
+        let registered = SpanConstraint(registered: registeredSpans(chars))
+        let ranked = { self.judge(self.rankedCandidates(input, leading: leading, offset: offset, ending: ending, constraint: registered, observe: observe), left: left) }
         let words = ambiguousWords(chars).map { WordSpan(start: $0.start + offset, text: $0.text) }
         guard !words.isEmpty, japaneseConverter.evaluatesSentences else { return ranked() }
         // 診断（--lattice）には、条件を課さない採点で比べた区間の候補を渡す
-        if observe != nil { _ = segmentRun(input, leading: leading, offset: offset, ending: ending, width: judgedCandidates, constraint: nil, observe: observe) }
+        if observe != nil { _ = rankedCandidates(input, leading: leading, offset: offset, ending: ending, constraint: registered, observe: observe) }
         // 診断（--stages）に渡すのは、部分そのものを決める最後の段だけにする
         let observer = judgeObserver
         judgeObserver = nil
@@ -362,9 +363,10 @@ public final class Segmenter {
     private func wordStep(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, left: String, beam: [[WordSpan: Bool]]) -> WordStep {
         let key = RunKey(input: input, leading: leading, offset: offset, ending: ending, left: left)
         if judgeObserver == nil, let cached = wordSteps[key] { return cached }
+        let registered = registeredSpans(Array(input))
         // 組み合わせを比べない段も、結果を覚えて打鍵ごとに計算し直さない
         let ranked = { () -> WordStep in
-            let best = self.judge(self.segmentRun(input, leading: leading, offset: offset, ending: ending, width: self.judgedCandidates, constraint: nil, observe: nil), left: left)
+            let best = self.judge(self.rankedCandidates(input, leading: leading, offset: offset, ending: ending, constraint: SpanConstraint(registered: registered), observe: nil), left: left)
             let step = WordStep(best: best, beam: beam)
             self.wordSteps[key] = step
             return step
@@ -382,7 +384,7 @@ public final class Segmenter {
             for mask in 0..<(1 << open.count) {
                 let english = base.filter(\.value).map(\.key) + open.indices.filter { mask & (1 << $0) != 0 }.map { open[$0] }
                 let notEnglish = base.filter { !$0.value }.map(\.key) + open.indices.filter { mask & (1 << $0) == 0 }.map { open[$0] }
-                let constraint = SpanConstraint(english: english.map(local), notEnglish: notEnglish.map(local))
+                let constraint = SpanConstraint(english: english.map(local), notEnglish: notEnglish.map(local), registered: registered)
                 guard let found = segmentRun(input, leading: leading, offset: offset, ending: ending, width: 1, constraint: constraint, observe: nil).first else { continue }
                 let key = found.map { "\($0.kind)\($0.source)" }
                 guard !candidates.contains(where: { $0.segments.map { "\($0.kind)\($0.source)" } == key }) else { continue }
@@ -440,17 +442,42 @@ public final class Segmenter {
     /// 英語にも日本語にも読める語として探す綴りの長さの上限
     private static let maxAmbiguousWordLength = 12
 
-    /// 区切りに課す条件。english の範囲はちょうどその範囲の英語区間にし、notEnglish の範囲はちょうどその範囲の英語区間にしない
+    /// 区切りに課す条件。english の範囲はちょうどその範囲の英語区間にし、notEnglish の範囲はちょうどその範囲の英語区間にしない。
+    /// registered の範囲には日本語区間を重ねない（英語区間か利用者の語の区間で覆う）
     private struct SpanConstraint {
-        var english: [Range<Int>]
-        var notEnglish: [Range<Int>]
+        var english: [Range<Int>] = []
+        var notEnglish: [Range<Int>] = []
+        var registered: [Range<Int>] = []
 
         func allows(_ range: Range<Int>, kind: Segment.Kind) -> Bool {
             for forced in english where forced.overlaps(range) {
                 guard kind == .english, forced == range else { return false }
             }
+            if kind == .japanese, registered.contains(where: { $0.overlaps(range) }) { return false }
             return !(kind == .english && notEnglish.contains(range))
         }
+    }
+
+    /// 採点の点の上位 judgedCandidates 個の区切り。constraint を満たす区切りが無ければ、条件を課さずに採る
+    private func rankedCandidates(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, constraint: SpanConstraint, observe: ((ScoredSpan) -> Void)?) -> [[Segment]] {
+        let found = segmentRun(input, leading: leading, offset: offset, ending: ending, width: judgedCandidates, constraint: constraint, observe: observe)
+        return found.isEmpty ? segmentRun(input, leading: leading, offset: offset, ending: ending, width: judgedCandidates, constraint: nil, observe: nil) : found
+    }
+
+    /// 利用者の辞書に登録した打鍵とちょうど一致し、両側が区切りの端（部分の先頭か末尾、句読点、空白）の範囲。
+    /// 登録した打鍵は利用者が決めた語なので、日本語の読みと点で比べさせない。語の途中で一致したもの（sukinanodesu の node）は含めない
+    private func registeredSpans(_ chars: [Character]) -> [Range<Int>] {
+        let isEdge = { (i: Int) in i < 0 || i >= chars.count || chars[i] == " " || Self.punctuation[chars[i]] != nil }
+        var spans: [Range<Int>] = []
+        for keys in Array(typedWords.keys) + Array(typedJapaneseWords.keys) {
+            let key = Array(keys)
+            guard !key.isEmpty, key.count <= chars.count else { continue }
+            for start in 0...(chars.count - key.count) where Array(chars[start..<(start + key.count)]) == key {
+                guard isEdge(start - 1), isEdge(start + key.count) else { continue }
+                spans.append(start..<(start + key.count))
+            }
+        }
+        return spans
     }
 
     /// 区切りの候補のうち、表示にした文が left に続く文として最も確からしいもの。候補は採点の点の高い順に並ぶ。
