@@ -16,6 +16,16 @@ import TugimeCore
         #expect(judge("明日は会議がarim", "asitahakaigigaarim", "明日は会議があります", "あしたはかいぎがあります") == .leftLetters)
     }
 
+    /// 句読点や記号の後ろの、読み切った打鍵は打ちかけではない
+    @Test func readsPastPunctuation() {
+        #expect(judge("愛、ai", "ai,ai", "愛、愛", "あい、あい") == .leftLetters)
+        #expect(judge("愛、愛", "ai,ai", "愛、愛", "あい、あい") == .followsAnswer)
+        #expect(judge("愛、あk", "ai,ak", "愛、明るい", "あい、あかるい") == .followsAnswer)
+        #expect(judge("愛、け", "ai,ke", "愛、明るい", "あい、あかるい") == .offAnswer)
+        #expect(judge("会、あ", "ai,a", "愛、明るい", "あい、あかるい") == .offAnswer)
+        #expect(judge("「ai", "[ai", "「愛」", "「あい」") == .leftLetters)
+    }
+
     /// 打っている語をかなのまま見せるのは正解に向かっている。かなが読みと違えば外れる
     @Test func acceptsTheReadingShownAsKana() {
         #expect(judge("の依頼がくr", "noiraigakur", "の依頼が来る", "のいらいがくる") == .followsAnswer)

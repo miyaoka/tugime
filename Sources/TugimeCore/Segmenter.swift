@@ -578,6 +578,18 @@ public final class Segmenter {
         return nil
     }
 
+    /// 最後の句読点か記号の打鍵の終わりの位置。無ければ 0
+    public static func lastMarkEnd(in chars: [Character]) -> Int {
+        var last = 0
+        var i = 0
+        while i < chars.count {
+            let key = symbol(at: i, in: chars)?.key ?? String(chars[i])
+            if symbols[key] != nil || punctuation[chars[i]] != nil { last = i + key.count }
+            i += key.count
+        }
+        return last
+    }
+
     /// 区切りの DP の状態。日本語区間の終わりのつながりは後ろに続くもので変わるので、後ろに英語区間か利用者の語の区間が続くときの点を、
     /// 後ろに日本語区間が続くか input の終わりに来るときの点と分けて持つ
     private enum Slot: Hashable {

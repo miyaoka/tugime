@@ -13,7 +13,9 @@ public enum LiveCheck: String, Sendable, CaseIterable {
     /// typed はその打鍵までの打鍵列、reading は打ち終えたときの読み
     public static func judge(display: String, typed: String, answers: [String], reading: String, table: RomajiTable) -> LiveCheck {
         let chars = Array(typed)
-        let readEnd = table.readings(from: 0, in: chars).last?.end ?? 0
+        // 綴りの表は句読点と記号を読まないので、最後の句読点か記号の後ろから読む
+        let runStart = Segmenter.lastMarkEnd(in: chars)
+        let readEnd = table.readings(from: runStart, in: chars).last?.end ?? runStart
         // 読み切れない打鍵のうち、表示の末尾に打ったまま出ている分（いっt の t）
         let unread = chars[readEnd...]
         let shownUnread = (0...unread.count).reversed().first { display.hasSuffix(String(unread.suffix($0))) } ?? 0
@@ -26,6 +28,14 @@ public enum LiveCheck: String, Sendable, CaseIterable {
     /// shown が answer の先頭か、answer の読みの位置が確定した箇所までの先頭に、その先の読みのかなを続けたものか
     static func follows(_ shown: String, answer: String, reading: String) -> Bool {
         if answer.hasPrefix(shown) { return true }
+        // 句読点と記号は正解にも読みにもそのまま出る。表示の最後の記号までが正解の先頭に一致すれば、その後ろを正解と読みの残りで判定する
+        if let last = shown.lastIndex(where: isMark) {
+            let head = shown[...last]
+            guard answer.hasPrefix(head) else { return false }
+            let marks = head.filter(isMark).count
+            guard let cut = reading.indices.filter({ isMark(reading[$0]) }).dropFirst(marks - 1).first else { return false }
+            return follows(String(shown[shown.index(after: last)...]), answer: String(answer.dropFirst(head.count)), reading: String(reading[reading.index(after: cut)...]))
+        }
         guard let alignment = ReadingAlignment(text: answer, reading: reading) else { return false }
         let text = Array(answer)
         let shownChars = Array(shown)
@@ -38,6 +48,10 @@ public enum LiveCheck: String, Sendable, CaseIterable {
             if zip(tail, readingChars[position...]).allSatisfy({ ReadingAlignment.anchor($0) == $1 }) { return true }
         }
         return false
+    }
+
+    private static func isMark(_ c: Character) -> Bool {
+        c.isPunctuation || c.isSymbol
     }
 
     private static func hasLetter(_ text: String) -> Bool {
