@@ -64,21 +64,10 @@ func typeThrough(_ input: String, segmenter: Segmenter, leading: Segmenter.Leadi
     var before = leading
     var stable = stable
     for (offset, key) in input.enumerated() {
-        keys.append(key)
         let start = ContinuousClock.now
-        var live = segmenter.liveDisplay(keys, leading: before)
-        stable.record(live.text)
-        var done: String?
-        if let prefix = stable.prefix(keyCount: keys.count), let result = segmenter.commit(keys, leading: before, within: prefix, keeping: stable.keptKeys) {
-            done = result.text
-            committed += result.text
-            keys = result.keys
-            before = Segmenter.Leading(field: leading.text + committed)
-            stable.reset()
-            live = segmenter.liveDisplay(keys, leading: before)
-            stable.record(live.text)
-        }
+        let (live, done) = stable.append(String(key), to: &keys, leading: &before, segmenter: segmenter)
         let elapsed = ContinuousClock.now - start
+        committed += done ?? ""
         let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
         each(TypingStep(typed: String(input.prefix(offset + 1)), shown: committed + live.text, live: live, committed: done, open: keys.count, ms: ms))
     }

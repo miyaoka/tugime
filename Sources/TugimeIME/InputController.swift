@@ -287,8 +287,7 @@ final class TugimeInputController: IMKInputController {
             // 打っている途中も変換して見せているので、Space は日本語の文に英語の語句を空白で区切って混ぜるのに使い、
             // 文節の選択には Shift+Space で入る
             if !event.modifierFlags.contains(.shift) {
-                keys.append(" ")
-                showMarkedText(client)
+                type(" ", client: client)
                 return true
             }
             clauses = sharedSegmenter.clauses(keys, leading: leading)
@@ -361,6 +360,8 @@ final class TugimeInputController: IMKInputController {
                 candidatePanel.hide()
             } else {
                 self.clauses = nil
+                // 戻った後は、打ち直した表示が続けて変わらなくなるまで確定しない
+                stablePrefix.reset()
                 showMarkedText(client)
             }
         default:
@@ -416,30 +417,24 @@ final class TugimeInputController: IMKInputController {
             // 辞書を替えるのは未確定の文字列の始まりだけにする。打っている途中に替えると、同じ打鍵列の表示が途中で変わる
             userDictionaryFile.refresh(into: sharedSegmenter)
         }
-        keys.append(text)
-        showMarkedText(client)
-        commitStablePrefix(client)
+        type(text, client: client)
         return true
     }
 
-    /// 打っている途中の表示の先頭が変わらなくなったら、その先頭に収まる文節までを確定する。確定した文字列は変換し直さない
-    private func commitStablePrefix(_ client: IMKTextInput) {
-        guard clauses == nil, let prefix = stablePrefix.prefix(keyCount: keys.count),
-              let result = sharedSegmenter.commit(keys, leading: leading, within: prefix, keeping: stablePrefix.keptKeys)
-        else { return }
-        insert(result.text, client: client)
-        keys = result.keys
-        // 残りは、確定した文字列の後ろとして区切る
-        leading = readLeading(of: client)
-        stablePrefix.reset()
-        showMarkedText(client)
+    /// 打っている途中の打鍵列に打鍵を足して表示する。表示の先頭が変わらなくなっていれば、その先頭に収まる文節までを確定する。
+    /// 確定した文字列は変換し直さず、残りは確定した文字列の後ろとして区切る
+    private func type(_ key: String, client: IMKTextInput) {
+        let (display, committed) = stablePrefix.append(key, to: &keys, leading: &leading, segmenter: sharedSegmenter)
+        if let committed { insert(committed, client: client) }
+        showMarkedText(client, live: display)
     }
 
     // MARK: 表示と確定
 
     /// 文節の選択に入る前は打っている途中の変換を 1 つの未確定の文字列として表示し、それが打った読みと合わなければ警告の窓を出す。
-    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。警告の窓は出さない
-    private func showMarkedText(_ client: IMKTextInput) {
+    /// 入った後は文節ごとの選択を表示し、選んでいる文節を強調する。警告の窓は出さない。
+    /// live は打っている途中の表示を計算したもの。無ければ計算する
+    private func showMarkedText(_ client: IMKTextInput, live computed: Segmenter.LiveDisplay? = nil) {
         let marked = NSMutableAttributedString()
         var differs = false
         if let clauses {
@@ -448,10 +443,9 @@ final class TugimeInputController: IMKInputController {
                 marked.append(styled(clause.output, style: style, at: marked.length))
             }
         } else {
-            let live = sharedSegmenter.liveDisplay(keys, leading: leading)
+            let live = computed ?? sharedSegmenter.liveDisplay(keys, leading: leading)
             marked.append(styled(live.text, style: kTSMHiliteRawText, at: 0))
             differs = live.differsFromInput
-            stablePrefix.record(live.text)
         }
         // カーソルは常に末尾に置く。ターミナル（xterm.js）はカーソルの位置を未確定の文字列の終わりとして読むので、途中に置くと確定する文字列が欠ける
         client.setMarkedText(

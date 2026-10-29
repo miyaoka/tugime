@@ -29,5 +29,31 @@ import Testing
         #expect(result.keys.count >= 5)
         #expect(segmenter.commit(input, leading: .start, within: shown, keeping: input.count) == nil)
         #expect(segmenter.commit(input, leading: .start, within: "", keeping: 1) == nil)
+        #expect(result.leading == Segmenter.Leading(field: result.text))
+    }
+
+    /// 打鍵を足す手順で確定したら、打鍵列を残りに、前にあるものを確定した文字列が続いたものにする
+    @Test func appendingKeysCommitsAndMovesTheLeading() throws {
+        let segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: ConversionMethod.baseline.make(dictionary: TestDictionary.shared))
+        var stable = StablePrefix(keystrokes: 3, minimumKeys: 10, keptKeys: 5)
+        var keys = ""
+        var leading = Segmenter.Leading.start
+        var committed = ""
+        for key in "kyouhaasakaraamegahutteitanodedekakeru" {
+            committed += stable.append(String(key), to: &keys, leading: &leading, segmenter: segmenter).committed ?? ""
+        }
+        #expect(!committed.isEmpty)
+        #expect(leading == Segmenter.Leading(field: committed))
+        #expect("kyouhaasakaraamegahutteitanodedekakeru".hasSuffix(keys))
+    }
+
+    /// 引き継いだ割り当ては、確定したときと同じ打鍵・文脈に続く、入力の先頭の部分にだけ使う
+    @Test func carriedBeamAppliesOnlyToTheSameHead() {
+        let carried = Segmenter.CarriedBeam(head: "modewo", leading: .afterCaret, left: "設定の", beam: [[:]])
+        #expect(carried.applies(to: "modewokirikae", leading: .afterCaret, offset: 0, left: "設定の"))
+        #expect(!carried.applies(to: "modowokirikae", leading: .afterCaret, offset: 0, left: "設定の"))
+        #expect(!carried.applies(to: "modewokirikae", leading: .afterCaret, offset: 0, left: "設定を"))
+        #expect(!carried.applies(to: "modewokirikae", leading: .start, offset: 0, left: "設定の"))
+        #expect(!carried.applies(to: "modewokirikae", leading: .afterCaret, offset: 3, left: "設定の"))
     }
 }

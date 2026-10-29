@@ -72,6 +72,11 @@ extension Segmenter {
     /// 未確定の文字列を確定・取り消ししたときに呼ぶ
     public func endComposition() {
         japaneseConverter.endComposition()
+        forgetComposition()
+    }
+
+    /// 未確定の文字列 1 つの間だけ覚えるものを捨てる
+    private func forgetComposition() {
         closedRuns = [:]
         wordSteps = [:]
         openRunBeam = nil
@@ -94,8 +99,7 @@ extension Segmenter {
             readable.insert(keys)
         }
         japaneseConverter.replaceUserWords(converted)
-        closedRuns = [:]
-        wordSteps = [:]
+        forgetComposition()
         typedWords = dictionary.words(of: .english)
         typedJapaneseWords = typed
         typedReadableJapanese = readable

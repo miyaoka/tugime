@@ -122,7 +122,7 @@ public enum KeystrokeBench {
     }
 
     /// 不変条件:
-    /// - 文ごとに、打鍵列の先頭 1 文字から全体まで 1 打鍵ずつ伸ばして liveText(prefix, leading: leading) を呼ぶ。入力メソッドが打鍵ごとに呼ぶのと同じ
+    /// - 文ごとに、打鍵列の先頭 1 文字から全体まで 1 打鍵ずつ伸ばして liveText(prefix, leading: leading) を呼ぶ。入力メソッドと違い、前の部分を確定しない
     /// - 文の前に endComposition を呼ぶ。文の中では呼ばない（入力メソッドは打ち終えるまで覚えを持ち越す）
     public static func run(
         selection: KeystrokeScript.Selection,
