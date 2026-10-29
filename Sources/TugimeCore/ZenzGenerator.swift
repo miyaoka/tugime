@@ -24,13 +24,16 @@ final class ZenzGenerator: DirectDisplayGenerating {
     private static let generationSequences = 8
     /// 文の確からしさを 1 回の decode で測る文の数。文ごとに KV キャッシュの系列を 1 つ使う（表示の生成の系列の後ろ）。数の理由は generationSequences と同じ
     private static let naturalnessSequences = 8
-    /// 文の確からしさを測る系列のために、表示の生成の位置の上限に足す KV キャッシュのセル数。
-    /// 系列はセルを共有し、文の前に置く入力（左の文脈）は全系列で 1 組のセルを使う。左の文脈は最大 500 字なので、その分と文に足りる
-    private static let naturalnessCells = 1024
 
-    /// 1 回の decode に入れるトークンの上限。生成は系列ごとに位置の上限まで同時に入れ、文の確からしさは naturalnessCells に収まる
+    /// KV キャッシュのセル数。生成の系列はそれぞれ位置の上限まで使い、文の確からしさを測る系列は全部で位置の上限ぶんのセルを共有する。
+    /// 文の確からしさは、文の前に置く入力と同時に測る文の和が位置の上限に収まるように組を分けるので、セルは足りる
+    private static func cells(maxPositions: Int) -> Int {
+        maxPositions * (generationSequences + 1)
+    }
+
+    /// 1 回の decode に入れるトークンの上限。生成は系列ごとに位置の上限まで同時に入れる。文の確からしさは位置の上限に収まる
     private static func batchCapacity(maxPositions: Int) -> Int {
-        max(maxPositions * generationSequences, maxPositions + naturalnessCells)
+        maxPositions * generationSequences
     }
 
     private static let backend: Void = llama_backend_init()
@@ -63,7 +66,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
         vocab = llama_model_get_vocab(model)!
         maxPositions = Int(llama_model_n_ctx_train(model))
         var contextParams = llama_context_default_params()
-        contextParams.n_ctx = UInt32(maxPositions * Self.generationSequences + Self.naturalnessCells)
+        contextParams.n_ctx = UInt32(Self.cells(maxPositions: maxPositions))
         contextParams.n_batch = UInt32(Self.batchCapacity(maxPositions: maxPositions))
         contextParams.n_seq_max = UInt32(Self.generationSequences + Self.naturalnessSequences)
         // 系列ごとに位置の上限ぶんのセルを分けると、使わない系列のセルまで確保する。系列でセルを共有する
@@ -100,18 +103,39 @@ final class ZenzGenerator: DirectDisplayGenerating {
     }
 
     /// 文ごとに系列を 1 つ使い、naturalnessSequences 個ずつ 1 回の decode で測る。表示の生成の系列には触れないので、生成の使い回しは壊れない。
-    /// 文の前に置く入力は全系列で同じなので、前と同じなら計算し直さず、文の部分だけを消して入れ直す
-    func naturalness(left: String, texts: [String]) -> [Double] {
-        let prefix = tokenize(ZenzPrompt.naturalnessPrefix(left: left))
+    /// 文の前に置く入力は全系列で同じなので、前と同じなら計算し直さず、文の部分だけを消して入れ直す。
+    /// 文の前に置く入力と最も長い文が位置の上限に収まるよう、左の文脈を前から削る。左の文脈を空にしても収まらない文があれば nil
+    func naturalness(left: String, texts: [String]) -> [Double]? {
         let bodies = texts.map { Array(tokenize(ZenzPrompt.naturalnessBody($0)).dropFirst()) }
+        guard let longest = bodies.map(\.count).max() else { return [] }
+        guard let prefix = fittedNaturalnessPrefix(left: left, room: maxPositions - longest) else { return nil }
         var values: [Double] = []
         var rest = bodies[...]
         while !rest.isEmpty {
-            let group = Array(rest.prefix(Self.naturalnessSequences))
-            rest = rest.dropFirst(group.count)
+            // 同時に測る文の和と、文の前に置く入力が、文の確からしさのためのセル（位置の上限ぶん）に収まる組にする
+            var group: [[llama_token]] = []
+            var used = prefix.count
+            while let body = rest.first, group.count < Self.naturalnessSequences, used + body.count <= maxPositions {
+                group.append(body)
+                used += body.count
+                rest = rest.dropFirst()
+            }
             values += scoreBodies(prefix: prefix, bodies: group)
         }
         return values
+    }
+
+    /// 文の確からしさを測るときに文の前に置く入力のうち、room トークン以内に収まるもの。左の文脈を前から削る。文脈を空にしても収まらなければ nil
+    private func fittedNaturalnessPrefix(left: String, room: Int) -> [llama_token]? {
+        var scalars = Array(left.unicodeScalars.suffix(ZenzPrompt.maxContextLength))
+        while true {
+            let prefix = tokenize(ZenzPrompt.naturalnessPrefix(left: String(String.UnicodeScalarView(scalars))))
+            let over = prefix.count - room
+            if over <= 0 { return prefix }
+            if scalars.isEmpty { return nil }
+            // 1 字は 1 トークン以上なので、超えたトークンの数だけ字を削れば、少なくともその数のトークンが減る
+            scalars.removeFirst(min(over, scalars.count))
+        }
     }
 
     /// 文の確からしさを測る系列の番号。表示の生成の系列の後ろに置く

@@ -69,7 +69,7 @@ private final class FixedGenerator: DirectDisplayGenerating {
         }
     }
 
-    func naturalness(left: String, texts: [String]) -> [Double] { texts.map { _ in 0 } }
+    func naturalness(left: String, texts: [String]) -> [Double]? { texts.map { _ in 0 } }
 
     func reset() { resets += 1 }
 }

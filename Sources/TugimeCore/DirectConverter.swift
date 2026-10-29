@@ -7,7 +7,8 @@ protocol DirectDisplayGenerating: AnyObject {
     /// reset の直後の呼び出しは、前の呼び出しに左右されない
     func generate(_ requests: [GenerationRequest]) -> [String]
     /// left の後に texts のそれぞれを置いたときの、文ごとのトークン列の対数確率の和。texts と同じ順に返す
-    func naturalness(left: String, texts: [String]) -> [Double]
+    /// モデルの位置の上限に収まらない文があって測れなければ nil
+    func naturalness(left: String, texts: [String]) -> [Double]?
     /// 生成を速くするために覚えたものを捨てる。次の未確定の文字列は前の文字列の計算を引き継がない
     func reset()
 }
@@ -99,11 +100,16 @@ final class DirectConverter: JapaneseConverting {
         }
     }
 
-    /// 覚えていない文だけを、まとめて生成するものに測らせる
+    var evaluatesSentences: Bool { true }
+
+    /// 覚えていない文だけを、まとめて生成するものに測らせる。まとめて計算する組は浮動小数の丸めに効くので、texts に現れた順を保つ。
+    /// 生成するものが測れない文（位置の上限に収まらない）を含めば nil
     func naturalness(texts: [String], left: String) -> [Double]? {
-        let missing = Array(Set(texts.filter { naturalnesses[NaturalnessKey(text: $0, left: left)] == nil }))
+        var missing: [String] = []
+        for text in texts where naturalnesses[NaturalnessKey(text: text, left: left)] == nil && !missing.contains(text) { missing.append(text) }
         if !missing.isEmpty {
-            for (text, value) in zip(missing, generator.naturalness(left: left, texts: missing)) {
+            guard let values = generator.naturalness(left: left, texts: missing) else { return nil }
+            for (text, value) in zip(missing, values) {
                 naturalnesses[NaturalnessKey(text: text, left: left)] = value
             }
         }

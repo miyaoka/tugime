@@ -131,8 +131,10 @@ public protocol JapaneseConverting: AnyObject {
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay?
     /// requests のそれぞれの display。requests と同じ順に返す。まとめて渡したものは同時に計算してよい
     func displays(_ requests: [DisplayRequest]) -> [JapaneseDisplay?]
+    /// 文を評価するモデルを持つか。持たない変換器では、区切りは採点の点だけで決まり、naturalness は nil を返す
+    var evaluatesSentences: Bool { get }
     /// left に続く texts のそれぞれの、文としての確からしさ（対数確率）。texts と同じ順に返す。日英の区切りの候補を表示にした文どうしを比べるのに使う。
-    /// 文を評価するモデルを持たない変換器は nil を返し、区切りは採点の点だけで決まる
+    /// evaluatesSentences が偽なら nil
     func naturalness(texts: [String], left: String) -> [Double]?
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
     func endComposition()
@@ -142,6 +144,8 @@ public protocol JapaneseConverting: AnyObject {
 }
 
 extension JapaneseConverting {
+    public var evaluatesSentences: Bool { false }
+
     /// まとめて計算する仕組みを持たない変換器は、1 つずつ display にする
     public func displays(_ requests: [DisplayRequest]) -> [JapaneseDisplay?] {
         requests.map { display(kana: $0.kana, context: $0.context, left: $0.left) }

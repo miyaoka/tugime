@@ -300,7 +300,7 @@ private final class RewritingConverter: JapaneseConverting {
         let leading = Segmenter.Leading("奈良")
         let left = try convertedLeft(leading: leading)
         _ = segmenter.liveText(input, leading: leading)
-        // 区切りの候補を比べるときにも同じ左の文脈で表示にするので、表示を作る最後の 2 回を見る
+        // 区切りを決めた部分は、後ろの部分の左の文脈にするために一度表示にする。表示を出す最後の 2 回を見る
         #expect(recorder.lefts.suffix(2) == ["奈良", "奈良" + left])
     }
 

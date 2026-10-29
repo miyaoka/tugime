@@ -65,13 +65,19 @@ public final class Segmenter {
     /// 句読点で切った部分ごとに、表示にして文として比べる区切りの候補の数
     public var judgedCandidates = Segmenter.defaultJudgedCandidates
 
-    /// 前の打鍵までに、英語にも日本語にも読める語を英語にするか（true）日本語にするか（false）決めた割り当て。
-    /// キーは入力全体での位置と綴り。文として確からしい順に、decidedBeamWidth 個まで並ぶ
-    var decidedBeam: [[WordSpan: Bool]] = [[:]]
     /// 句読点か記号の手前で終わる部分の、区切りと表示。未確定の文字列の寿命だけ持つ
-    var closedRuns: [ClosedRunKey: (segments: [Segment], text: String)] = [:]
+    var closedRuns: [RunKey: (segments: [Segment], text: String)] = [:]
+    /// 英語にも日本語にも読める語を前から決めていく途中の段の結果。段は、部分をその語の終わりまで打った入力で、
+    /// 打鍵ごとに同じ段を計算し直さないために未確定の文字列の寿命だけ持つ。結果は入力だけで決まり、覚えていなくても同じになる
+    var wordSteps: [RunKey: WordStep] = [:]
 
-    struct ClosedRunKey: Hashable {
+    /// 語を決める 1 つの段の結果。best は選んだ区切りとその表示、beam は次の段に残す語の割り当て
+    struct WordStep {
+        var best: (segments: [Segment], text: String)
+        var beam: [[WordSpan: Bool]]
+    }
+
+    struct RunKey: Hashable {
         var input: String
         var leading: JapaneseContext
         var offset: Int
@@ -320,7 +326,7 @@ public final class Segmenter {
     /// 句読点か記号の手前で終わる部分の judgeRun。後ろに打鍵が続いても部分の中身は変わらないので、未確定の文字列の間は 1 回だけ計算する。
     /// observe があるとき（診断）は覚えたものを使わない
     private func closedRun(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, observe: ((ScoredSpan) -> Void)?, left: String) -> (segments: [Segment], text: String) {
-        let key = ClosedRunKey(input: input, leading: leading, offset: offset, ending: ending, left: left)
+        let key = RunKey(input: input, leading: leading, offset: offset, ending: ending, left: left)
         if observe == nil, judgeObserver == nil, let cached = closedRuns[key] { return cached }
         let result = judgeRun(input, leading: leading, offset: offset, ending: ending, observe: observe, left: left)
         closedRuns[key] = result
@@ -328,20 +334,47 @@ public final class Segmenter {
     }
 
     /// 句読点を含まない部分の区切りの候補を作り、文として最も確からしいものに決める。
-    /// 英語にも日本語にも読める語が無ければ、採点の点の上位 judgedCandidates 個を候補にする。
-    /// あれば、前の打鍵までに決めた語の割り当てごとに、まだ決めていない語の英語か日本語かの組み合わせそれぞれの最良の区切りを候補にする。
-    /// 候補を確からしさの順に decidedBeamWidth 個まで取り、部分の中の最後に始まる語より前で終わる語の英語か日本語かを、それぞれの割り当てに足して残す
+    /// 英語にも日本語にも読める語が無いか、変換器が文を評価するモデルを持たなければ、採点の点の上位 judgedCandidates 個を候補にする。
+    /// あれば、利用者が前から打つのと同じ順に語を決めていく。部分を語の終わりまで打った入力を段とし、段ごとに wordStep で決める。
+    /// 結果は入力だけで決まる。段の結果は覚えて使い回すので、1 打鍵ずつ打つときは新しく現れた段だけを計算する
     private func judgeRun(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, observe: ((ScoredSpan) -> Void)?, left: String) -> (segments: [Segment], text: String) {
         let ranked = { self.judge(self.segmentRun(input, leading: leading, offset: offset, ending: ending, width: self.judgedCandidates, constraint: nil, observe: observe), left: left) }
+        let chars = Array(input)
+        let words = ambiguousWords(chars).map { WordSpan(start: $0.start + offset, text: $0.text) }
+        guard !words.isEmpty, japaneseConverter.evaluatesSentences else { return ranked() }
+        // 診断（--lattice）には、条件を課さない採点で比べた区間の候補を渡す
+        if observe != nil { _ = segmentRun(input, leading: leading, offset: offset, ending: ending, width: judgedCandidates, constraint: nil, observe: observe) }
+        // 診断（--stages）に渡すのは、部分そのものを決める最後の段だけにする
+        let observer = judgeObserver
+        judgeObserver = nil
+        var beam: [[WordSpan: Bool]] = [[:]]
+        for end in Set(words.map { $0.range.upperBound - offset }).sorted() where end < chars.count {
+            beam = wordStep(String(chars[..<end]), leading: leading, offset: offset, ending: .open, left: left, beam: beam).beam
+        }
+        judgeObserver = observer
+        return wordStep(input, leading: leading, offset: offset, ending: ending, left: left, beam: beam).best
+    }
+
+    /// 語を決める 1 つの段。beam の割り当てごとに、まだ決めていない語の英語か日本語かの組み合わせそれぞれの最良の区切りを候補にし、
+    /// 文として最も確からしいものを選ぶ。候補を確からしさの順に decidedBeamWidth 個まで取り、段の中の最後に始まる語より前で終わる語の
+    /// 英語か日本語かを、それぞれの割り当てに足して次の段に残す
+    private func wordStep(_ input: String, leading: JapaneseContext, offset: Int, ending: JapaneseEnding, left: String, beam: [[WordSpan: Bool]]) -> WordStep {
+        let key = RunKey(input: input, leading: leading, offset: offset, ending: ending, left: left)
+        if judgeObserver == nil, let cached = wordSteps[key] { return cached }
+        let ranked = { () -> WordStep in
+            let best = self.judge(self.segmentRun(input, leading: leading, offset: offset, ending: ending, width: self.judgedCandidates, constraint: nil, observe: nil), left: left)
+            return WordStep(best: best, beam: beam)
+        }
         let words = ambiguousWords(Array(input)).map { WordSpan(start: $0.start + offset, text: $0.text) }
-        // 文を評価するモデルを持たない変換器は、組み合わせを比べられないので、採点の点で決める
-        guard !words.isEmpty, japaneseConverter.naturalness(texts: [], left: left) != nil else { return ranked() }
         let present = Set(words)
-        let bases = decidedBeam.map { $0.filter { present.contains($0.key) } }
+        var bases: [[WordSpan: Bool]] = []
+        for base in beam.map({ $0.filter { present.contains($0.key) } }) where !bases.contains(base) { bases.append(base) }
         let local = { (word: WordSpan) in (word.range.lowerBound - offset)..<(word.range.upperBound - offset) }
         var candidates: [(segments: [Segment], base: [WordSpan: Bool])] = []
         for base in bases {
             let open = words.filter { base[$0] == nil }
+            // 決めていない語が多すぎる段は、組み合わせを並べると止まるほど遅くなるので、採点の点で決める
+            guard open.count <= Self.maxOpenWords else { continue }
             for mask in 0..<(1 << open.count) {
                 let english = base.filter(\.value).map(\.key) + open.indices.filter { mask & (1 << $0) != 0 }.map { open[$0] }
                 let notEnglish = base.filter { !$0.value }.map(\.key) + open.indices.filter { mask & (1 << $0) == 0 }.map { open[$0] }
@@ -352,14 +385,15 @@ public final class Segmenter {
                 candidates.append((found, base))
             }
         }
-        // 前の打鍵で決めた語が、続けて打った綴りと両立しないとき（mode と決めた後に modem）は、条件を課さない
+        // 前の段で決めた語が、続けて打った綴りと両立しないとき（mode と決めた後に modem）は、条件を課さない
         guard !candidates.isEmpty else { return ranked() }
         let texts = shownTexts(candidates.map(\.segments), left: left)
-        let values = japaneseConverter.naturalness(texts: texts, left: left)!
+        // 文が長すぎてモデルが測れなければ、採点の点で決める
+        guard let values = japaneseConverter.naturalness(texts: texts, left: left) else { return ranked() }
         let order = candidates.indices.sorted { values[$0] > values[$1] }
         judgeObserver?(candidates.map(\.segments), left, order[0])
         let lastStart = words.map(\.start).max()!
-        var beam: [[WordSpan: Bool]] = []
+        var next: [[WordSpan: Bool]] = []
         for i in order {
             var position = offset
             var englishRanges: Set<Range<Int>> = []
@@ -371,16 +405,20 @@ public final class Segmenter {
             for word in words where assignment[word] == nil && word.range.upperBound <= lastStart {
                 assignment[word] = englishRanges.contains(word.range)
             }
-            guard !beam.contains(assignment) else { continue }
-            beam.append(assignment)
-            if beam.count == Self.decidedBeamWidth { break }
+            guard !next.contains(assignment) else { continue }
+            next.append(assignment)
+            if next.count == Self.decidedBeamWidth { break }
         }
-        decidedBeam = beam
-        return (candidates[order[0]].segments, texts[order[0]])
+        let step = WordStep(best: (candidates[order[0]].segments, texts[order[0]]), beam: next)
+        wordSteps[key] = step
+        return step
     }
 
-    /// 前の打鍵までに決めた語の割り当てを残す数。1 つだけ残すと、後ろの語を打つ前に決めた前の語（modebetuni の mode）を選び直せない
+    /// 前の段までに決めた語の割り当てを残す数。1 つだけ残すと、後ろの語を打つ前に決めた前の語（modebetuni の mode）を選び直せない
     private static let decidedBeamWidth = 2
+    /// 1 つの段で組み合わせを並べる、決めていない語の数の上限。組み合わせは語の数の 2 乗ではなく 2 の累乗で増えるので、
+    /// 上限を超える段は組み合わせを並べない。値は打鍵ごとの表示の時間で決める設定（PRINCIPLES.md）
+    private static let maxOpenWords = 6
 
     /// 英語にも日本語にも読める語。綴りの表で全体がかなに読め、英語の語の表にあり、英語にしない短い綴りより長いもの。位置は chars の中
     private func ambiguousWords(_ chars: [Character]) -> [(start: Int, text: String)] {
@@ -422,9 +460,9 @@ public final class Segmenter {
 
     /// judge が選ぶ候補の番号
     private func chosenCandidate(_ candidates: [[Segment]], left: String) -> Int {
-        guard candidates.count > 1 else { return 0 }
-        let texts = shownTexts(candidates, left: left)
-        guard let values = japaneseConverter.naturalness(texts: texts, left: left) else { return 0 }
+        guard candidates.count > 1, japaneseConverter.evaluatesSentences else { return 0 }
+        // 文が長すぎてモデルが測れなければ、採点の点で決める
+        guard let values = japaneseConverter.naturalness(texts: shownTexts(candidates, left: left), left: left) else { return 0 }
         return values.indices.max { values[$0] < values[$1] }!
     }
 
@@ -433,7 +471,7 @@ public final class Segmenter {
 
     /// 区切りの候補を比べた、句読点で切った 1 つの部分。診断用
     public struct Judgement: Sendable {
-        /// 区切りの候補。採点の点の高い順
+        /// 区切りの候補。英語にも日本語にも読める語の無い部分は採点の点の高い順、ある部分は語の割り当てと組み合わせの順
         public var candidates: [[Segment]]
         /// 候補ごとの、区切りの採点で辞書の変換が作った表記をつないだ文と、その文の確からしさ
         public var dictionaryTexts: [String]
