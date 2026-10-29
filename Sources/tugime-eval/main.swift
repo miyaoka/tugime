@@ -12,11 +12,11 @@ let usage = """
           モデルを使う方式の出力が、打てた問題の全件で基準と一致したら、記録を書き、集計を出さずに終了コード 1
       tugime-eval compare <記録.jsonl> <記録.jsonl>
           片方だけが正解した問題を 1 件 1 行で出す
-      tugime-eval keystrokes --method <方式> --problems <dir> --out <途中の表示.tsv> [--stable <打鍵数>,<最小の打鍵数>,<残す打鍵数>]
+      tugime-eval keystrokes --method <方式> --problems <dir> --out <途中の画面.tsv> [--stable off|<打鍵数>,<最小の打鍵数>,<残す打鍵数>]
           AJIMEE-Bench の文を、問題の文脈と、上限の長さまで文をつないだ文脈の後に 1 打鍵ずつ打ち、1 打鍵の時間・読み込み時間・最大常駐量と、
           問題の文脈で打った途中の画面（最後の打鍵を除く）が許容解に向かっているかの判定ごとの打鍵数を出す。
           入力メソッドと同じく、表示の前の部分が変わらなくなったら確定し、画面は確定した文字列と未確定の表示をつないだもの。
-          --stable は確定の設定で、意味は tugime-cli と同じ。既定は入力メソッドと同じ \(StablePrefix.standard.spec)。確定しない流れは最小の打鍵数を大きくして見る。
+          --stable は確定の設定で、意味は tugime-cli と同じ。既定は入力メソッドと同じ \(StablePrefix.standard.spec)。\(StablePrefix.off.spec) は確定しない。
           --out には問題の文脈で打った全打鍵の 打鍵列 画面 判定 をタブ区切りで書く。方式や版の間で diff できる
     方式: \(ConversionMethod.forms)
     問題の dir は scripts/fetch-eval.ts が出す。入力メソッドと同じモデルは scripts/fetch-genmai.ts が、ほかのモデルは scripts/convert-hf-to-gguf.ts が出す

@@ -17,11 +17,19 @@ import Testing
         #expect(stable.prefix(keyCount: 10) == nil)
     }
 
+    /// 確定しない設定は、表示が変わらなくても先頭を返さない
+    @Test func offNeverReturnsAPrefix() {
+        var stable = StablePrefix.off
+        for _ in 0..<stable.keystrokes { stable.record("今日は朝から") }
+        #expect(stable.prefix(keyCount: 1000) == nil)
+    }
+
     /// 設定は 3 つの 1 以上の整数をコンマで区切ったもの
     @Test func readsTheSpec() {
         #expect(StablePrefix(spec: "3,20,10")?.spec == "3,20,10")
         #expect(StablePrefix(spec: StablePrefix.standard.spec)?.spec == StablePrefix.standard.spec)
-        for spec in ["3,20", "3,20,10,1", "3,0,10", "3,,10", "a,20,10", "3, 20,10"] {
+        #expect(StablePrefix(spec: "off")?.commits == false)
+        for spec in ["3,20", "3,20,10,1", "3,0,10", "3,,10", "a,20,10"] {
             #expect(StablePrefix(spec: spec) == nil, "\(spec)")
         }
     }

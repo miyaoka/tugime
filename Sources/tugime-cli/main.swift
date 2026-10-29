@@ -10,7 +10,7 @@ let usage = """
     --judge <数> は、英語にも日本語にも読める語の無い部分で、表示にして文として比べる区切りの候補の数。既定は \(Segmenter.defaultJudgedCandidates)。1 なら比べない。
     --stable <打鍵数>,<最小の打鍵数>,<残す打鍵数> は、--typing と --timing で、未確定の打鍵が最小の打鍵数に届いてから、表示の先頭が打鍵数だけ続けて変わらなければ、
     その先頭に収まり、後ろに残す打鍵数以上の打鍵が残る文節までを確定する設定。
-    既定は入力メソッドと同じ \(StablePrefix.standard.spec)。
+    既定は入力メソッドと同じ \(StablePrefix.standard.spec)。--stable \(StablePrefix.off.spec) は確定しない。
     --explain・--lattice・--span の出力の表記は、区切りを採点したシステム辞書の変換で、表示の変換ではない）:
       tugime-cli <打鍵列>...                  --live と同じ文字列を、打鍵列の列を付けずに出す
       tugime-cli --live <打鍵列>...           文節の選択に入る前に表示し、Enter で確定する文字列を出す。
@@ -45,31 +45,11 @@ func describe(_ segments: [Segment]) -> String {
     }.joined(separator: " ")
 }
 
-/// 1 打鍵の結果。typed はここまでの打鍵列の全体、shown は確定した文字列と未確定の表示をつないだ画面の文字列、
-/// committed はこの打鍵で確定した文字列、open はこの打鍵の後の未確定の打鍵の数、ms は表示と確定にかかった時間
-struct TypingStep {
-    var typed: String
-    var shown: String
-    var live: Segmenter.LiveDisplay
-    var committed: String?
-    var open: Int
-    var ms: Double
-}
-
-/// 入力メソッドと同じく、1 つの未確定の文字列の中で 1 打鍵ずつ伸ばし、変わらなくなった表示の先頭を確定して外す。
-/// 確定した後は、入力欄のカーソルの前にその文字列が続いたものとして打ち続ける。打ち終えたら未確定の文字列を終える
-func typeThrough(_ input: String, segmenter: Segmenter, leading: Segmenter.Leading, stable: StablePrefix, each: (TypingStep) -> Void) {
-    var committed = ""
-    var keys = ""
-    var before = leading
-    var stable = stable
-    for (offset, key) in input.enumerated() {
-        let start = ContinuousClock.now
-        let (live, done) = stable.append(String(key), to: &keys, leading: &before, segmenter: segmenter)
-        let elapsed = ContinuousClock.now - start
-        committed += done ?? ""
-        let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
-        each(TypingStep(typed: String(input.prefix(offset + 1)), shown: committed + live.text, live: live, committed: done, open: keys.count, ms: ms))
+/// 1 つの未確定の文字列の中で、入力メソッドと同じく 1 打鍵ずつ打つ。打ち終えたら未確定の文字列を終える
+func typeThrough(_ input: String, segmenter: Segmenter, leading: Segmenter.Leading, stable: StablePrefix, each: (LiveTyping.Step) -> Void) {
+    var typing = LiveTyping(leading: leading, stable: stable)
+    for key in input {
+        each(typing.type(key, segmenter: segmenter))
     }
     segmenter.endComposition()
 }
@@ -193,14 +173,14 @@ do {
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
             typeThrough(input, segmenter: segmenter, leading: leading, stable: stablePrefix) { step in
-                print("\(step.typed)\t\(step.shown)\t\(step.live.differsFromInput ? Segmenter.LiveDisplay.warning : "")\t\(step.committed ?? "")")
+                print("\(step.typed)\t\(step.screen)\t\(step.live.differsFromInput ? Segmenter.LiveDisplay.warning : "")\t\(step.committed ?? "")")
             }
         }
     case "--timing":
         let segmenter = try makeSegmenter()
         for input in args.dropFirst() {
             typeThrough(input, segmenter: segmenter, leading: leading, stable: stablePrefix) { step in
-                print("\(step.typed)\t\(step.shown)\t\(String(format: "%.1f", step.ms))\t\(step.committed ?? "")\t\(step.open)")
+                print("\(step.typed)\t\(step.screen)\t\(String(format: "%.1f", step.seconds * 1000))\t\(step.committed ?? "")\t\(step.open)")
             }
         }
     case "--stages":

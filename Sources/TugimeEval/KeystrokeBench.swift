@@ -16,7 +16,7 @@ public struct KeystrokeScript: Sendable {
     /// 打ち始めに入力欄のカーソルより前にあるもの
     public var leading: Segmenter.Leading
     public var reading: String
-    /// 打ち終えたときの許容解。途中の表示の判定に使う
+    /// 打ち終えたときの許容解。途中の画面の判定に使う
     public var answers: [String]
     public var spelled: [SpelledKana]
     /// spelled の keys を繋いだもの
@@ -91,7 +91,9 @@ public enum KeystrokeBench {
         public var typed: String
         /// 確定した文字列と未確定の表示をつないだもの
         public var display: String
-        /// 文の最後の打鍵か。最後の打鍵の表示は確定する文字列で、精度の物差しが測るので、途中の表示の集計に入れない
+        /// 文の最後の打鍵か。最後の打鍵の画面は打ち終えた結果なので、途中の画面の集計に入れない。
+        /// 打ち終えた表示を許容解と照らすのは精度の物差し（tugime-eval accuracy）で、前の部分を確定しない
+        /// （確定しながら打った最後の画面とは違うことがある）
         public var isLast: Bool
         public var check: LiveCheck
     }
@@ -123,7 +125,7 @@ public enum KeystrokeBench {
     }
 
     /// 不変条件:
-    /// - 文ごとに、入力メソッドと同じく StablePrefix.append で 1 打鍵ずつ足し、表示の前の部分が変わらなくなったら確定する。
+    /// - 文ごとに、入力メソッドと同じく LiveTyping で 1 打鍵ずつ足し、表示の前の部分が変わらなくなったら確定する。
     ///   1 打鍵の時間は確定を含み、判定は確定した文字列と未確定の表示をつないだ画面に対して行う
     /// - 文の前に endComposition を呼ぶ。文の中では呼ばない（入力メソッドは打ち終えるまで覚えを持ち越す）
     public static func run(
@@ -151,18 +153,13 @@ public enum KeystrokeBench {
             let keys = Array(script.keys)
             let kanaCounts = script.kanaCounts
             var slowest = 0.0
-            var stable = stable
-            var open = ""
-            var leading = script.leading
-            var committed = ""
+            var typing = LiveTyping(leading: script.leading, stable: stable)
             for i in 1...keys.count {
                 watchdog.arm(item: "\(script.id) の \(i) 打鍵目")
-                let typed = String(keys[..<i])
-                let start = clock.now
-                let (live, done) = stable.append(String(keys[i - 1]), to: &open, leading: &leading, segmenter: segmenter)
-                let elapsed = seconds(clock.now - start)
-                committed += done ?? ""
-                let display = committed + live.text
+                let step = typing.type(keys[i - 1], segmenter: segmenter)
+                let typed = step.typed
+                let elapsed = step.seconds
+                let display = step.screen
                 slowest = max(slowest, elapsed)
                 samples.append(Sample(scriptID: script.id, keystroke: i, kanaCount: kanaCounts[i - 1], context: script.context, hasLeft: !script.leading.text.isEmpty, seconds: elapsed))
                 if script.context == .problem {
@@ -223,7 +220,7 @@ extension KeystrokeBench.Report {
             return [label, String(s.count), ms(s.median), ms(s.p90), ms(s.p99), ms(s.max)].joined(separator: "\t")
         }
         let midway = lives.filter { !$0.isLast }
-        lines.append((["途中の表示", "打鍵数"] + LiveCheck.allCases.map(\.rawValue)).joined(separator: "\t"))
+        lines.append((["途中の画面", "打鍵数"] + LiveCheck.allCases.map(\.rawValue)).joined(separator: "\t"))
         lines.append((["全体", String(midway.count)] + LiveCheck.allCases.map { check in String(midway.filter { $0.check == check }.count) }).joined(separator: "\t"))
         lines.append(["読みの文字数", "打鍵数", "中央値ms", "90%ms", "99%ms", "最大ms"].joined(separator: "\t"))
         lines.append(row("全体", samples))
@@ -244,7 +241,7 @@ extension KeystrokeBench.Report {
         return lines
     }
 
-    /// 打鍵ごとに 打鍵列 \t 表示 \t 判定。方式や版の間で diff して、途中の表示が変わった打鍵を見る
+    /// 打鍵ごとに 打鍵列 \t 画面 \t 判定。方式や版の間で diff して、途中の画面が変わった打鍵を見る
     public var liveLines: [String] {
         lives.map { "\($0.typed)\t\($0.display)\t\($0.check.rawValue)" }
     }
