@@ -223,7 +223,7 @@ public enum AccuracyRun {
         let targetSegmenter = try target.makeSegmenter(dictionary: dictionary)
         watchdog.armLoad("読み込み \(ConversionMethod.baseline.spec)")
         let baselineSegmenter = target == .baseline ? nil : try ConversionMethod.baseline.makeSegmenter(dictionary: dictionary)
-        progress("変換器の読み込み \(String(format: "%.2f", seconds(clock.now - loadStart)))s、問題 \(problems.problems.count) 件")
+        progress("変換器の読み込み \(String(format: "%.2f", (clock.now - loadStart) / .seconds(1)))s、問題 \(problems.problems.count) 件")
 
         var results: [AccuracyRecord.Result] = []
         for (n, (problem, keys)) in zip(problems.problems, keys).enumerated() {
@@ -265,13 +265,8 @@ public enum AccuracyRun {
     private static func type(_ keys: String, leading: Segmenter.Leading, with segmenter: Segmenter, clock: ContinuousClock) -> (String, Double) {
         let start = clock.now
         let text = segmenter.liveText(keys, leading: leading)
-        let elapsed = seconds(clock.now - start)
+        let elapsed = (clock.now - start) / .seconds(1)
         segmenter.endComposition()
         return (text, elapsed)
     }
-}
-
-/// Duration を秒の小数に
-func seconds(_ duration: Duration) -> Double {
-    Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
 }

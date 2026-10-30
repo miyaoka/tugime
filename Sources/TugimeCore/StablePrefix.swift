@@ -66,8 +66,7 @@ public struct StablePrefix: Sendable {
     }
 
     /// 打鍵列 keys に key を足して表示し、表示の先頭が変わらなくなっていれば、その先頭に収まる文節までを確定する。
-    /// 確定したら keys を残りの打鍵列に、leading を確定した文字列が続いたものにして、確定した文字列を返す。
-    /// 入力メソッドと tugime-cli は、文字の打鍵をこれで足す
+    /// 確定したら keys を残りの打鍵列に、leading を確定した文字列が続いたものにして、確定した文字列を返す
     public mutating func append(_ key: String, to keys: inout String, leading: inout Segmenter.Leading, segmenter: Segmenter) -> (display: Segmenter.LiveDisplay, committed: String?) {
         keys += key
         let display = segmenter.liveDisplay(keys, leading: leading)
@@ -84,7 +83,7 @@ public struct StablePrefix: Sendable {
     }
 }
 
-/// 1 つの未確定の文字列を、入力メソッドと同じ手順で 1 打鍵ずつ打ち進め、画面を作る。tugime-cli と評価が使う
+/// 1 つの未確定の文字列を、入力メソッドと同じ手順で 1 打鍵ずつ打ち進め、画面を作る
 public struct LiveTyping {
     /// 1 打鍵の結果。typed はここまでの打鍵列の全体、screen は確定した文字列と未確定の表示をつないだ画面、
     /// committed はこの打鍵で確定した文字列、open はこの打鍵の後の未確定の打鍵の数、seconds は表示と確定にかかった時間
@@ -116,8 +115,7 @@ public struct LiveTyping {
         let (live, done) = stable.append(String(key), to: &keys, leading: &leading, segmenter: segmenter)
         let elapsed = clock.now - start
         committed += done ?? ""
-        let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
-        return Step(typed: typed, screen: committed + live.text, live: live, committed: done, open: keys.count, seconds: seconds)
+        return Step(typed: typed, screen: committed + live.text, live: live, committed: done, open: keys.count, seconds: elapsed / .seconds(1))
     }
 }
 
