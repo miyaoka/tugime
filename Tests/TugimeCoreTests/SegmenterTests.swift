@@ -66,13 +66,18 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.liveText(input) == expected)
     }
 
-    /// 語の途中でも、末尾の単独の n は外して打ったままにし、前のかなだけを日本語区間にする。nn で終われば「ん」まで日本語区間。英語区間は外さない
-    @Test func splitsAPendingNOffTheJapaneseSpan() {
-        #expect(segmenter.segment("kon").map(\.kind) == [.japanese, .english])
-        #expect(segmenter.segment("kon").map(\.source) == ["ko", "n"])
-        #expect(segmenter.segment("konnn").map(\.source) == ["konn", "n"])
-        #expect(segmenter.segment("konn").map(\.kind) == [.japanese])
-        #expect(segmenter.segment("kotlin").map(\.kind) == [.english])
+    /// 語の途中でも、末尾の単独の n は打ったまま見せる。nn で終われば「ん」まで読む。綴りの組の一部の n（xn）は単独の n ではない
+    @Test func showsAPendingNAsTypedInsideAWord() {
+        #expect(segmenter.liveText("konnn").hasSuffix("n"))
+        #expect(!segmenter.liveText("konn").hasSuffix("n"))
+        #expect(!segmenter.liveText("xn").hasSuffix("n"))
+        #expect(!segmenter.liveText("kaxn").hasSuffix("n"))
+    }
+
+    /// 文節に区切るときは n を外さず「ん」まで読む（nihon の候補に 日本）。英語の語（kotlin）は 1 つの文節のまま
+    @Test func readsAPendingNAsNWhenSplittingIntoClauses() {
+        #expect(segmenter.clauses("nihon").map(\.reading).joined() == "にほん")
+        #expect(segmenter.clauses("kotlin").count == 1)
     }
 
     /// 文の頭で末尾に打った 1 かなは、続けて打つ語の先頭なので変換せずにかなのまま見せる。候補では語を選べる

@@ -156,12 +156,13 @@ public final class Segmenter {
         public var differsFromInput: Bool
     }
 
-    /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま。
+    /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま。末尾の単独の n は打ったまま見せる（keepingPendingN）。
     /// 前の文字列は、区切りの評価と、表示の変換の左の文脈に使う
     public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
-        let segments = segment(input, leading: leading)
+        let (segments, pendingN) = keepingPendingN(segment(input, leading: leading))
         var differs = false
-        let text = zip(segments, displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true)).map { segment, display in
+        let shown = displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true, endsWithPendingN: pendingN)
+        let text = zip(segments, shown).map { segment, display in
             guard let display else { return segment.output }
             if !display.matchesReading { differs = true }
             return display.text
@@ -188,13 +189,12 @@ public final class Segmenter {
     /// 区間を前から順に表示の変換にする。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
     /// 返す配列は spans と同じ順で、日本語区間の要素だけが表示の変換を持つ。
     /// 日本語区間は採点の変換があるときだけ選ばれ、表示の変換は採点の変換があれば必ず返すので、日本語区間の表示の変換は必ずある。
-    /// 末尾の区間（後ろが打ったままの単独の n だけならその手前）が文の頭（入力の最初の区間か、日本語の記号にした句読点・記号の直後）の
-    /// 1 かなだけなら、続けて打つ語の先頭なので、
-    /// 変換せずにかなのまま見せる（ki は 気 ではなく き）。startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）
-    func displays(of spans: [ShownSpan], left: String, startsAtHead: Bool) -> [JapaneseDisplay?] {
+    /// 末尾の区間（endsWithPendingN なら、最後の打ったままの n の手前）が文の頭（入力の最初の区間か、日本語の記号にした句読点・記号の直後）の
+    /// 1 かなだけなら、続けて打つ語の先頭なので、変換せずにかなのまま見せる（ki は 気 ではなく き、kon は こn）。
+    /// startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）
+    func displays(of spans: [ShownSpan], left: String, startsAtHead: Bool, endsWithPendingN: Bool) -> [JapaneseDisplay?] {
         var shown = left
-        let pendingN = { if case .fixed("n") = spans.last { true } else { false } }()
-        let lastSpan = spans.count - (pendingN ? 2 : 1)
+        let lastSpan = spans.count - (endsWithPendingN ? 2 : 1)
         return spans.enumerated().map { index, span in
             switch span {
             case .fixed(let text), .mark(let text, _):
@@ -310,24 +310,22 @@ public final class Segmenter {
             runContinuation = Self.continuation(after: key, mark: mark)
             runContext = runContinuation.japaneseContext
         }
-        return keepingPendingN(segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe))
+        return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe)
     }
 
-    /// 入力の末尾の日本語区間が単独の n で終わるなら、その n を外して打ったままの区間にする。n は次の打鍵で「な」行にも「ん」にもなるので、
-    /// 次の打鍵まで決めない（そうなるとn、にほn）。「ん」で確定するときは nn と打つ。英語区間は外さない（kotlin は kotlin のまま）。
-    /// 外した n は直前の英語区間に含めず、独立した区間にする。含めると綴り全体（githubn）で利用者の辞書を引くので前の語の登録した表記が消え、
-    /// 全体を読めないので「ん」の候補も無くなる
-    private func keepingPendingN(_ segments: [Segment]) -> [Segment] {
-        guard let last = segments.last, last.kind == .japanese, RomajiTable.endsWithLoneN(last.source), last.reading.hasSuffix("ん") else {
-            return segments
-        }
+    /// 打っている途中の表示で、末尾の日本語区間が次の打鍵で読みが変わる単独の n で終わるなら（RomajiTable.endsWithPendingN）、
+    /// その n を外して打ったままの区間にし、残りを n を除いた読みで変換する。n は次の打鍵で な行 にも「ん」にもなるので、
+    /// 次の打鍵まで決めない（そうなるとn、にほn）。Enter は見たまま確定するので、「ん」で確定するときは nn と打つ。英語区間は外さない（kotlin）。
+    /// 文節に区切るとき（clauses）は外さず、「ん」まで含めて変換する（nihon の候補に 日本）。返す pendingN は n を外したか
+    private func keepingPendingN(_ segments: [Segment]) -> (segments: [Segment], pendingN: Bool) {
+        guard let last = segments.last, last.kind == .japanese, table.endsWithPendingN(last.source) else { return (segments, false) }
         let pending = englishSegment("n", context: last.context)
-        guard last.source.count > 1 else { return segments.dropLast() + [pending] }
+        guard last.source.count > 1 else { return (segments.dropLast() + [pending], true) }
         let rest = String(last.source.dropLast())
         guard let japanese = japaneseSegment(rest, kana: String(last.reading.dropLast()), context: last.context, penalty: 0) else {
             preconditionFailure("読めた日本語区間から n を外した読みが変換できない: \(rest)")
         }
-        return segments.dropLast() + [japanese, pending]
+        return (segments.dropLast() + [japanese, pending], true)
     }
 
     /// i から始まる記号の打鍵のうち最も長いもの

@@ -9,7 +9,6 @@ import Testing
     }
 
     private func display(_ text: String) -> Segmenter.LiveDisplay {
-        // 届いた変換の最後の区間が日本語区間かは、表示の末尾がかなや漢字かで代える
         Segmenter.LiveDisplay(text: text, differsFromInput: false)
     }
 
@@ -29,8 +28,8 @@ import Testing
         #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, table: table) == expected)
     }
 
-    /// 末尾の単独の n は打ったまま。nn と、後ろに打鍵が続く n は読む
-    @Test(arguments: [("n", "n"), ("bn", "bn"), ("ka,n", "か、n"), ("kon", "こn"), ("nn", "ん"), ("konnn", "こんn"), ("kona", "こな")])
+    /// 末尾の単独の n は打ったまま。nn、後ろに打鍵が続く n、綴りの組の一部の n（xn）は読む
+    @Test(arguments: [("n", "n"), ("bn", "bn"), ("ka,n", "か、n"), ("kon", "こn"), ("nn", "ん"), ("konnn", "こんn"), ("kona", "こな"), ("xn", "ん")])
     func keepsAPendingNAsTyped(keys: String, expected: String) {
         #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, table: table) == expected)
     }
@@ -41,8 +40,8 @@ import Testing
         ("github", "github", "githu", 1),
         ("githubにpush", "githubnipush", "githubにpu", 2),
         ("してh", "siteh", "して", 1),
-        // 単独の n を読んだ「ん」と、英語の区間に打ったまま出た n も外す
-        ("幕張ん", "makuharin", "幕張", 1),
+        // 表示に打ったまま出た末尾の n も外す
+        ("幕張n", "makuharin", "幕張", 1),
         ("python", "python", "pytho", 1),
         // 母音や nn で終われば外さない
         ("設定を", "setteiwo", "設定を", 0),
@@ -56,7 +55,7 @@ import Testing
     }
 
     @Test func cannotSplitWhenPendingIsInsideAWord() {
-        #expect(Segmenter.splitPending("点", typed: "ten") == nil)
+        #expect(Segmenter.splitPending("ん", typed: "xn") == nil)
     }
 
     /// 登録語（cafe を Café）の後の n も打ったまま

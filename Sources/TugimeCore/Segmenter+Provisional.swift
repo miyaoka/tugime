@@ -25,15 +25,12 @@ extension Segmenter {
     }
 
     /// 打鍵列 keys の変換の表示 shown を、後ろに読みをつないでも崩れない部分と、末尾の打ちかけの打鍵の数に分ける。
-    /// 打ちかけは、最後の母音より後ろの子音（表示に打ったまま出ている。読み終えた nn を除く）と、単独の n（表示では「ん」か、英語の区間なら打ったまま）。
+    /// 打ちかけは、最後の母音より後ろの子音（表示に打ったまま出ている。読み終えた nn を除く）と、表示に打ったまま出ている末尾の n。
     /// 打ちかけの打鍵は、後から打った打鍵とまとめて読み直す（g の後の i は「ぎ」、n の後の o は「の」）。
-    /// 打ちかけの部分が表示の末尾にそのまま出ていなければ（ten の n が「点」に入っている）、分けられないので nil
+    /// 打ちかけの部分が表示の末尾にそのまま出ていなければ（xn の n が「ん」に入っている）、分けられないので nil
     static func splitPending(_ shown: String, typed keys: String) -> (kept: String, pending: Int)? {
         let letters = keys.reversed().prefix { $0.isASCII && $0.isLetter }
-        if letters.first == "n", letters.dropFirst().first != "n" {
-            guard shown.hasSuffix("ん") || shown.hasSuffix("n") else { return nil }
-            return (String(shown.dropLast()), 1)
-        }
+        if letters.first == "n", shown.hasSuffix("n") { return (String(shown.dropLast()), 1) }
         var consonants = String(letters.prefix { !"aiueo".contains($0) }.reversed())
         // 母音の直後の nn は読み終えた「ん」
         if consonants.hasPrefix("nn") { consonants.removeFirst(2) }
@@ -43,11 +40,9 @@ extension Segmenter {
 
     /// 変換が届く前に見せる keys の読み。区切りと同じく、記号の打鍵は記号にし、句読点は直前が日本語なら日本語の記号にする。
     /// それ以外は前から、読める所は最も長く読んでかなにし、読めない打鍵は打ったまま残す（kar → かr）。
-    /// 区切りと同じく、末尾の単独の n は次の打鍵まで決めないので打ったまま残す
+    /// 打っている途中の表示と同じく、末尾の単独の n（RomajiTable.endsWithPendingN）は次の打鍵まで決めないので打ったまま残す
     static func provisionalText(of keys: some StringProtocol, afterJapanese startsAfterJapanese: Bool, table: RomajiTable) -> String {
         let input = Array(keys)
-        // 末尾の単独の n は読みに含めない
-        let pendingN = RomajiTable.endsWithLoneN(input)
         var text = ""
         var afterJapanese = startsAfterJapanese
         var position = 0
@@ -59,7 +54,9 @@ extension Segmenter {
             } else if afterJapanese, let mark = punctuation[input[position]] {
                 text += mark
                 position += 1
-            } else if let longest = table.readings(from: position, in: input).last(where: { $0.end < input.count || !pendingN }) {
+            } else if let longest = table.readings(from: position, in: input).last(where: {
+                $0.end < input.count || !table.endsWithPendingN(String(input[position...]))
+            }) {
                 text += longest.kana
                 afterJapanese = true
                 position = longest.end

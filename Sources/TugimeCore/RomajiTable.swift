@@ -123,10 +123,13 @@ public struct RomajiTable: Sendable {
         var canEnd: Bool
     }
 
-    /// keys が単独の n で終わるか。末尾に続く n が奇数個なら、最後の n は nn の組にならない単独の n（kon、konnn）。
-    /// 入力の末尾の単独の n は、edges が「ん」と読んで終端にする綴りである
-    static func endsWithLoneN(_ keys: some BidirectionalCollection<Character>) -> Bool {
-        keys.reversed().prefix { $0 == "n" }.count % 2 == 1
+    /// keys が、次の打鍵で読みが変わる単独の n で終わるか。最後の n を外した残りが読め、その読みに「ん」を足すと全体の読みになるとき
+    /// （kon、konnn、n）。最後の n が綴りの組の一部なら当たらない（konn、xn）。入力の末尾の単独の n は、edges が「ん」と読んで終端にする綴りである
+    func endsWithPendingN(_ keys: some StringProtocol) -> Bool {
+        guard keys.last == "n", let whole = reading(of: keys) else { return false }
+        let rest = keys.dropLast()
+        guard !rest.isEmpty else { return true }
+        return reading(of: rest).map { $0 + "ん" == whole } ?? false
     }
 
     private func edges(at pos: Int, in input: [Character]) -> [Edge] {
