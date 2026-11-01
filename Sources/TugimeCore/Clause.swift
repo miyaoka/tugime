@@ -328,9 +328,11 @@ extension Segmenter {
             }
         }
         let spans = groups.map { group in
-            group[0].kind == .japanese
-                ? ShownSpan.japanese(kana: group[0].span.reading, context: group[0].span.context)
-                : ShownSpan.fixed(group.map(\.output).joined())
+            switch group[0].kind {
+            case .japanese: ShownSpan.japanese(kana: group[0].span.reading, context: group[0].span.context)
+            case .punctuation: ShownSpan.mark(group.map(\.output).joined())
+            case .english, .word, .whole: ShownSpan.fixed(group.map(\.output).joined())
+            }
         }
         return zip(groups, displays(of: spans, left: left)).flatMap { group, display in
             display.map { japaneseClauses($0.clauses, context: group[0].span.context, in: group[0].span) } ?? group

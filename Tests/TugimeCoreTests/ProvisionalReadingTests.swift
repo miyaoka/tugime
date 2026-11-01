@@ -9,7 +9,8 @@ import Testing
     }
 
     private func display(_ text: String) -> Segmenter.LiveDisplay {
-        Segmenter.LiveDisplay(text: text, differsFromInput: false)
+        // 届いた変換の最後の区間が日本語区間かは、表示の末尾がかなや漢字かで代える
+        Segmenter.LiveDisplay(text: text, differsFromInput: false, endsInJapanese: text.last.map { !$0.isASCII } ?? false)
     }
 
     @Test(arguments: [
@@ -25,7 +26,7 @@ import Testing
         ("shsi", false, "shし"),
     ])
     func provisionalText(keys: String, afterJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, inJapanese: false, table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, inJapanese: false, table: table).text == expected)
     }
 
     /// 日本語区間の頭の末尾の n は な行 の途中なので打ったまま。区間の途中と nn は「ん」
@@ -38,7 +39,7 @@ import Testing
         ("nn", false, "ん"),
     ])
     func keepsPendingNAtTheHeadOfJapanese(keys: String, inJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, inJapanese: inJapanese, table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, inJapanese: inJapanese, table: table).text == expected)
     }
 
     @Test(arguments: [
@@ -63,6 +64,13 @@ import Testing
 
     @Test func cannotSplitWhenPendingIsInsideAWord() {
         #expect(Segmenter.splitPending("点", typed: "ten") == nil)
+    }
+
+    /// 後ろの n が日本語区間の頭かは、届いた変換の最後の区間で決める。登録語（cafe を Café）の後は日本語区間の頭
+    @Test func keepsPendingNAfterARegisteredWordBeforeConversionArrives() {
+        let base = Segmenter.LiveDisplay(text: "Café", differsFromInput: false, endsInJapanese: false)
+        let shown = Segmenter.liveDisplay(of: "cafen", converted: [("cafe", base)], leading: .start, table: table)
+        #expect(shown.text == "Cafén")
     }
 
     @Test(arguments: [

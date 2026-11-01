@@ -76,9 +76,12 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.liveText("ki") == "き")
         #expect(segmenter.liveText("sorede,ke").hasSuffix("、け"))
         #expect(segmenter.liveText("ki", leading: Segmenter.Leading("今日は雨だった。")) == "き")
+        // 入力欄の前が文の途中でも、入力の先頭なら位置で決める
+        #expect(segmenter.liveText("ki", leading: Segmenter.Leading("今日は")) == "き")
         let clause = try #require(segmenter.clauses("ki").first)
         #expect(clause.candidates.first == "き")
-        #expect(clause.candidates.count > 2)
+        // かなと打鍵のほかに、1 かなの語がある
+        #expect(clause.candidates.contains { !["き", "キ", "ki"].contains($0) })
     }
 
     @Test(arguments: ["-", "--", "-.", "xa", "kaki--", "binge-watch", ".", "a,b", "Hello."])
