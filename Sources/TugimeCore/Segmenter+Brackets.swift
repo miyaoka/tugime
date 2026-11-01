@@ -5,26 +5,17 @@ extension Segmenter {
     /// 開き丸括弧ごとの、同じ形の閉じ丸括弧
     static let closingBracket: [Character: Character] = ["(": ")", "（": "）"]
 
-    /// 句読点の打鍵 1 文字をどう置くか
-    enum PunctuationForm: Equatable {
-        /// 打ったまま、直前の英語の区間に含める
-        case typed
-        /// mark の区間にしてそこで入力を切り、後ろは after に続くものとして区切る
-        case mark(String, after: Continuation)
-    }
-
-    /// 句読点 c の形。直前の区間が英語なら打ったまま、日本語なら日本語の記号にする。
-    /// 閉じ丸括弧は、opened の最後の開き丸括弧（入れ子を数えて組になるもの）と同じ形にし、opened から外す。全角なら直前が英語でもそこで切り、
-    /// 半角なら直前が日本語でも半角の区間にして後ろを英語の後とする。組が無ければほかの句読点と同じ。
+    /// 句読点 c の区間の形。直前の区間が英語なら nil（打ったまま英語の区間に含める）、日本語なら日本語の記号にする。
+    /// 閉じ丸括弧は、opened の最後の開き丸括弧（入れ子を数えて組になるもの）と同じ形にし、opened から外す。全角なら直前が英語でも区間にし、
+    /// 半角なら直前が日本語でも半角の区間にする。組が無ければほかの句読点と同じ。
     /// 開き丸括弧は、決めた形を opened に積む
-    static func punctuationForm(_ c: Character, opened: inout [Character], previousIsEnglish: Bool) -> PunctuationForm {
+    static func punctuationMark(_ c: Character, opened: inout [Character], previousIsEnglish: Bool) -> String? {
         if closingBracket.values.contains(c), let opener = opened.popLast() {
-            if opener == "(" { return previousIsEnglish ? .typed : .mark(")", after: .afterEnglish) }
-            return .mark("）", after: .start)
+            if opener == "(" { return previousIsEnglish ? nil : ")" }
+            return "）"
         }
         if closingBracket[c] != nil { opened.append(previousIsEnglish ? c : "（") }
-        guard !previousIsEnglish, let mark = punctuation[c] else { return .typed }
-        return .mark(mark, after: .start)
+        return previousIsEnglish ? nil : punctuation[c]
     }
 
     /// text の中で閉じていない開き丸括弧。外側から順に並べる

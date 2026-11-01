@@ -311,7 +311,7 @@ extension Segmenter {
         case .japanese, .word:
             return .afterWord
         case .punctuation:
-            return Self.continuation(after: previous.span.source).japaneseContext
+            return Self.continuation(after: previous.span.source, mark: previous.span.reading).japaneseContext
         case .whole:
             preconditionFailure("全体の変換の文節は 1 つだけで、後ろに文節を持たない")
         }

@@ -232,15 +232,16 @@ public final class Segmenter {
     ]
     static let maxSymbolLength = symbols.keys.map(\.count).max()!
 
-    /// 日本語の記号にした句読点・記号の打鍵 key の後ろの入力の評価のしかた。句読点の後は後ろを文の頭として、記号の打鍵の後は文の途中かもしれないものとして評価する
-    static func continuation(after key: String) -> Continuation {
-        symbols[key] == nil ? .start : .afterJapanese
+    /// 入力を切った句読点・記号の打鍵 key を mark にした区間の後ろの入力の評価のしかた。記号の打鍵の後は文の途中かもしれないもの、
+    /// 打ったままの形（組に合わせて半角にした閉じ括弧）の後は英語の後、日本語の記号にした句読点の後は文の頭として評価する
+    static func continuation(after key: String, mark: String) -> Continuation {
+        if symbols[key] != nil { return .afterJapanese }
+        return mark.allSatisfy(\.isASCII) ? .afterEnglish : .start
     }
 
-    /// 句読点は、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
+    /// 句読点は、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。閉じ丸括弧は、組になる開き丸括弧と同じ形にする（punctuationForm）。
     /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
-    /// 日本語の記号の位置で入力を切る。句読点の後は文の頭として、記号の打鍵の後は文の途中かもしれないものとして次の部分を評価する
-    /// 閉じ丸括弧は、組になる開き丸括弧と同じ形にする（punctuationForm）
+    /// 句読点と記号の打鍵を英語の区間に含めないときは、その位置で入力を切り、後ろは continuation(after:mark:) で評価する
     public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
         segment(input, after: leading.continuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text))
     }
@@ -278,14 +279,14 @@ public final class Segmenter {
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, observe: collect)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runContinuation == .afterEnglish)
-            let form = symbol.map { Self.PunctuationForm.mark($0.mark, after: Self.continuation(after: $0.key)) }
-                ?? Self.punctuationForm(chars[i], opened: &opened, previousIsEnglish: previousIsEnglish)
-            guard case .mark(let mark, let after) = form else { continue }
+            // nil なら打ったまま直前の英語の区間に含める
+            let mark = symbol.map(\.mark) ?? Self.punctuationMark(chars[i], opened: &opened, previousIsEnglish: previousIsEnglish)
+            guard let mark else { continue }
             runSpans.forEach { observe?($0) }
             segments += before
             segments.append(Segment(kind: .punctuation, source: key, reading: mark, output: mark, score: 0, context: .start))
             runStart = end
-            runContinuation = after
+            runContinuation = Self.continuation(after: key, mark: mark)
             runContext = runContinuation.japaneseContext
         }
         return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe)
