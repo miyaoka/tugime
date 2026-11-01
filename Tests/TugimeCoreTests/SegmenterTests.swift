@@ -93,6 +93,8 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(output("kore(sore)") == "これ（それ）")
         #expect(output("kore:sore") == "これ：それ")
         #expect(output("https:") == "https:")
+        #expect(output("kore=sore") == "これ＝それ")
+        #expect(output("x=1") == "x=1")
         #expect(output("(", leading: Segmenter.Leading("今日")) == "（")
         #expect(output("(", leading: Segmenter.Leading("API")) == "(")
     }
