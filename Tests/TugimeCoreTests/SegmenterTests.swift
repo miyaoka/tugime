@@ -55,20 +55,24 @@ private final class LeftRecorder: JapaneseConverting {
     }
 
     /// 数字に続く英字も、区間の頭の英字と同じく、日本語にする綴りなら英語区間に入れない。読めない英字は数字と英語のまま
-    @Test(arguments: [("3i", [Segment.Kind.english, .japanese]), ("100en", [.english, .japanese]), ("3d", [.english]), ("k8s", [.english])])
+    @Test(arguments: [("3i", [Segment.Kind.english, .japanese]), ("100enn", [.english, .japanese]), ("3d", [.english]), ("k8s", [.english])])
     func readsSpellingsAfterDigitsLikeSpellingsAtTheStart(input: String, kinds: [Segment.Kind]) {
         #expect(segmenter.segment(input).map(\.kind) == kinds)
     }
 
-    /// 日本語区間の頭で末尾に打った n は、次に打つ な行 の途中なので打ったまま。かなの後、nn、後ろに句読点が続く n は「ん」
-    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "これ、n"), ("nn", "ん"), ("n.", "ん。")])
-    func keepsPendingNAtTheHeadOfJapanese(input: String, expected: String) {
+    /// 末尾に打った単独の n は、次に打つまで な行 か「ん」かが決まらないので打ったまま。nn と、後ろに句読点が続く n は「ん」
+    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "これ、n"), ("sounaruton", "そうなるとn"), ("nn", "ん"), ("n.", "ん。")])
+    func keepsAPendingNAsTyped(input: String, expected: String) {
         #expect(segmenter.liveText(input) == expected)
     }
 
-    /// かなの後の n は語の途中の「ん」でありうるので、日本語区間の中で読む
-    @Test func readsNAfterKanaAsPartOfTheWord() {
-        #expect(segmenter.segment("kon").map(\.kind) == [.japanese])
+    /// 語の途中でも、末尾の単独の n は外して打ったままにし、前のかなだけを日本語区間にする。nn で終われば「ん」まで日本語区間。英語区間は外さない
+    @Test func splitsAPendingNOffTheJapaneseSpan() {
+        #expect(segmenter.segment("kon").map(\.kind) == [.japanese, .english])
+        #expect(segmenter.segment("kon").map(\.source) == ["ko", "n"])
+        #expect(segmenter.segment("konnn").map(\.source) == ["konn", "n"])
+        #expect(segmenter.segment("konn").map(\.kind) == [.japanese])
+        #expect(segmenter.segment("kotlin").map(\.kind) == [.english])
     }
 
     /// 文の頭で末尾に打った 1 かなは、続けて打つ語の先頭なので変換せずにかなのまま見せる。候補では語を選べる
@@ -425,6 +429,12 @@ private final class RewritingConverter: JapaneseConverting {
 
     @Test func doesNotConvertALoneKanaAtTheStart() {
         _ = segmenter.liveText("ki")
+        #expect(recorder.lefts.isEmpty)
+    }
+
+    /// 後ろが打ったままの単独の n だけでも、その手前の 1 かなは末尾の区間として扱う（kon は こn）
+    @Test func doesNotConvertALoneKanaBeforeAPendingN() {
+        #expect(segmenter.liveText("kon") == "こn")
         #expect(recorder.lefts.isEmpty)
     }
 

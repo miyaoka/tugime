@@ -10,7 +10,7 @@ import Testing
 
     private func display(_ text: String) -> Segmenter.LiveDisplay {
         // 届いた変換の最後の区間が日本語区間かは、表示の末尾がかなや漢字かで代える
-        Segmenter.LiveDisplay(text: text, differsFromInput: false, endsInJapanese: text.last.map { !$0.isASCII } ?? false)
+        Segmenter.LiveDisplay(text: text, differsFromInput: false)
     }
 
     @Test(arguments: [
@@ -26,20 +26,13 @@ import Testing
         ("shsi", false, "shし"),
     ])
     func provisionalText(keys: String, afterJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, inJapanese: false, table: table).text == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, table: table) == expected)
     }
 
-    /// 日本語区間の頭の末尾の n は な行 の途中なので打ったまま。区間の途中と nn は「ん」
-    @Test(arguments: [
-        ("n", false, "n"),
-        ("bn", false, "bn"),
-        ("ka,n", false, "か、n"),
-        ("n", true, "ん"),
-        ("kon", false, "こん"),
-        ("nn", false, "ん"),
-    ])
-    func keepsPendingNAtTheHeadOfJapanese(keys: String, inJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, inJapanese: inJapanese, table: table).text == expected)
+    /// 末尾の単独の n は打ったまま。nn と、後ろに打鍵が続く n は読む
+    @Test(arguments: [("n", "n"), ("bn", "bn"), ("ka,n", "か、n"), ("kon", "こn"), ("nn", "ん"), ("konnn", "こんn"), ("kona", "こな")])
+    func keepsAPendingNAsTyped(keys: String, expected: String) {
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, table: table) == expected)
     }
 
     @Test(arguments: [
@@ -66,9 +59,9 @@ import Testing
         #expect(Segmenter.splitPending("点", typed: "ten") == nil)
     }
 
-    /// 後ろの n が日本語区間の頭かは、届いた変換の最後の区間で決める。登録語（cafe を Café）の後は日本語区間の頭
+    /// 登録語（cafe を Café）の後の n も打ったまま
     @Test func keepsPendingNAfterARegisteredWordBeforeConversionArrives() {
-        let base = Segmenter.LiveDisplay(text: "Café", differsFromInput: false, endsInJapanese: false)
+        let base = Segmenter.LiveDisplay(text: "Café", differsFromInput: false)
         let shown = Segmenter.liveDisplay(of: "cafen", converted: [("cafe", base)], leading: .start, table: table)
         #expect(shown.text == "Cafén")
     }
