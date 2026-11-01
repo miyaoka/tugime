@@ -181,15 +181,20 @@ public final class Segmenter {
 
     /// 区間を前から順に表示の変換にする。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
     /// 返す配列は spans と同じ順で、日本語区間の要素だけが表示の変換を持つ。
-    /// 日本語区間は採点の変換があるときだけ選ばれ、表示の変換は採点の変換があれば必ず返すので、日本語区間の表示の変換は必ずある
+    /// 日本語区間は採点の変換があるときだけ選ばれ、表示の変換は採点の変換があれば必ず返すので、日本語区間の表示の変換は必ずある。
+    /// 末尾の区間が文の頭の 1 かなだけなら、続けて打つ語の先頭なので、変換せずにかなのまま見せる（ki は 気 ではなく き）
     func displays(of spans: [ShownSpan], left: String) -> [JapaneseDisplay?] {
         var shown = left
-        return spans.map { span in
+        return spans.enumerated().map { index, span in
             switch span {
             case .fixed(let text):
                 shown += text
                 return nil
             case .japanese(let kana, let context):
+                if index == spans.count - 1, context == .start, kana.count == 1 {
+                    shown += kana
+                    return JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])
+                }
                 guard let display = japaneseConverter.display(kana: kana, context: context, left: shown) else {
                     preconditionFailure("日本語区間の表示の変換が無い: \(kana)")
                 }
@@ -294,7 +299,19 @@ public final class Segmenter {
             runContinuation = Self.continuation(after: key, mark: mark)
             runContext = runContinuation.japaneseContext
         }
-        return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe)
+        return keepingPendingN(segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe))
+    }
+
+    /// 入力の末尾の、打鍵が n だけの日本語区間を打ったままにする。日本語区間は日本語区間に続くので、n だけの日本語区間は日本語区間の頭にあり、
+    /// 日本語の語は「ん」から始まらないので、次に打つ な行 の途中である。直前が英語区間ならそれに含める（3n、githubn）
+    private func keepingPendingN(_ segments: [Segment]) -> [Segment] {
+        guard let last = segments.last, last.kind == .japanese, last.source == "n" else { return segments }
+        var kept = Array(segments.dropLast())
+        guard let previous = kept.last, previous.kind == .english else {
+            return kept + [englishSegment(last.source, context: last.context)]
+        }
+        kept[kept.count - 1] = englishSegment(previous.source + last.source, context: previous.context)
+        return kept
     }
 
     /// i から始まる記号の打鍵のうち最も長いもの

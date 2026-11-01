@@ -22,11 +22,23 @@ import Testing
         (",", false, ","),
         // 記号の打鍵は前によらず記号
         ("[", false, "「"),
-        ("bn", false, "bん"),
         ("shsi", false, "shし"),
     ])
     func provisionalText(keys: String, afterJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, inJapanese: false, table: table) == expected)
+    }
+
+    /// 日本語区間の頭の末尾の n は な行 の途中なので打ったまま。区間の途中と nn は「ん」
+    @Test(arguments: [
+        ("n", false, "n"),
+        ("bn", false, "bn"),
+        ("ka,n", false, "か、n"),
+        ("n", true, "ん"),
+        ("kon", false, "こん"),
+        ("nn", false, "ん"),
+    ])
+    func keepsPendingNAtTheHeadOfJapanese(keys: String, inJapanese: Bool, expected: String) {
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, inJapanese: inJapanese, table: table) == expected)
     }
 
     @Test(arguments: [

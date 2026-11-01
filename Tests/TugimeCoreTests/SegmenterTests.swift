@@ -60,6 +60,27 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.kind) == kinds)
     }
 
+    /// 日本語区間の頭で末尾に打った n は、次に打つ な行 の途中なので打ったまま。かなの後、nn、後ろに句読点が続く n は「ん」
+    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "これ、n"), ("nn", "ん"), ("n.", "ん。")])
+    func keepsPendingNAtTheHeadOfJapanese(input: String, expected: String) {
+        #expect(segmenter.liveText(input) == expected)
+    }
+
+    /// かなの後の n は語の途中の「ん」でありうるので、日本語区間の中で読む
+    @Test func readsNAfterKanaAsPartOfTheWord() {
+        #expect(segmenter.segment("kon").map(\.kind) == [.japanese])
+    }
+
+    /// 文の頭で末尾に打った 1 かなは、続けて打つ語の先頭なので変換せずにかなのまま見せる。候補では語を選べる
+    @Test func showsALoneKanaAtTheSentenceHeadAsKana() throws {
+        #expect(segmenter.liveText("ki") == "き")
+        #expect(segmenter.liveText("sorede,ke").hasSuffix("、け"))
+        #expect(segmenter.liveText("ki", leading: Segmenter.Leading("今日は雨だった。")) == "き")
+        let clause = try #require(segmenter.clauses("ki").first)
+        #expect(clause.candidates.first == "き")
+        #expect(clause.candidates.count > 2)
+    }
+
     @Test(arguments: ["-", "--", "-.", "xa", "kaki--", "binge-watch", ".", "a,b", "Hello."])
     func coversEveryKeystroke(input: String) {
         #expect(segmenter.segment(input).map(\.source).joined() == input)
