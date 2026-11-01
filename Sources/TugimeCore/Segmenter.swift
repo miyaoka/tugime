@@ -132,8 +132,13 @@ public final class Segmenter {
 
     /// 英語区間に続く日本語区間の評価のしかた。英語区間が数字で終わるなら、その数字に続く形（1500 円、3 回）にする
     static func context(after text: some Collection<Character>) -> JapaneseContext {
-        let digits = String(text.reversed().prefix { $0.isASCII && $0.isNumber }.reversed())
+        let digits = String(text.reversed().prefix(while: isDigit).reversed())
         return digits.isEmpty ? .afterWord : .afterNumber(digits)
+    }
+
+    /// 日本語区間を数字に続く形にする数字
+    static func isDigit(_ c: Character) -> Bool {
+        c.isASCII && c.isNumber
     }
 
     /// liveDisplay の文字列
@@ -372,7 +377,7 @@ public final class Segmenter {
             // 句読点は直前の区間に従い、英語の後なら英語区間に入るので、英語区間を句読点から始めない。入力の先頭は、入力欄の前の英語に続いている
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
             // 区間の頭の数字の後ろ。数字に続く英字は、区間の頭の英字と同じく、日本語にする綴りなら英語区間に入れない（3i を 3位 に）
-            let afterDigits = chars[start...].prefix { $0.isASCII && $0.isNumber }.count + start
+            let afterDigits = chars[start...].prefix(while: Self.isDigit).count + start
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
                 if let segment = wordSegment(source, context: context) {
@@ -380,7 +385,8 @@ public final class Segmenter {
                     continue
                 }
                 if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseReach.contains(end) { continue }
-                if start < afterDigits, afterDigits < end, afterDigits < n,
+                // 利用者の辞書で英語として扱う打鍵は、区間全体で一致すれば締め出さない
+                if start < afterDigits, afterDigits < end, typedWords[source] == nil,
                    prefersJapanese(String(chars[afterDigits..<end]), readable: readingsAt[afterDigits].contains { $0.end == end }),
                    chained[afterDigits].contains(end) { continue }
                 for previous in start == 0 ? [nil] : [Segment.Kind.japanese, .word] {
