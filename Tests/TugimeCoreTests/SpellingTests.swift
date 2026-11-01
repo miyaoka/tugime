@@ -35,10 +35,10 @@ import Testing
     }
 
     @Test func spellsPunctuationAndSymbolsAsTheirKeys() throws {
-        let spelled = try #require(Segmenter.spelling(of: "ほん、「よむ」・…", table: table))
-        #expect(spelled.map(\.keys).joined() == "honn,[yomu]/z.")
-        #expect(spelled.map(\.kana).joined() == "ほん、「よむ」・…")
-        #expect(Segmenter.spelling(of: "ほん（", table: table) == nil)
+        let spelled = try #require(Segmenter.spelling(of: "ほん、「よむ」・…（れい：これ）", table: table))
+        #expect(spelled.map(\.keys).joined() == "honn,[yomu]/z.(rei:kore)")
+        #expect(spelled.map(\.kana).joined() == "ほん、「よむ」・…（れい：これ）")
+        #expect(Segmenter.spelling(of: "ほん【", table: table) == nil)
     }
 
     @Test func spellsAsciiLettersAndDigitsAsTyped() throws {

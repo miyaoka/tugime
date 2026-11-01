@@ -88,6 +88,15 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(output("quiz,quote,") == "quiz,quote,")
     }
 
+    /// 丸括弧とコロンも句読点と同じく、直前が日本語なら全角、英語なら打ったまま
+    @Test func bracketsAndColonFollowTheSpanBefore() {
+        #expect(output("kore(sore)") == "これ（それ）")
+        #expect(output("kore:sore") == "これ：それ")
+        #expect(output("https:") == "https:")
+        #expect(output("(", leading: Segmenter.Leading("今日")) == "（")
+        #expect(output("(", leading: Segmenter.Leading("API")) == "(")
+    }
+
     @Test func leadingPunctuationFollowsTheTextBeforeTheCaret() {
         #expect(output(".", leading: Segmenter.Leading("API")) == ".")
         #expect(output(".", leading: Segmenter.Leading("今日")) == "。")

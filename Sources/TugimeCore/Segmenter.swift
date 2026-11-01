@@ -222,7 +222,7 @@ public final class Segmenter {
     }
 
     /// 前の語の後ろに付く記号と、日本語の文で使う形
-    static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！", "~": "〜"]
+    static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！", "~": "〜", "(": "（", ")": "）", ":": "："]
 
     /// 前後の区間によらず決まった記号にする打鍵。日本語モードでは打ったまま出さない
     static let symbols: [String: String] = [
