@@ -65,11 +65,11 @@ final class UserDictionaryFile {
         }
     }
 
-    /// 更新時刻が前に見たときと違えば読み直し、segmenter の利用者の語を置き換える。読めない行は飛ばす。
+    /// 更新時刻が前に見たときと違えば読み直し、区切りの利用者の語を置き換える（変換のキューに積む）。読めない行は飛ばす。
     /// ファイルを読めなければ、前に読めた辞書で変換を続ける。
     /// ファイルが無いのは語が無い状態で、誤りではない。
     /// 置き換えると未確定の文字列が終わるので、未確定の文字列の外でだけ呼ぶ
-    func refresh(into segmenter: Segmenter) {
+    func refresh(into conversion: ConversionQueue) {
         let modified: Date?
         do {
             modified = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
@@ -87,7 +87,7 @@ final class UserDictionaryFile {
             for line in dictionary.skipped {
                 logger.warning("\(line.description, privacy: .public)")
             }
-            segmenter.replaceUserDictionary(dictionary)
+            conversion.async { $0.replaceUserDictionary(dictionary) }
             seen = modified
         } catch {
             seen = nil

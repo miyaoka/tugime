@@ -39,7 +39,7 @@ private enum KeyCode {
 }
 
 /// 区切りと変換はプロセスに 1 つだけ持つ。辞書・語表・モデルの読み込みが重いので、入力源ごとに作らない
-let sharedSegmenter: Segmenter = {
+let conversion: ConversionQueue = {
     // 表示の変換のモデルはバンドルの Contents/Resources/model に、システム辞書は Contents/Resources/dictionary に同梱する
     guard let resources = Bundle.main.resourceURL else { fatalError("tugime を初期化できない: バンドルの Contents/Resources が無い") }
     let method = ConversionMethod.inputMethod(modelDirectory: resources.appendingPathComponent("model"))
@@ -48,7 +48,16 @@ let sharedSegmenter: Segmenter = {
     }
     do {
         let dictionary = try SystemDictionary(url: resources.appendingPathComponent(SystemDictionary.directory).appendingPathComponent(SystemDictionary.fileName))
-        return try method.makeSegmenter(dictionary: dictionary)
+        return ConversionQueue(segmenter: try method.makeSegmenter(dictionary: dictionary))
+    } catch {
+        fatalError("tugime を初期化できない: \(error)")
+    }
+}()
+
+/// 変換が届く前に打った文字を読むための綴りの表。区切りが使う表と同じもの
+let romajiTable: RomajiTable = {
+    do {
+        return try RomajiTable.bundled()
     } catch {
         fatalError("tugime を初期化できない: \(error)")
     }
@@ -70,6 +79,18 @@ final class TugimeInputController: IMKInputController {
     private var leading: Segmenter.Leading = .start
     /// 入力欄が前の文字列を返さないときの代わりに、tugime が確定した文字列を持つ
     private var leadingContext = LeadingContext()
+
+    // 打っている途中の変換は、打鍵を待たせないよう変換のキューに積み、届いたら表示を差し替える
+    /// 打っている途中の変換の世代。未確定の文字列を終えるか作り直すたびに進め、届いた変換が今のものかを見分ける
+    private var conversionGeneration = 0
+    /// 変換が届いた最新の打鍵列と、その表示
+    private var latestConversion: (keys: String, display: Segmenter.LiveDisplay)?
+    /// 変換が届いた打鍵列と表示。後から打った分をつなぐ土台にする
+    private var converted: [(keys: String, display: Segmenter.LiveDisplay)] = []
+    /// 変換をキューに積み、まだ届いていない。積むのは 1 つずつで、届いたときに最新の打鍵列を積む
+    private var converting = false
+    /// 打っている途中に出している文字列。Enter はこれを確定する
+    private var shownText = ""
 
     /// 入力欄のカーソルより前の文字列を読む。入力欄が返さなければ、tugime が続けて確定した文字列を使う
     private func readLeading(of client: IMKTextInput) -> Segmenter.Leading {
@@ -272,7 +293,7 @@ final class TugimeInputController: IMKInputController {
             guard !keys.isEmpty else { return false }
             if event.modifierFlags.contains(.shift) {
                 // 矢印キーと同じく文節の選択に入り、最初の文節までを確定する
-                let clauses = sharedSegmenter.clauses(keys, leading: leading)
+                let clauses = segmentedClauses()
                 self.clauses = clauses
                 focus = 0
                 commitThroughFocus(clauses, client: client)
@@ -289,7 +310,7 @@ final class TugimeInputController: IMKInputController {
                 showMarkedText(client)
                 return true
             }
-            clauses = sharedSegmenter.clauses(keys, leading: leading)
+            clauses = segmentedClauses()
             focus = 0
             showMarkedText(client)
             return true
@@ -297,7 +318,7 @@ final class TugimeInputController: IMKInputController {
             // 打っている途中も変換して見せているので、矢印キーで Shift+Space を押さずに文節の選択に入る。
             // Shift+Space と同じく最初の文節を選び、選んだ後の操作としてそのキーを扱う
             guard !keys.isEmpty else { return false }
-            let clauses = sharedSegmenter.clauses(keys, leading: leading)
+            let clauses = segmentedClauses()
             self.clauses = clauses
             focus = 0
             // ↑ ↓ は文節の表示を描き直さないので、先に文節の選択の表示にしておく
@@ -306,13 +327,13 @@ final class TugimeInputController: IMKInputController {
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
             keys.removeLast()
-            if keys.isEmpty { sharedSegmenter.endComposition() }
+            if keys.isEmpty { endComposition() }
             showMarkedText(client)
             return true
         case KeyCode.escape:
             guard !keys.isEmpty else { return false }
             keys = ""
-            sharedSegmenter.endComposition()
+            endComposition()
             showMarkedText(client)
             return true
         default:
@@ -346,7 +367,8 @@ final class TugimeInputController: IMKInputController {
             if event.modifierFlags.contains(.shift) {
                 focus = (focus + step + clauses.count) % clauses.count
             } else {
-                self.clauses = sharedSegmenter.resize(clauses, at: focus, by: step, leading: leading)
+                let (focus, leading) = (focus, leading)
+                self.clauses = conversion.sync { $0.resize(clauses, at: focus, by: step, leading: leading) }
             }
             candidatePanel.hide()
             showMarkedText(client)
@@ -376,7 +398,8 @@ final class TugimeInputController: IMKInputController {
 
     /// 未確定の文字列全体を 1 つの文節にして、指定の文字種で表示する。Enter で確定する
     private func convertWhole(to form: CharacterForm, client: IMKTextInput) {
-        clauses = [sharedSegmenter.wholeClause(keys, to: form, leading: leading)]
+        let (keys, leading) = (keys, leading)
+        clauses = [conversion.sync { $0.wholeClause(keys, to: form, leading: leading) }]
         focus = 0
         candidatePanel.hide()
         showMarkedText(client)
@@ -385,7 +408,8 @@ final class TugimeInputController: IMKInputController {
     /// 選んでいる文節を指定の文字種にする。その文字列を文節の候補として選ぶので、候補の窓で選び直せる。
     /// 文節の境目が 1 つの綴りの途中にあって英字にできないときは、Shift+Enter と同じく何もしない
     private func convertFocusedClause(to form: CharacterForm, clauses: [Clause], client: IMKTextInput) {
-        guard let text = sharedSegmenter.convertClause(clauses, at: focus, to: form) else { return }
+        let focus = focus
+        guard let text = conversion.sync({ $0.convertClause(clauses, at: focus, to: form) }) else { return }
         var clauses = clauses
         if let index = clauses[focus].candidates.firstIndex(of: text) {
             clauses[focus].selected = index
@@ -409,7 +433,7 @@ final class TugimeInputController: IMKInputController {
         if keys.isEmpty {
             leading = readLeading(of: client)
             // 辞書を替えるのは未確定の文字列の始まりだけにする。打っている途中に替えると、同じ打鍵列の表示が途中で変わる
-            userDictionaryFile.refresh(into: sharedSegmenter)
+            userDictionaryFile.refresh(into: conversion)
         }
         keys.append(text)
         showMarkedText(client)
@@ -429,9 +453,10 @@ final class TugimeInputController: IMKInputController {
                 marked.append(styled(clause.output, style: style, at: marked.length))
             }
         } else {
-            let live = sharedSegmenter.liveDisplay(keys, leading: leading)
+            let live = liveDisplay
+            shownText = live.text
             marked.append(styled(live.text, style: kTSMHiliteRawText, at: 0))
-            differs = live.differsFromInput
+            differs = live.differs
         }
         // カーソルは常に末尾に置く。ターミナル（xterm.js）はカーソルの位置を未確定の文字列の終わりとして読むので、途中に置くと確定する文字列が欠ける
         client.setMarkedText(
@@ -444,6 +469,7 @@ final class TugimeInputController: IMKInputController {
         } else {
             rewriteWarning.hide()
         }
+        if clauses == nil { requestConversion() }
     }
 
     /// 下線の種類と太さはクライアントが決めるので、文節の状態だけを IMK に渡して属性を受け取る
@@ -456,9 +482,64 @@ final class TugimeInputController: IMKInputController {
         return NSAttributedString(string: text, attributes: attributes)
     }
 
-    /// 打っている途中に表示する文字列
-    private var liveText: String {
-        sharedSegmenter.liveText(keys, leading: leading)
+    /// 打っている途中に表示する文字列と、それが打った読みと合わない変換を含むか。
+    /// 今の打鍵列の変換が届いていればそれを出す。届いていなければ、今の打鍵列の先頭に当たる最新の変換から末尾の打ちかけの部分を外し、
+    /// 外した打鍵と後から打った打鍵の読みをつなぐ。打ちかけの部分を外せない変換は飛ばして、その前の変換を使う
+    private var liveDisplay: (text: String, differs: Bool) {
+        if let latest = latestConversion, latest.keys == keys { return (latest.display.text, latest.display.differsFromInput) }
+        for base in converted.reversed() where keys.hasPrefix(base.keys) {
+            guard let split = Segmenter.splitPending(base.display.text, typed: base.keys) else { continue }
+            let rest = keys.dropFirst(base.keys.count - split.pending)
+            return (split.kept + Segmenter.provisionalText(of: rest, after: split.kept, table: romajiTable), base.display.differsFromInput)
+        }
+        return (Segmenter.provisionalText(of: keys, after: "", table: romajiTable), false)
+    }
+
+    /// 今の打鍵列の変換を、届いていなければキューに積む。積んでいる変換があれば、それが届いてから積む
+    private func requestConversion() {
+        guard !converting, clauses == nil, !keys.isEmpty, latestConversion?.keys != keys else { return }
+        converting = true
+        let (keys, leading, generation) = (keys, leading, conversionGeneration)
+        conversion.async { segmenter in
+            let display = segmenter.liveDisplay(keys, leading: leading)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self.didConvert(display, keys: keys, generation: generation) }
+            }
+        }
+    }
+
+    /// 変換が届いた。今の未確定の文字列のものなら覚えて表示を差し替え、その間に打たれていれば最新の打鍵列を積む
+    private func didConvert(_ display: Segmenter.LiveDisplay, keys converted: String, generation: Int) {
+        converting = false
+        if generation == conversionGeneration {
+            latestConversion = (converted, display)
+            self.converted.append((converted, display))
+            if clauses == nil, !keys.isEmpty, let client = client() {
+                showMarkedText(client)
+                return
+            }
+        }
+        requestConversion()
+    }
+
+    /// 届いた変換を捨て、次に届く変換を今の打鍵列のものとして扱う
+    private func forgetConversions() {
+        conversionGeneration += 1
+        latestConversion = nil
+        converted = []
+        shownText = ""
+    }
+
+    /// 未確定の文字列を終える。区切りと変換が覚えたものも捨てる
+    private func endComposition() {
+        forgetConversions()
+        conversion.async { $0.endComposition() }
+    }
+
+    /// 打鍵列を文節に分ける。積んでいる変換が終わるのを待つ
+    private func segmentedClauses() -> [Clause] {
+        let (keys, leading) = (keys, leading)
+        return conversion.sync { $0.clauses(keys, leading: leading) }
     }
 
     /// 選んでいる文節までを確定し、残りの文節は変換したまま、次の文節を選んだ状態で残す。
@@ -468,7 +549,8 @@ final class TugimeInputController: IMKInputController {
             commit(client)
             return
         }
-        guard let result = sharedSegmenter.commit(clauses, through: focus) else {
+        let focus = focus
+        guard let result = conversion.sync({ $0.commit(clauses, through: focus) }) else {
             // 確定しないときも、文節の選択に入った表示にそろえる。打っている途中から入ったときはまだ描いていない
             showMarkedText(client)
             return
@@ -477,7 +559,8 @@ final class TugimeInputController: IMKInputController {
         insert(result.text, client: client)
         keys = result.keys
         self.clauses = result.rest
-        focus = 0
+        self.focus = 0
+        forgetConversions()
         // 残りを打っている途中の表示に戻したときは、確定した文字列の後ろとして区切る
         leading = readLeading(of: client)
         showMarkedText(client)
@@ -488,11 +571,11 @@ final class TugimeInputController: IMKInputController {
         candidatePanel.hide()
         rewriteWarning.hide()
         guard !keys.isEmpty else { return }
-        insert(clauses?.map(\.output).joined() ?? liveText, client: client)
+        insert(clauses?.map(\.output).joined() ?? shownText, client: client)
         keys = ""
         clauses = nil
         focus = 0
-        sharedSegmenter.endComposition()
+        endComposition()
     }
 
     private func insert(_ text: String, client: IMKTextInput) {
