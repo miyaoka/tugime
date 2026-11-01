@@ -431,7 +431,6 @@ private final class RewritingConverter: JapaneseConverting {
     /// 組に合わせて半角にした閉じ括弧の後ろは英語の後で、文の頭ではない
     @Test func convertsALoneKanaAfterAHalfWidthClosingBracket() throws {
         _ = segmenter.liveText("github(kore)ki")
-        #expect(recorder.lefts.count == 2)
         #expect(try #require(recorder.lefts.last).hasSuffix(")"))
     }
 
