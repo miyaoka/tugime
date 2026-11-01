@@ -4,7 +4,7 @@ public struct Segment: Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         case japanese
         case english
-        /// 日本語の記号にした句読点（, . ? ! ~）と記号の打鍵（zh [ / など）
+        /// 入力を切った句読点（Segmenter.punctuation）と記号の打鍵（Segmenter.symbols）。組の開き括弧に合わせて半角にした閉じ括弧も含む
         case punctuation
         /// 利用者の辞書で日本語にした、かなに読めない打鍵（cafe を Café）。日本語区間と同じく前後に続き、表記は登録した語
         case word
@@ -221,8 +221,8 @@ public final class Segmenter {
         return readAny ? words.joined(separator: " ") : nil
     }
 
-    /// 前の語の後ろに付く記号と、日本語の文で使う形
-    static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！", "~": "〜"]
+    /// 句読点。直前の区間が日本語なら日本語の文で使う形にし、英語なら打ったままにする記号と、その形
+    static let punctuation: [Character: String] = [",": "、", ".": "。", "?": "？", "!": "！", "~": "〜", "(": "（", ")": "）", ":": "：", "=": "＝"]
 
     /// 前後の区間によらず決まった記号にする打鍵。日本語モードでは打ったまま出さない
     static let symbols: [String: String] = [
@@ -232,55 +232,61 @@ public final class Segmenter {
     ]
     static let maxSymbolLength = symbols.keys.map(\.count).max()!
 
-    /// 日本語の記号にした句読点・記号の打鍵 key の後ろの入力の評価のしかた。句読点の後は文頭、記号の打鍵の後は文の途中かもしれないものとする
-    static func continuation(after key: String) -> Continuation {
-        symbols[key] == nil ? .start : .afterJapanese
+    /// 入力を切った句読点・記号の打鍵 key を mark にした区間の後ろの入力の評価のしかた。記号の打鍵の後は文の途中かもしれないもの、
+    /// 打ったままの形（組に合わせて半角にした閉じ括弧）の後は英語の後、日本語の記号にした句読点の後は文の頭として評価する
+    static func continuation(after key: String, mark: String) -> Continuation {
+        if symbols[key] != nil { return .afterJapanese }
+        return mark.allSatisfy(\.isASCII) ? .afterEnglish : .start
     }
 
-    /// 句読点は前の語の後ろに付くので、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
+    /// 句読点は、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。閉じ丸括弧は、組になる開き丸括弧と同じ形にする（punctuationMark）。
     /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
-    /// 日本語の記号の位置で入力を切る。句読点の後は文頭として、記号の打鍵の後は文の途中かもしれないものとして次の部分を評価する
+    /// 句読点と記号の打鍵を英語の区間に含めないときは、その位置で入力を切り、後ろは continuation(after:mark:) で評価する
     public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
-        segment(input, after: leading.continuation, context: leading.japaneseContext)
+        segment(input, after: leading.continuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text))
     }
 
     /// 区切りを決めた部分の採点で比べた区間の候補を返す。句読点の前で英語に続くと分かって採点し直す部分の候補は含めない。診断用
     public func candidates(_ input: String, leading: Leading = .start) -> [ScoredSpan] {
         var spans: [ScoredSpan] = []
-        _ = segment(input, after: leading.continuation, context: leading.japaneseContext) { spans.append($0) }
+        _ = segment(input, after: leading.continuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text)) { spans.append($0) }
         return spans
     }
 
-    /// context は、最初の句読点か記号までの部分の最初の日本語区間を評価する形
-    func segment(_ input: String, after continuation: Continuation, context: JapaneseContext) -> [Segment] {
-        segment(input, after: continuation, context: context, observe: nil)
+    /// context は、最初の句読点か記号までの部分の最初の日本語区間を評価する形。opened は入力より前の閉じていない開き丸括弧
+    func segment(_ input: String, after continuation: Continuation, context: JapaneseContext, opened: [Character]) -> [Segment] {
+        segment(input, after: continuation, context: context, opened: opened, observe: nil)
     }
 
     /// observe には、区切りを決めた部分の区間の候補だけを渡す。句読点の前で英語に続くと分かって採点し直す部分の候補は渡さない
-    private func segment(_ input: String, after continuation: Continuation, context: JapaneseContext, observe: ((ScoredSpan) -> Void)?) -> [Segment] {
+    private func segment(
+        _ input: String, after continuation: Continuation, context: JapaneseContext, opened: [Character], observe: ((ScoredSpan) -> Void)?
+    ) -> [Segment] {
         let chars = Array(input)
         var segments: [Segment] = []
         var runStart = 0
         var runContinuation = continuation
         var runContext = context
+        var opened = opened
         var i = 0
         while i < chars.count {
             let symbol = Self.symbol(at: i, in: chars)
             let key = symbol?.key ?? String(chars[i])
-            let mark = symbol?.mark ?? Self.punctuation[chars[i]]
             let end = i + key.count
             defer { i = end }
-            guard let mark else { continue }
+            guard symbol != nil || Self.punctuation[chars[i]] != nil else { continue }
             var runSpans: [ScoredSpan] = []
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, observe: collect)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runContinuation == .afterEnglish)
-            if symbol == nil, previousIsEnglish { continue }
+            // nil なら打ったまま直前の英語の区間に含める
+            let mark = symbol.map(\.mark) ?? Self.punctuationMark(chars[i], opened: &opened, previousIsEnglish: previousIsEnglish)
+            guard let mark else { continue }
             runSpans.forEach { observe?($0) }
             segments += before
             segments.append(Segment(kind: .punctuation, source: key, reading: mark, output: mark, score: 0, context: .start))
             runStart = end
-            runContinuation = Self.continuation(after: key)
+            runContinuation = Self.continuation(after: key, mark: mark)
             runContext = runContinuation.japaneseContext
         }
         return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe)
@@ -363,7 +369,7 @@ public final class Segmenter {
                 }
             }
             let japaneseReach = japaneseEnds.reduce(into: japaneseEnds) { $0.formUnion(chained[$1]) }
-            // 句読点は前の語の後ろに付くので、英語区間を句読点から始めない。入力の先頭は、入力欄の前の英語に付いている
+            // 句読点は直前の区間に従い、英語の後なら英語区間に入るので、英語区間を句読点から始めない。入力の先頭は、入力欄の前の英語に続いている
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])

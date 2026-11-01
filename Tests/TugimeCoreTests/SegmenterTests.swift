@@ -88,6 +88,53 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(output("quiz,quote,") == "quiz,quote,")
     }
 
+    /// 丸括弧・コロン・等号も句読点と同じく、直前が日本語なら全角、英語なら打ったまま
+    @Test func bracketsColonAndEqualsFollowTheSpanBefore() {
+        #expect(output("kore(sore)") == "これ（それ）")
+        #expect(output("kore:sore") == "これ：それ")
+        #expect(output("https:") == "https:")
+        #expect(output("kore=sore") == "これ＝それ")
+        #expect(output("x=1") == "x=1")
+        #expect(output("(", leading: Segmenter.Leading("今日")) == "（")
+        #expect(output("(", leading: Segmenter.Leading("API")) == "(")
+    }
+
+    /// 閉じ括弧は、入れ子を数えて組になる開き括弧の形にそろえる
+    @Test func closingBracketsFollowTheirOpeners() {
+        #expect(output("kore(github)") == "これ（github）")
+        #expect(output("github(kore)") == "github(これ)")
+        #expect(output("(kore(sore),f(x))") == "（これ（それ）、f(x)）")
+        // 組になる開き括弧が入力欄の前にあれば、その形にする
+        #expect(output("github)", leading: Segmenter.Leading("これは（")) == "github）")
+        #expect(output("kore)", leading: Segmenter.Leading("f(")) == "これ)")
+    }
+
+    /// 閉じ括弧の後ろは、そろえた形の後として区切る。全角の後は文の頭、半角の後は英語の後
+    @Test func punctuationAfterAClosingBracketFollowsItsForm() {
+        #expect(output("kore(github).") == "これ（github）。")
+        #expect(output("github(kore).") == "github(これ).")
+    }
+
+    /// 英語の区間の末尾で打ったままにした句読点は、日本語の記号を候補で選べる。途中の句読点は変えない
+    @Test func punctuationAfterEnglishOffersTheJapaneseMark() {
+        let clauses = segmenter.clauses(".", leading: Segmenter.Leading("github"))
+        #expect(clauses.map(\.output) == ["."])
+        #expect(clauses[0].candidates.contains("。"))
+        let english = segmenter.clauses("vue.js")
+        #expect(english.map(\.output) == ["vue.js"])
+        #expect(!english[0].candidates.contains("vue。js"))
+    }
+
+    /// 括弧の候補を選び直すと、組になる括弧だけの文節も同じ形になる
+    @Test func choosingABracketPairsItsPartner() throws {
+        let clauses = segmenter.clauses("kore(sore)")
+        let open = try #require(clauses.firstIndex { $0.output == "（" })
+        let close = try #require(clauses.firstIndex { $0.output == "）" })
+        let paired = Clause.selecting(try #require(clauses[open].candidates.firstIndex(of: "(")), at: open, in: clauses)
+        #expect(paired[open].output == "(")
+        #expect(paired[close].output == ")")
+    }
+
     @Test func leadingPunctuationFollowsTheTextBeforeTheCaret() {
         #expect(output(".", leading: Segmenter.Leading("API")) == ".")
         #expect(output(".", leading: Segmenter.Leading("今日")) == "。")
