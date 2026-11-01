@@ -371,6 +371,8 @@ public final class Segmenter {
             let japaneseReach = japaneseEnds.reduce(into: japaneseEnds) { $0.formUnion(chained[$1]) }
             // 句読点は直前の区間に従い、英語の後なら英語区間に入るので、英語区間を句読点から始めない。入力の先頭は、入力欄の前の英語に続いている
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
+            // 区間の頭の数字の後ろ。数字に続く英字は、区間の頭の英字と同じく、日本語にする綴りなら英語区間に入れない（3i を 3位 に）
+            let afterDigits = chars[start...].prefix { $0.isASCII && $0.isNumber }.count + start
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
                 if let segment = wordSegment(source, context: context) {
@@ -378,6 +380,9 @@ public final class Segmenter {
                     continue
                 }
                 if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseReach.contains(end) { continue }
+                if start < afterDigits, afterDigits < end, afterDigits < n,
+                   prefersJapanese(String(chars[afterDigits..<end]), readable: readingsAt[afterDigits].contains { $0.end == end }),
+                   chained[afterDigits].contains(end) { continue }
                 for previous in start == 0 ? [nil] : [Segment.Kind.japanese, .word] {
                     relax(end, start, englishSegment(source, context: context), after: previous)
                 }

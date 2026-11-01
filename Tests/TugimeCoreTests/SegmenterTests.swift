@@ -54,6 +54,12 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.kind) == [.japanese])
     }
 
+    /// 数字に続く英字も、区間の頭の英字と同じく、日本語にする綴りなら英語区間に入れない。読めない英字は数字と英語のまま
+    @Test(arguments: [("3i", [Segment.Kind.english, .japanese]), ("100en", [.english, .japanese]), ("3d", [.english]), ("k8s", [.english])])
+    func readsSpellingsAfterDigitsLikeSpellingsAtTheStart(input: String, kinds: [Segment.Kind]) {
+        #expect(segmenter.segment(input).map(\.kind) == kinds)
+    }
+
     @Test(arguments: ["-", "--", "-.", "xa", "kaki--", "binge-watch", ".", "a,b", "Hello."])
     func coversEveryKeystroke(input: String) {
         #expect(segmenter.segment(input).map(\.source).joined() == input)
