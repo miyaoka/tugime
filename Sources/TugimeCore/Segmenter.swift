@@ -4,7 +4,7 @@ public struct Segment: Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         case japanese
         case english
-        /// 日本語の記号にした句読点（Segmenter.punctuation）と記号の打鍵（Segmenter.symbols）
+        /// 入力を切った句読点（Segmenter.punctuation）と記号の打鍵（Segmenter.symbols）。組の開き括弧に合わせて半角にした閉じ括弧も含む
         case punctuation
         /// 利用者の辞書で日本語にした、かなに読めない打鍵（cafe を Café）。日本語区間と同じく前後に続き、表記は登録した語
         case word
@@ -240,48 +240,52 @@ public final class Segmenter {
     /// 句読点は、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
     /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
     /// 日本語の記号の位置で入力を切る。句読点の後は文の頭として、記号の打鍵の後は文の途中かもしれないものとして次の部分を評価する
-    /// 丸括弧は組で形をそろえる（aligningBrackets）
+    /// 閉じ丸括弧は、組になる開き丸括弧と同じ形にする（punctuationForm）
     public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
-        Self.aligningBrackets(segment(input, after: leading.continuation, context: leading.japaneseContext), before: leading.text)
+        segment(input, after: leading.continuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text))
     }
 
     /// 区切りを決めた部分の採点で比べた区間の候補を返す。句読点の前で英語に続くと分かって採点し直す部分の候補は含めない。診断用
     public func candidates(_ input: String, leading: Leading = .start) -> [ScoredSpan] {
         var spans: [ScoredSpan] = []
-        _ = segment(input, after: leading.continuation, context: leading.japaneseContext) { spans.append($0) }
+        _ = segment(input, after: leading.continuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text)) { spans.append($0) }
         return spans
     }
 
-    /// context は、最初の句読点か記号までの部分の最初の日本語区間を評価する形
-    func segment(_ input: String, after continuation: Continuation, context: JapaneseContext) -> [Segment] {
-        segment(input, after: continuation, context: context, observe: nil)
+    /// context は、最初の句読点か記号までの部分の最初の日本語区間を評価する形。opened は入力より前の閉じていない開き丸括弧
+    func segment(_ input: String, after continuation: Continuation, context: JapaneseContext, opened: [Character]) -> [Segment] {
+        segment(input, after: continuation, context: context, opened: opened, observe: nil)
     }
 
     /// observe には、区切りを決めた部分の区間の候補だけを渡す。句読点の前で英語に続くと分かって採点し直す部分の候補は渡さない
-    private func segment(_ input: String, after continuation: Continuation, context: JapaneseContext, observe: ((ScoredSpan) -> Void)?) -> [Segment] {
+    private func segment(
+        _ input: String, after continuation: Continuation, context: JapaneseContext, opened: [Character], observe: ((ScoredSpan) -> Void)?
+    ) -> [Segment] {
         let chars = Array(input)
         var segments: [Segment] = []
         var runStart = 0
         var runContinuation = continuation
         var runContext = context
+        var opened = opened
         var i = 0
         while i < chars.count {
             let symbol = Self.symbol(at: i, in: chars)
             let key = symbol?.key ?? String(chars[i])
-            let mark = symbol?.mark ?? Self.punctuation[chars[i]]
             let end = i + key.count
             defer { i = end }
-            guard let mark else { continue }
+            guard symbol != nil || Self.punctuation[chars[i]] != nil else { continue }
             var runSpans: [ScoredSpan] = []
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, observe: collect)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runContinuation == .afterEnglish)
-            if symbol == nil, previousIsEnglish { continue }
+            let form = symbol.map { Self.PunctuationForm.mark($0.mark, after: Self.continuation(after: $0.key)) }
+                ?? Self.punctuationForm(chars[i], opened: &opened, previousIsEnglish: previousIsEnglish)
+            guard case .mark(let mark, let after) = form else { continue }
             runSpans.forEach { observe?($0) }
             segments += before
             segments.append(Segment(kind: .punctuation, source: key, reading: mark, output: mark, score: 0, context: .start))
             runStart = end
-            runContinuation = Self.continuation(after: key)
+            runContinuation = after
             runContext = runContinuation.japaneseContext
         }
         return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe)

@@ -1,34 +1,33 @@
 import Foundation
 
-/// 丸括弧の組の形をそろえる
+/// 句読点の形と、丸括弧の組
 extension Segmenter {
-    /// 開き括弧ごとの、同じ形の閉じ括弧
+    /// 開き丸括弧ごとの、同じ形の閉じ丸括弧
     static let closingBracket: [Character: Character] = ["(": ")", "（": "）"]
 
-    /// 区間の表記の中の閉じ括弧を、組になる開き括弧と同じ形にする。開き括弧の形は句読点として直前の区間で決まっている。
-    /// 組は入れ子を数えて決める。未確定の文字列の中に組になる開き括弧が無ければ、入力欄のカーソルより前の文字列 before の
-    /// 閉じていない開き括弧と内側から組にする。どちらにも無ければ、閉じ括弧は直前の区間で決まった形のまま
-    static func aligningBrackets(_ segments: [Segment], before: String) -> [Segment] {
-        var aligned = segments
-        var opened = unclosedOpeners(in: before)
-        for index in aligned.indices where aligned[index].kind == .english || aligned[index].kind == .punctuation {
-            var output = Array(aligned[index].output)
-            for offset in output.indices {
-                let c = output[offset]
-                if closingBracket[c] != nil {
-                    opened.append(c)
-                    continue
-                }
-                guard closingBracket.values.contains(c), let opener = opened.popLast(), let closer = closingBracket[opener] else { continue }
-                output[offset] = closer
-            }
-            aligned[index].output = String(output)
-            if aligned[index].kind == .punctuation { aligned[index].reading = aligned[index].output }
-        }
-        return aligned
+    /// 句読点の打鍵 1 文字をどう置くか
+    enum PunctuationForm: Equatable {
+        /// 打ったまま、直前の英語の区間に含める
+        case typed
+        /// mark の区間にしてそこで入力を切り、後ろは after に続くものとして区切る
+        case mark(String, after: Continuation)
     }
 
-    /// text の中で閉じていない開き括弧。外側から順に並べる
+    /// 句読点 c の形。直前の区間が英語なら打ったまま、日本語なら日本語の記号にする。
+    /// 閉じ丸括弧は、opened の最後の開き丸括弧（入れ子を数えて組になるもの）と同じ形にし、opened から外す。全角なら直前が英語でもそこで切り、
+    /// 半角なら直前が日本語でも半角の区間にして後ろを英語の後とする。組が無ければほかの句読点と同じ。
+    /// 開き丸括弧は、決めた形を opened に積む
+    static func punctuationForm(_ c: Character, opened: inout [Character], previousIsEnglish: Bool) -> PunctuationForm {
+        if closingBracket.values.contains(c), let opener = opened.popLast() {
+            if opener == "(" { return previousIsEnglish ? .typed : .mark(")", after: .afterEnglish) }
+            return .mark("）", after: .start)
+        }
+        if closingBracket[c] != nil { opened.append(previousIsEnglish ? c : "（") }
+        guard !previousIsEnglish, let mark = punctuation[c] else { return .typed }
+        return .mark(mark, after: .start)
+    }
+
+    /// text の中で閉じていない開き丸括弧。外側から順に並べる
     static func unclosedOpeners(in text: String) -> [Character] {
         var opened: [Character] = []
         for c in text {
@@ -43,10 +42,16 @@ extension Segmenter {
 }
 
 extension Clause {
-    /// 文節 focus の候補を選び直した後に呼ぶ。その文節が括弧 1 文字なら、入れ子を数えて組になる括弧の文節を探し、
-    /// それも括弧 1 文字なら同じ形の候補を選ぶ。組の括弧がほかの文字と同じ文節にあるときは変えない
-    public static func pairingBrackets(_ clauses: [Clause], at focus: Int) -> [Clause] {
-        guard clauses.indices.contains(focus), clauses[focus].output.count == 1, let c = clauses[focus].output.first else { return clauses }
+    /// 文節 focus の候補 index を選ぶ。その文節が丸括弧 1 文字なら、入れ子を数えて組になる括弧の文節を探し、
+    /// それも丸括弧 1 文字なら同じ形の候補を選ぶ。組の括弧がほかの文字と同じ文節にあるときは変えない
+    public static func selecting(_ index: Int, at focus: Int, in clauses: [Clause]) -> [Clause] {
+        var selected = clauses
+        selected[focus].selected = index
+        return pairingBrackets(selected, at: focus)
+    }
+
+    private static func pairingBrackets(_ clauses: [Clause], at focus: Int) -> [Clause] {
+        guard clauses[focus].output.count == 1, let c = clauses[focus].output.first else { return clauses }
         let opens = Segmenter.closingBracket
         // 括弧ごとの文節の位置と、開きか
         let brackets: [(clause: Int, open: Bool)] = clauses.indices.flatMap { index in

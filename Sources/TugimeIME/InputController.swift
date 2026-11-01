@@ -197,9 +197,8 @@ final class TugimeInputController: IMKInputController {
     }
 
     private func select(_ text: String?) {
-        guard let text, var clauses, let index = clauses[focus].candidates.firstIndex(of: text) else { return }
-        clauses[focus].selected = index
-        self.clauses = Clause.pairingBrackets(clauses, at: focus)
+        guard let text, let clauses, let index = clauses[focus].candidates.firstIndex(of: text) else { return }
+        self.clauses = Clause.selecting(index, at: focus, in: clauses)
         panelIndex = index
         if let client = client() {
             showMarkedText(client)
@@ -366,11 +365,10 @@ final class TugimeInputController: IMKInputController {
     }
 
     private func moveCandidate(by delta: Int, clauses: [Clause], client: IMKTextInput) {
-        var clauses = clauses
         let count = clauses[focus].candidates.count
-        clauses[focus].selected = (clauses[focus].selected + delta + count) % count
-        self.clauses = Clause.pairingBrackets(clauses, at: focus)
-        movePanel(to: clauses[focus].selected)
+        let index = (clauses[focus].selected + delta + count) % count
+        self.clauses = Clause.selecting(index, at: focus, in: clauses)
+        movePanel(to: index)
         showMarkedText(client)
     }
 
@@ -387,13 +385,8 @@ final class TugimeInputController: IMKInputController {
     private func convertFocusedClause(to form: CharacterForm, clauses: [Clause], client: IMKTextInput) {
         guard let text = sharedSegmenter.convertClause(clauses, at: focus, to: form) else { return }
         var clauses = clauses
-        if let index = clauses[focus].candidates.firstIndex(of: text) {
-            clauses[focus].selected = index
-        } else {
-            clauses[focus].candidates.append(text)
-            clauses[focus].selected = clauses[focus].candidates.count - 1
-        }
-        self.clauses = clauses
+        if !clauses[focus].candidates.contains(text) { clauses[focus].candidates.append(text) }
+        self.clauses = Clause.selecting(clauses[focus].candidates.firstIndex(of: text)!, at: focus, in: clauses)
         candidatePanel.hide()
         showMarkedText(client)
     }

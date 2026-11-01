@@ -107,20 +107,29 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(output("kore)", leading: Segmenter.Leading("f(")) == "これ)")
     }
 
-    /// 英語の後で打ったままにした句読点も、日本語の記号を候補で選べる
+    /// 閉じ括弧の後ろは、そろえた形の後として区切る。全角の後は文の頭、半角の後は英語の後
+    @Test func punctuationAfterAClosingBracketFollowsItsForm() {
+        #expect(output("kore(github).") == "これ（github）。")
+        #expect(output("github(kore).") == "github(これ).")
+    }
+
+    /// 英語の区間の末尾で打ったままにした句読点は、日本語の記号を候補で選べる。途中の句読点は変えない
     @Test func punctuationAfterEnglishOffersTheJapaneseMark() {
         let clauses = segmenter.clauses(".", leading: Segmenter.Leading("github"))
         #expect(clauses.map(\.output) == ["."])
         #expect(clauses[0].candidates.contains("。"))
+        let english = segmenter.clauses("vue.js")
+        #expect(english.map(\.output) == ["vue.js"])
+        #expect(!english[0].candidates.contains("vue。js"))
     }
 
     /// 括弧の候補を選び直すと、組になる括弧だけの文節も同じ形になる
     @Test func choosingABracketPairsItsPartner() throws {
-        var clauses = segmenter.clauses("kore(sore)")
+        let clauses = segmenter.clauses("kore(sore)")
         let open = try #require(clauses.firstIndex { $0.output == "（" })
         let close = try #require(clauses.firstIndex { $0.output == "）" })
-        clauses[open].selected = try #require(clauses[open].candidates.firstIndex(of: "("))
-        let paired = Clause.pairingBrackets(clauses, at: open)
+        let paired = Clause.selecting(try #require(clauses[open].candidates.firstIndex(of: "(")), at: open, in: clauses)
+        #expect(paired[open].output == "(")
         #expect(paired[close].output == ")")
     }
 

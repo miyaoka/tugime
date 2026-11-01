@@ -29,7 +29,7 @@ public struct KeystrokeScript: Sendable {
         keys = spelled.map(\.keys).joined()
     }
 
-    /// 選んだ文と、綴りで書けない文字（全角の括弧など）を含むので外した問題
+    /// 選んだ文と、綴りで書けない文字を含むので外した問題
     public struct Selection: Sendable {
         public var scripts: [KeystrokeScript]
         public var skipped: [Problem]

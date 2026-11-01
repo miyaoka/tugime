@@ -237,7 +237,8 @@ extension Segmenter {
             of: segment(
                 String(keys[end...]),
                 after: fixed.kind == .english ? .afterEnglish : .afterJapanese,
-                context: context(after: resized, keys: keys[..<end], leading: leading)
+                context: context(after: resized, keys: keys[..<end], leading: leading),
+                opened: Self.unclosedOpeners(in: left + resized.output)
             ),
             left: left + resized.output,
             firstIndex: span.index + 1
@@ -412,7 +413,7 @@ extension Segmenter {
         var list: [String] = [segment.output]
         switch segment.kind {
         case .punctuation:
-            // 日本語の記号と打ったままの両方を選べる。組をそろえて打ったままの形にした括弧もある
+            // 日本語の記号と打ったままの両方を選べる。組の開き括弧に合わせて打ったままの形にした閉じ括弧もある
             list.append(segment.source)
             if let mark = segment.source.first.flatMap({ Self.punctuation[$0] }) { list.append(mark) }
         case .word:
@@ -422,8 +423,11 @@ extension Segmenter {
         case .english:
             // 利用者の辞書で表記を替えたときは、打ったままの綴りをすぐ後に置く
             list.append(segment.source)
-            // 英語の後で打ったままにした句読点も、日本語の記号を選べる（github. の . を 。 に）
-            list.append(segment.output.map { Self.punctuation[$0] ?? String($0) }.joined())
+            // 区間の末尾で打ったままにした句読点は、日本語の記号を選べる（github. の . を 。 に）。途中の句読点（vue.js）は変えない
+            let trailing = segment.output.reversed().prefix { Self.punctuation[$0] != nil }.count
+            if trailing > 0 {
+                list.append(segment.output.dropLast(trailing) + segment.output.suffix(trailing).map { Self.punctuation[$0]! }.joined())
+            }
             // 英語と判定した区間も、`englishReading` で読めればかなを選べるようにする
             if let kana = englishReading(of: segment.source) {
                 list += [kana, Self.katakana(kana)]
