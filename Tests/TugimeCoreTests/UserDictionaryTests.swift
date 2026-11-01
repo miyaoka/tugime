@@ -136,7 +136,7 @@ import Testing
 
     init() throws {
         segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: ConversionMethod.baseline.make(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nsake\t鮭\tja\ncafe\tCafé"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé"))
     }
 
     /// 綴りの表で読める打鍵は、そのかなの語になり、長い打鍵の途中でも効く
@@ -163,6 +163,11 @@ import Testing
         #expect(segmenter.liveText("tugimewotukau").hasPrefix("tugimeを"))
         // 数字で始まる打鍵も、区間全体で一致すれば英語の区間にする
         #expect(segmenter.liveText("2fa") == "2FA")
+    }
+
+    /// 英語の区間の末尾の n は打ったままの n として外さないので、かなに読めて n で終わる登録語（kanon）も表記どおりに見せる
+    @Test func keepsTheTrailingNOfAnEnglishWord() {
+        #expect(segmenter.liveText("kanon") == "Kanon")
     }
 
     /// 英語として登録した語の後に打った n は、語の表記を残して別の区間にする。n の区間は ん を選べる

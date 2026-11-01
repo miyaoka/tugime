@@ -72,7 +72,7 @@ extension Segmenter {
 
     /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る
     private func clauses(of segments: [Segment], left: String, firstIndex: Int) -> [Clause] {
-        zip(segments, displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: firstIndex == 0)).enumerated().flatMap { offset, pair in
+        zip(segments, displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: firstIndex == 0, endsWithPendingN: false)).enumerated().flatMap { offset, pair in
             let (segment, display) = pair
             let span = ClauseSpan(index: firstIndex + offset, source: segment.source, reading: segment.reading, context: segment.context)
             guard let display else {
@@ -335,7 +335,7 @@ extension Segmenter {
             }
         }
         // 伸縮した区間より後ろの文節だけなので、最初の文節は入力の最初ではない
-        return zip(groups, displays(of: spans, left: left, startsAtHead: false)).flatMap { group, display in
+        return zip(groups, displays(of: spans, left: left, startsAtHead: false, endsWithPendingN: false)).flatMap { group, display in
             display.map { japaneseClauses($0.clauses, context: group[0].span.context, in: group[0].span) } ?? group
         }
     }

@@ -9,8 +9,7 @@ import Testing
     }
 
     private func display(_ text: String) -> Segmenter.LiveDisplay {
-        // 届いた変換の最後の区間が日本語区間かは、表示の末尾がかなや漢字かで代える
-        Segmenter.LiveDisplay(text: text, differsFromInput: false, endsInJapanese: text.last.map { !$0.isASCII } ?? false)
+        Segmenter.LiveDisplay(text: text, differsFromInput: false)
     }
 
     @Test(arguments: [
@@ -26,20 +25,13 @@ import Testing
         ("shsi", false, "shし"),
     ])
     func provisionalText(keys: String, afterJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, inJapanese: false, table: table).text == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, table: table) == expected)
     }
 
-    /// 日本語区間の頭の末尾の n は な行 の途中なので打ったまま。区間の途中と nn は「ん」
-    @Test(arguments: [
-        ("n", false, "n"),
-        ("bn", false, "bn"),
-        ("ka,n", false, "か、n"),
-        ("n", true, "ん"),
-        ("kon", false, "こん"),
-        ("nn", false, "ん"),
-    ])
-    func keepsPendingNAtTheHeadOfJapanese(keys: String, inJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, inJapanese: inJapanese, table: table).text == expected)
+    /// 末尾の単独の n は打ったまま。nn、後ろに打鍵が続く n、綴りの組の一部の n（xn）は読む
+    @Test(arguments: [("n", "n"), ("bn", "bn"), ("ka,n", "か、n"), ("kon", "こn"), ("nn", "ん"), ("konnn", "こんn"), ("kona", "こな"), ("xn", "ん")])
+    func keepsAPendingNAsTyped(keys: String, expected: String) {
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, table: table) == expected)
     }
 
     @Test(arguments: [
@@ -48,8 +40,8 @@ import Testing
         ("github", "github", "githu", 1),
         ("githubにpush", "githubnipush", "githubにpu", 2),
         ("してh", "siteh", "して", 1),
-        // 単独の n を読んだ「ん」と、英語の区間に打ったまま出た n も外す
-        ("幕張ん", "makuharin", "幕張", 1),
+        // 表示に打ったまま出た末尾の n も外す
+        ("幕張n", "makuharin", "幕張", 1),
         ("python", "python", "pytho", 1),
         // 母音や nn で終われば外さない
         ("設定を", "setteiwo", "設定を", 0),
@@ -57,18 +49,18 @@ import Testing
         ("感k", "kannk", "感", 1),
     ])
     func splitsPending(shown: String, keys: String, kept: String, pending: Int) throws {
-        let split = try #require(Segmenter.splitPending(shown, typed: keys))
+        let split = try #require(Segmenter.splitPending(shown, typed: keys, table: table))
         #expect(split.kept == kept)
         #expect(split.pending == pending)
     }
 
     @Test func cannotSplitWhenPendingIsInsideAWord() {
-        #expect(Segmenter.splitPending("点", typed: "ten") == nil)
+        #expect(Segmenter.splitPending("ん", typed: "xn", table: table) == nil)
     }
 
-    /// 後ろの n が日本語区間の頭かは、届いた変換の最後の区間で決める。登録語（cafe を Café）の後は日本語区間の頭
+    /// 登録語（cafe を Café）の後の n も打ったまま
     @Test func keepsPendingNAfterARegisteredWordBeforeConversionArrives() {
-        let base = Segmenter.LiveDisplay(text: "Café", differsFromInput: false, endsInJapanese: false)
+        let base = Segmenter.LiveDisplay(text: "Café", differsFromInput: false)
         let shown = Segmenter.liveDisplay(of: "cafen", converted: [("cafe", base)], leading: .start, table: table)
         #expect(shown.text == "Cafén")
     }
@@ -85,6 +77,10 @@ import Testing
         // 届いていなければ打鍵列全体を読む。先頭の句読点は入力欄の直前で決める
         (",", [], "今日は", "、"),
         (",", [], "make", ","),
+        // 読み終えた nn の n は読み直さない（英語として登録した konn の Konn）
+        ("konna", [("konn", "Konn")], "", "Konnあ"),
+        // 綴りの表で xn が組になる xnn の最後の n は単独なので、次の打鍵と読み直す
+        ("kaxnna", [("kaxnn", "艦n")], "", "艦な"),
     ])
     func liveDisplay(keys: String, converted: [(String, String)], before: String, expected: String) {
         let shown = Segmenter.liveDisplay(
