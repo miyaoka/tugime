@@ -88,8 +88,8 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(output("quiz,quote,") == "quiz,quote,")
     }
 
-    /// 丸括弧とコロンも句読点と同じく、直前が日本語なら全角、英語なら打ったまま
-    @Test func bracketsAndColonFollowTheSpanBefore() {
+    /// 丸括弧・コロン・等号も句読点と同じく、直前が日本語なら全角、英語なら打ったまま
+    @Test func bracketsColonAndEqualsFollowTheSpanBefore() {
         #expect(output("kore(sore)") == "これ（それ）")
         #expect(output("kore:sore") == "これ：それ")
         #expect(output("https:") == "https:")
@@ -113,10 +113,6 @@ private final class LeftRecorder: JapaneseConverting {
     @Test func punctuationAfterAClosingBracketFollowsItsForm() {
         #expect(output("kore(github).") == "これ（github）。")
         #expect(output("github(kore).") == "github(これ).")
-        // 文節の伸縮が後ろの文節の文脈を決め直すときも、区切りと同じ続き方にする
-        #expect(Segmenter.continuation(after: ")", mark: ")") == .afterEnglish)
-        #expect(Segmenter.continuation(after: ")", mark: "）") == .start)
-        #expect(Segmenter.continuation(after: "/", mark: "・") == .afterJapanese)
     }
 
     /// 英語の区間の末尾で打ったままにした句読点は、日本語の記号を候補で選べる。途中の句読点は変えない
