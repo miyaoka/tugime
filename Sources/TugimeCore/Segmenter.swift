@@ -163,7 +163,7 @@ public final class Segmenter {
     public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
         let segments = segment(input, leading: leading)
         var differs = false
-        let text = zip(segments, displays(of: segments.map(ShownSpan.init), left: leading.text)).map { segment, display in
+        let text = zip(segments, displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true)).map { segment, display in
             guard let display else { return segment.output }
             if !display.matchesReading { differs = true }
             return display.text
@@ -172,16 +172,16 @@ public final class Segmenter {
     }
 
     /// 表示する 1 区間。日本語区間は表示の変換で表記を決め、それ以外は決まった文字列を表示する。
-    /// 句読点と記号の打鍵（mark）は、後ろを文の頭として扱うために分けて持つ
+    /// 句読点と記号の打鍵（mark）は、後ろが文の頭か（startsSentence）を持つ。組に合わせて半角にした閉じ括弧の後ろは英語の後で、文の頭ではない
     enum ShownSpan {
         case japanese(kana: String, context: JapaneseContext)
         case fixed(String)
-        case mark(String)
+        case mark(String, startsSentence: Bool)
 
         init(_ segment: Segment) {
             switch segment.kind {
             case .japanese: self = .japanese(kana: segment.reading, context: segment.context)
-            case .punctuation: self = .mark(segment.output)
+            case .punctuation: self = .mark(segment.output, startsSentence: Segmenter.continuation(after: segment.source, mark: segment.output) != .afterEnglish)
             case .english, .word: self = .fixed(segment.output)
             }
         }
@@ -190,17 +190,17 @@ public final class Segmenter {
     /// 区間を前から順に表示の変換にする。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
     /// 返す配列は spans と同じ順で、日本語区間の要素だけが表示の変換を持つ。
     /// 日本語区間は採点の変換があるときだけ選ばれ、表示の変換は採点の変換があれば必ず返すので、日本語区間の表示の変換は必ずある。
-    /// 末尾の区間が文の頭（入力の最初の区間か、句読点・記号の直後）の 1 かなだけなら、続けて打つ語の先頭なので、
-    /// 変換せずにかなのまま見せる（ki は 気 ではなく き）
-    func displays(of spans: [ShownSpan], left: String) -> [JapaneseDisplay?] {
+    /// 末尾の区間が文の頭（入力の最初の区間か、日本語の記号にした句読点・記号の直後）の 1 かなだけなら、続けて打つ語の先頭なので、
+    /// 変換せずにかなのまま見せる（ki は 気 ではなく き）。startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）
+    func displays(of spans: [ShownSpan], left: String, startsAtHead: Bool) -> [JapaneseDisplay?] {
         var shown = left
         return spans.enumerated().map { index, span in
             switch span {
-            case .fixed(let text), .mark(let text):
+            case .fixed(let text), .mark(let text, _):
                 shown += text
                 return nil
             case .japanese(let kana, let context):
-                let atHead = index == 0 || { if case .mark = spans[index - 1] { true } else { false } }()
+                let atHead = index == 0 ? startsAtHead : { if case .mark(_, true) = spans[index - 1] { true } else { false } }()
                 if index == spans.count - 1, atHead, kana.count == 1 {
                     shown += kana
                     return JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])

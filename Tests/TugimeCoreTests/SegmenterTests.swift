@@ -78,6 +78,11 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.liveText("ki", leading: Segmenter.Leading("今日は雨だった。")) == "き")
         // 入力欄の前が文の途中でも、入力の先頭なら位置で決める
         #expect(segmenter.liveText("ki", leading: Segmenter.Leading("今日は")) == "き")
+        // 英語の後は文の頭ではない。組に合わせて半角にした閉じ括弧の後も英語の後、文節を伸ばした後ろも入力の最初ではない
+        #expect(!segmenter.liveText("github(kore)ki").hasSuffix("き"))
+        let resized = segmenter.resize(segmenter.clauses("githubki"), at: 0, by: 1)
+        #expect(resized.map(\.output).joined().hasPrefix("githubk"))
+        #expect(resized.last?.candidates.first != "い")
         let clause = try #require(segmenter.clauses("ki").first)
         #expect(clause.candidates.first == "き")
         // かなと打鍵のほかに、1 かなの語がある
