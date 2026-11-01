@@ -43,10 +43,12 @@ func printStatus() -> Int32 {
 /// 続けて、システム辞書に無い表記の 1 語の辞書を入れ、利用者の語で変換できるかを確かめる。利用者の辞書のファイルは読まない
 func check() -> Int32 {
     let input = "kyouhagoogledekensaku"
-    print("\(input)\t\(sharedSegmenter.liveText(input))")
+    print("\(input)\t\(conversion.sync { $0.liveText(input) })")
     let word = (keys: "i-sou", entry: "i-sou\t一索牌", text: "一索牌")
-    sharedSegmenter.replaceUserDictionary(UserDictionary(contents: word.entry))
-    let shown = sharedSegmenter.liveText(word.keys)
+    let shown = conversion.sync { segmenter in
+        segmenter.replaceUserDictionary(UserDictionary(contents: word.entry))
+        return segmenter.liveText(word.keys)
+    }
     print("\(word.keys)\t\(shown)")
     return shown == word.text ? 0 : 1
 }
@@ -76,5 +78,5 @@ let candidatePanel: IMKCandidates = {
 // 表示が打った読みと合わないときの警告の窓もプロセスに 1 つ
 let rewriteWarning = RewriteWarning()
 // 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる。利用者の辞書も読んでおく
-userDictionaryFile.refresh(into: sharedSegmenter)
+userDictionaryFile.refresh(into: conversion)
 NSApplication.shared.run()
