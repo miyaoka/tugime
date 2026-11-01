@@ -6,9 +6,12 @@ import TugimeCore
 nonisolated final class ConversionQueue: @unchecked Sendable {
     private let queue = DispatchQueue(label: "tugime.conversion", qos: .userInteractive)
     private let segmenter: Segmenter
+    /// 区切りが使う綴りの表。変わらない値なので、キューの外から読んでよい
+    let table: RomajiTable
 
     init(segmenter: Segmenter) {
         self.segmenter = segmenter
+        table = segmenter.table
     }
 
     /// 先に積んだ変換が終わるのを待ってから work を動かし、結果を返す。結果が無いと次に進めない操作（文節の選択・確定）に使う

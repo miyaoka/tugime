@@ -36,7 +36,7 @@ public struct ScoredSpan: Sendable, Equatable {
 /// 綴りの表で読めない箇所は日本語区間に入れられないので、そこは必ず英語になる。
 /// 読める箇所は、日本語として変換した評価値と英語の綴りとしての評価値を比べて決める。
 public final class Segmenter {
-    let table: RomajiTable
+    public let table: RomajiTable
     let english: EnglishModel
     let japaneseConverter: any JapaneseConverting
     /// 利用者の辞書で英語として扱う打鍵ごとの表記。ファイルの行の順に持つ

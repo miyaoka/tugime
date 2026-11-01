@@ -54,15 +54,6 @@ let conversion: ConversionQueue = {
     }
 }()
 
-/// 変換が届く前に打った文字を読むための綴りの表。区切りが使う表と同じもの
-let romajiTable: RomajiTable = {
-    do {
-        return try RomajiTable.bundled()
-    } catch {
-        fatalError("tugime を初期化できない: \(error)")
-    }
-}()
-
 /// 利用者の辞書のファイル。区切りと同じくプロセスに 1 つ
 let userDictionaryFile = UserDictionaryFile.inputMethod()
 
@@ -83,8 +74,6 @@ final class TugimeInputController: IMKInputController {
     // 打っている途中の変換は、打鍵を待たせないよう変換のキューに積み、届いたら表示を差し替える
     /// 打っている途中の変換の世代。未確定の文字列を終えるか作り直すたびに進め、届いた変換が今のものかを見分ける
     private var conversionGeneration = 0
-    /// 変換が届いた最新の打鍵列と、その表示
-    private var latestConversion: (keys: String, display: Segmenter.LiveDisplay)?
     /// 変換が届いた打鍵列と表示。後から打った分をつなぐ土台にする
     private var converted: [(keys: String, display: Segmenter.LiveDisplay)] = []
     /// 変換をキューに積み、まだ届いていない。積むのは 1 つずつで、届いたときに最新の打鍵列を積む
@@ -456,7 +445,7 @@ final class TugimeInputController: IMKInputController {
             let live = liveDisplay
             shownText = live.text
             marked.append(styled(live.text, style: kTSMHiliteRawText, at: 0))
-            differs = live.differs
+            differs = live.differsFromInput
         }
         // カーソルは常に末尾に置く。ターミナル（xterm.js）はカーソルの位置を未確定の文字列の終わりとして読むので、途中に置くと確定する文字列が欠ける
         client.setMarkedText(
@@ -482,22 +471,14 @@ final class TugimeInputController: IMKInputController {
         return NSAttributedString(string: text, attributes: attributes)
     }
 
-    /// 打っている途中に表示する文字列と、それが打った読みと合わない変換を含むか。
-    /// 今の打鍵列の変換が届いていればそれを出す。届いていなければ、今の打鍵列の先頭に当たる最新の変換から末尾の打ちかけの部分を外し、
-    /// 外した打鍵と後から打った打鍵の読みをつなぐ。打ちかけの部分を外せない変換は飛ばして、その前の変換を使う
-    private var liveDisplay: (text: String, differs: Bool) {
-        if let latest = latestConversion, latest.keys == keys { return (latest.display.text, latest.display.differsFromInput) }
-        for base in converted.reversed() where keys.hasPrefix(base.keys) {
-            guard let split = Segmenter.splitPending(base.display.text, typed: base.keys) else { continue }
-            let rest = keys.dropFirst(base.keys.count - split.pending)
-            return (split.kept + Segmenter.provisionalText(of: rest, after: split.kept, table: romajiTable), base.display.differsFromInput)
-        }
-        return (Segmenter.provisionalText(of: keys, after: "", table: romajiTable), false)
+    /// 打っている途中に表示する文字列と、それが打った読みと合わない変換を含むか
+    private var liveDisplay: Segmenter.LiveDisplay {
+        Segmenter.liveDisplay(of: keys, converted: converted, leading: leading, table: conversion.table)
     }
 
     /// 今の打鍵列の変換を、届いていなければキューに積む。積んでいる変換があれば、それが届いてから積む
     private func requestConversion() {
-        guard !converting, clauses == nil, !keys.isEmpty, latestConversion?.keys != keys else { return }
+        guard !converting, clauses == nil, !keys.isEmpty, !converted.contains(where: { $0.keys == self.keys }) else { return }
         converting = true
         let (keys, leading, generation) = (keys, leading, conversionGeneration)
         conversion.async { segmenter in
@@ -512,7 +493,6 @@ final class TugimeInputController: IMKInputController {
     private func didConvert(_ display: Segmenter.LiveDisplay, keys converted: String, generation: Int) {
         converting = false
         if generation == conversionGeneration {
-            latestConversion = (converted, display)
             self.converted.append((converted, display))
             if clauses == nil, !keys.isEmpty, let client = client() {
                 showMarkedText(client)
@@ -525,7 +505,6 @@ final class TugimeInputController: IMKInputController {
     /// 届いた変換を捨て、次に届く変換を今の打鍵列のものとして扱う
     private func forgetConversions() {
         conversionGeneration += 1
-        latestConversion = nil
         converted = []
         shownText = ""
     }
