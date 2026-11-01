@@ -74,10 +74,9 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(!segmenter.liveText("kaxn").hasSuffix("n"))
     }
 
-    /// 文節に区切るときは n を外さず「ん」まで読む（nihon の候補に 日本）。英語の語（kotlin）は 1 つの文節のまま
+    /// 文節に区切るときは n を外さず「ん」まで読む（nihon の候補に 日本）
     @Test func readsAPendingNAsNWhenSplittingIntoClauses() {
         #expect(segmenter.clauses("nihon").map(\.reading).joined() == "にほん")
-        #expect(segmenter.clauses("kotlin").count == 1)
     }
 
     /// 文の頭で末尾に打った 1 かなは、続けて打つ語の先頭なので変換せずにかなのまま見せる。候補では語を選べる

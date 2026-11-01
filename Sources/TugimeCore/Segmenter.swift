@@ -313,16 +313,16 @@ public final class Segmenter {
         return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, observe: observe)
     }
 
-    /// 打っている途中の表示で、末尾の日本語区間が次の打鍵で読みが変わる単独の n で終わるなら（RomajiTable.endsWithPendingN）、
+    /// 打っている途中の表示で、末尾の日本語区間が次の打鍵で読みが変わる単独の n で終わるなら（RomajiTable.readingBeforePendingN）、
     /// その n を外して打ったままの区間にし、残りを n を除いた読みで変換する。n は次の打鍵で な行 にも「ん」にもなるので、
     /// 次の打鍵まで決めない（そうなるとn、にほn）。Enter は見たまま確定するので、「ん」で確定するときは nn と打つ。英語区間は外さない（kotlin）。
     /// 文節に区切るとき（clauses）は外さず、「ん」まで含めて変換する（nihon の候補に 日本）。返す pendingN は n を外したか
     private func keepingPendingN(_ segments: [Segment]) -> (segments: [Segment], pendingN: Bool) {
-        guard let last = segments.last, last.kind == .japanese, table.endsWithPendingN(last.source) else { return (segments, false) }
+        guard let last = segments.last, last.kind == .japanese, let kana = table.readingBeforePendingN(last.source) else { return (segments, false) }
         let pending = englishSegment("n", context: last.context)
-        guard last.source.count > 1 else { return (segments.dropLast() + [pending], true) }
+        guard !kana.isEmpty else { return (segments.dropLast() + [pending], true) }
         let rest = String(last.source.dropLast())
-        guard let japanese = japaneseSegment(rest, kana: String(last.reading.dropLast()), context: last.context, penalty: 0) else {
+        guard let japanese = japaneseSegment(rest, kana: kana, context: last.context, penalty: 0) else {
             preconditionFailure("読めた日本語区間から n を外した読みが変換できない: \(rest)")
         }
         return (segments.dropLast() + [japanese, pending], true)

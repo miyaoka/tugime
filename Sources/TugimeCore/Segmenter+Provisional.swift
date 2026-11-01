@@ -40,7 +40,7 @@ extension Segmenter {
 
     /// 変換が届く前に見せる keys の読み。区切りと同じく、記号の打鍵は記号にし、句読点は直前が日本語なら日本語の記号にする。
     /// それ以外は前から、読める所は最も長く読んでかなにし、読めない打鍵は打ったまま残す（kar → かr）。
-    /// 打っている途中の表示と同じく、末尾の単独の n（RomajiTable.endsWithPendingN）は次の打鍵まで決めないので打ったまま残す
+    /// 打っている途中の表示と同じく、末尾の単独の n（RomajiTable.readingBeforePendingN）は次の打鍵まで決めないので打ったまま残す
     static func provisionalText(of keys: some StringProtocol, afterJapanese startsAfterJapanese: Bool, table: RomajiTable) -> String {
         let input = Array(keys)
         var text = ""
@@ -55,7 +55,7 @@ extension Segmenter {
                 text += mark
                 position += 1
             } else if let longest = table.readings(from: position, in: input).last(where: {
-                $0.end < input.count || !table.endsWithPendingN(String(input[position...]))
+                $0.end < input.count || table.readingBeforePendingN(String(input[position...])) == nil
             }) {
                 text += longest.kana
                 afterJapanese = true

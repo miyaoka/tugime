@@ -123,13 +123,15 @@ public struct RomajiTable: Sendable {
         var canEnd: Bool
     }
 
-    /// keys が、次の打鍵で読みが変わる単独の n で終わるか。最後の n を外した残りが読め、その読みに「ん」を足すと全体の読みになるとき
-    /// （kon、konnn、n）。最後の n が綴りの組の一部なら当たらない（konn、xn）。入力の末尾の単独の n は、edges が「ん」と読んで終端にする綴りである
-    func endsWithPendingN(_ keys: some StringProtocol) -> Bool {
-        guard keys.last == "n", let whole = reading(of: keys) else { return false }
+    /// keys が次の打鍵で読みが変わる単独の n で終わるなら、その n を外した残りの読み（n だけなら空）。最後の n を外した残りが読め、
+    /// その読みに「ん」を足すと全体の読みになるとき（kon、konnn、n）。最後の n が綴りの組の一部なら nil（konn、xn）。
+    /// 入力の末尾の単独の n は、edges が「ん」と読んで終端にする綴りである
+    func readingBeforePendingN(_ keys: some StringProtocol) -> String? {
+        guard keys.last == "n", let whole = reading(of: keys) else { return nil }
         let rest = keys.dropLast()
-        guard !rest.isEmpty else { return true }
-        return reading(of: rest).map { $0 + "ん" == whole } ?? false
+        guard !rest.isEmpty else { return "" }
+        guard let kana = reading(of: rest), kana + "ん" == whole else { return nil }
+        return kana
     }
 
     private func edges(at pos: Int, in input: [Character]) -> [Edge] {
