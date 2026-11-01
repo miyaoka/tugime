@@ -165,6 +165,13 @@ import Testing
         #expect(segmenter.liveText("2fa") == "2FA")
     }
 
+    /// 英語として登録した語の後に打った n は、語の表記を残して別の区間にする。n の区間は ん を選べる
+    @Test func keepsTheRegisteredSpellingBeforeAPendingN() throws {
+        #expect(segmenter.liveText("githubn") == "GitHubn")
+        let n = try #require(segmenter.clauses("githubn").last)
+        #expect(n.candidates.contains("ん"))
+    }
+
     /// 日本語として扱う打鍵は、英語の語でもかな漢字変換に入れる。区切りが日本語に寄るのも登録に従う
     @Test func putsJapaneseKeysIntoKanaConversion() {
         #expect(segmenter.liveText("sakewonomu").hasPrefix("鮭を"))

@@ -60,6 +60,30 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.kind) == kinds)
     }
 
+    /// 日本語区間の頭で末尾に打った n は、次に打つ な行 の途中なので打ったまま。かなの後、nn、後ろに句読点が続く n は「ん」
+    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "これ、n"), ("nn", "ん"), ("n.", "ん。")])
+    func keepsPendingNAtTheHeadOfJapanese(input: String, expected: String) {
+        #expect(segmenter.liveText(input) == expected)
+    }
+
+    /// かなの後の n は語の途中の「ん」でありうるので、日本語区間の中で読む
+    @Test func readsNAfterKanaAsPartOfTheWord() {
+        #expect(segmenter.segment("kon").map(\.kind) == [.japanese])
+    }
+
+    /// 文の頭で末尾に打った 1 かなは、続けて打つ語の先頭なので変換せずにかなのまま見せる。候補では語を選べる
+    @Test func showsALoneKanaAtTheSentenceHeadAsKana() throws {
+        #expect(segmenter.liveText("ki") == "き")
+        #expect(segmenter.liveText("sorede,ke").hasSuffix("、け"))
+        #expect(segmenter.liveText("ki", leading: Segmenter.Leading("今日は雨だった。")) == "き")
+        // 入力欄の前が文の途中でも、入力の先頭なら位置で決める
+        #expect(segmenter.liveText("ki", leading: Segmenter.Leading("今日は")) == "き")
+        let clause = try #require(segmenter.clauses("ki").first)
+        #expect(clause.candidates.first == "き")
+        // かなと打鍵のほかに、1 かなの語がある
+        #expect(clause.candidates.contains { !["き", "キ", "ki"].contains($0) })
+    }
+
     @Test(arguments: ["-", "--", "-.", "xa", "kaki--", "binge-watch", ".", "a,b", "Hello."])
     func coversEveryKeystroke(input: String) {
         #expect(segmenter.segment(input).map(\.source).joined() == input)
@@ -387,5 +411,33 @@ private final class RewritingConverter: JapaneseConverting {
 
     private func readings(_ clauses: [Clause]) -> [String] {
         clauses.map(\.reading)
+    }
+}
+
+/// 文の頭の 1 かなだけを変換器に渡さず、それ以外の 1 かなは変換器に渡す。変換器がどう書くかによらず、表示の変換を呼んだかで確かめる
+@Suite struct SentenceHeadKanaTests {
+    fileprivate let recorder = LeftRecorder()
+    let segmenter: Segmenter
+
+    init() throws {
+        segmenter = try Shared.make(recorder)
+    }
+
+    @Test func doesNotConvertALoneKanaAtTheStart() {
+        _ = segmenter.liveText("ki")
+        #expect(recorder.lefts.isEmpty)
+    }
+
+    /// 組に合わせて半角にした閉じ括弧の後ろは英語の後で、文の頭ではない
+    @Test func convertsALoneKanaAfterAHalfWidthClosingBracket() throws {
+        _ = segmenter.liveText("github(kore)ki")
+        #expect(try #require(recorder.lefts.last).hasSuffix(")"))
+    }
+
+    /// 文節を伸ばした後ろだけを区切り直すときも、その最初の区間は入力の最初ではない
+    @Test func convertsALoneKanaAfterAResizedClause() throws {
+        let resized = segmenter.resize(segmenter.clauses("githubkiku"), at: 0, by: 1)
+        #expect(resized.first?.output == "githubki")
+        #expect(try #require(recorder.lefts.last).hasSuffix("githubki"))
     }
 }

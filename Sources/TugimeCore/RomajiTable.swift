@@ -123,6 +123,11 @@ public struct RomajiTable: Sendable {
         var canEnd: Bool
     }
 
+    /// keys が単独の n か。入力の末尾の単独の n は、edges が「ん」と読んで終端にする綴りである
+    static func isLoneN(_ keys: some Collection<Character>) -> Bool {
+        keys.count == 1 && keys.first == "n"
+    }
+
     private func edges(at pos: Int, in input: [Character]) -> [Edge] {
         var edges: [Edge] = []
         let next = pos + 1 < input.count ? input[pos + 1] : nil
