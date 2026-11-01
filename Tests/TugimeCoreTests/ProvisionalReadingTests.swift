@@ -49,13 +49,24 @@ import Testing
         ("感k", "kannk", "感", 1),
     ])
     func splitsPending(shown: String, keys: String, kept: String, pending: Int) throws {
-        let split = try #require(Segmenter.splitPending(shown, typed: keys))
+        let split = try #require(Segmenter.splitPending(shown, typed: keys, table: table))
         #expect(split.kept == kept)
         #expect(split.pending == pending)
     }
 
+    /// 読み終えた nn の n は打ちかけではない。表示が n で終わっても（英語として登録した konn の Konn）外さない。単独かは綴りの表で決める
+    @Test func keepsAFinishedNNAsShown() throws {
+        let split = try #require(Segmenter.splitPending("Konn", typed: "konn", table: table))
+        #expect(split.kept == "Konn")
+        #expect(split.pending == 0)
+        // 綴りの表で xn が組になる xnn の最後の n は単独なので外す
+        let pending = try #require(Segmenter.splitPending("んn", typed: "xnn", table: table))
+        #expect(pending.kept == "ん")
+        #expect(pending.pending == 1)
+    }
+
     @Test func cannotSplitWhenPendingIsInsideAWord() {
-        #expect(Segmenter.splitPending("ん", typed: "xn") == nil)
+        #expect(Segmenter.splitPending("ん", typed: "xn", table: table) == nil)
     }
 
     /// 登録語（cafe を Café）の後の n も打ったまま

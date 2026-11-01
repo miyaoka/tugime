@@ -10,7 +10,7 @@ extension Segmenter {
     ) -> LiveDisplay {
         if let same = converted.last(where: { $0.keys == keys }) { return same.display }
         for base in converted.reversed() where keys.hasPrefix(base.keys) {
-            guard let split = splitPending(base.display.text, typed: base.keys) else { continue }
+            guard let split = splitPending(base.display.text, typed: base.keys, table: table) else { continue }
             let rest = keys.dropFirst(base.keys.count - split.pending)
             let text = split.kept + provisionalText(of: rest, afterJapanese: afterJapanese(split.kept, leading: leading), table: table)
             return LiveDisplay(text: text, differsFromInput: base.display.differsFromInput)
@@ -25,12 +25,16 @@ extension Segmenter {
     }
 
     /// 打鍵列 keys の変換の表示 shown を、後ろに読みをつないでも崩れない部分と、末尾の打ちかけの打鍵の数に分ける。
-    /// 打ちかけは、最後の母音より後ろの子音（表示に打ったまま出ている。読み終えた nn を除く）と、表示に打ったまま出ている末尾の n。
+    /// 打ちかけは、最後の母音より後ろの子音（表示に打ったまま出ている。読み終えた nn を除く）と、表示に打ったまま出ている末尾の単独の n。
+    /// 末尾の n が単独かは、打鍵の末尾の英字のうち綴りの表で読める最も長い部分を、表の読みで決める（RomajiTable.readingBeforePendingN）。
+    /// 読み終えた nn の n は単独ではない（英語として登録した konn の Konn）。xnn の最後の n は単独
     /// 打ちかけの打鍵は、後から打った打鍵とまとめて読み直す（g の後の i は「ぎ」、n の後の o は「の」）。
     /// 打ちかけの部分が表示の末尾にそのまま出ていなければ（xn の n が「ん」に入っている）、分けられないので nil
-    static func splitPending(_ shown: String, typed keys: String) -> (kept: String, pending: Int)? {
+    static func splitPending(_ shown: String, typed keys: String, table: RomajiTable) -> (kept: String, pending: Int)? {
         let letters = keys.reversed().prefix { $0.isASCII && $0.isLetter }
-        if letters.first == "n", shown.hasSuffix("n") { return (String(shown.dropLast()), 1) }
+        let word = String(letters.reversed())
+        let readable = word.indices.lazy.map { word[$0...] }.first { table.reading(of: $0) != nil }
+        if let readable, table.readingBeforePendingN(readable) != nil, shown.hasSuffix("n") { return (String(shown.dropLast()), 1) }
         var consonants = String(letters.prefix { !"aiueo".contains($0) }.reversed())
         // 母音の直後の nn は読み終えた「ん」
         if consonants.hasPrefix("nn") { consonants.removeFirst(2) }
