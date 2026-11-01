@@ -240,8 +240,9 @@ public final class Segmenter {
     /// 句読点は、直前が日本語なら日本語の記号にし、英語なら打ったまま英語の区間に含める。
     /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
     /// 日本語の記号の位置で入力を切る。句読点の後は文の頭として、記号の打鍵の後は文の途中かもしれないものとして次の部分を評価する
+    /// 丸括弧は組で形をそろえる（aligningBrackets）
     public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
-        segment(input, after: leading.continuation, context: leading.japaneseContext)
+        Self.aligningBrackets(segment(input, after: leading.continuation, context: leading.japaneseContext), before: leading.text)
     }
 
     /// 区切りを決めた部分の採点で比べた区間の候補を返す。句読点の前で英語に続くと分かって採点し直す部分の候補は含めない。診断用

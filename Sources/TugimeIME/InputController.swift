@@ -199,7 +199,7 @@ final class TugimeInputController: IMKInputController {
     private func select(_ text: String?) {
         guard let text, var clauses, let index = clauses[focus].candidates.firstIndex(of: text) else { return }
         clauses[focus].selected = index
-        self.clauses = clauses
+        self.clauses = Clause.pairingBrackets(clauses, at: focus)
         panelIndex = index
         if let client = client() {
             showMarkedText(client)
@@ -369,7 +369,7 @@ final class TugimeInputController: IMKInputController {
         var clauses = clauses
         let count = clauses[focus].candidates.count
         clauses[focus].selected = (clauses[focus].selected + delta + count) % count
-        self.clauses = clauses
+        self.clauses = Clause.pairingBrackets(clauses, at: focus)
         movePanel(to: clauses[focus].selected)
         showMarkedText(client)
     }
