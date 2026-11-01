@@ -54,17 +54,6 @@ import Testing
         #expect(split.pending == pending)
     }
 
-    /// 読み終えた nn の n は打ちかけではない。表示が n で終わっても（英語として登録した konn の Konn）外さない。単独かは綴りの表で決める
-    @Test func keepsAFinishedNNAsShown() throws {
-        let split = try #require(Segmenter.splitPending("Konn", typed: "konn", table: table))
-        #expect(split.kept == "Konn")
-        #expect(split.pending == 0)
-        // 綴りの表で xn が組になる xnn の最後の n は単独なので外す
-        let pending = try #require(Segmenter.splitPending("んn", typed: "xnn", table: table))
-        #expect(pending.kept == "ん")
-        #expect(pending.pending == 1)
-    }
-
     @Test func cannotSplitWhenPendingIsInsideAWord() {
         #expect(Segmenter.splitPending("ん", typed: "xn", table: table) == nil)
     }
@@ -88,6 +77,10 @@ import Testing
         // 届いていなければ打鍵列全体を読む。先頭の句読点は入力欄の直前で決める
         (",", [], "今日は", "、"),
         (",", [], "make", ","),
+        // 読み終えた nn の n は読み直さない（英語として登録した konn の Konn）
+        ("konna", [("konn", "Konn")], "", "Konnあ"),
+        // 綴りの表で xn が組になる xnn の最後の n は単独なので、次の打鍵と読み直す
+        ("kaxnna", [("kaxnn", "艦n")], "", "艦な"),
     ])
     func liveDisplay(keys: String, converted: [(String, String)], before: String, expected: String) {
         let shown = Segmenter.liveDisplay(
