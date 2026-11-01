@@ -136,7 +136,7 @@ import Testing
 
     init() throws {
         segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: ConversionMethod.baseline.make(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\nsake\t鮭\tja\ncafe\tCafé"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nsake\t鮭\tja\ncafe\tCafé"))
     }
 
     /// 綴りの表で読める打鍵は、そのかなの語になり、長い打鍵の途中でも効く
@@ -161,6 +161,8 @@ import Testing
     @Test func makesEnglishKeysAnEnglishSpan() {
         #expect(segmenter.liveText("tugime") == "tugime")
         #expect(segmenter.liveText("tugimewotukau").hasPrefix("tugimeを"))
+        // 数字で始まる打鍵も、区間全体で一致すれば英語の区間にする
+        #expect(segmenter.liveText("2fa") == "2FA")
     }
 
     /// 日本語として扱う打鍵は、英語の語でもかな漢字変換に入れる。区切りが日本語に寄るのも登録に従う
