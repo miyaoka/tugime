@@ -6,13 +6,15 @@
 
 ## ローマ字としても読める英単語が日本語になる
 
+ローマ字としても読める綴りは、綴りだけでは英語か日本語かが決まらないので、どちらに読まれるかがぶれる。誤りを無くす仕組みは無く、判定の変更で減らしていく。
+
 | 打鍵列 | 表示 | 期待 |
 |---|---|---|
 | `homenomenuwokaeru` | 褒めのめぬを変える | homeのmenuを変える |
 | `setteiwohidesitamamanisuru` | 設定を非でしたままにする | 設定をhideしたままにする |
 | `asitanomeetingmadeniapinosiyouwosiraberu` | 明日のmeetingまでにアピの仕様を調べる | 明日のmeetingまでにapiの仕様を調べる |
 
-対処: 大文字で打つ（`API`）、tugime の辞書に `en` で登録する、その文節だけを F10 で打ったままに戻す。issue: [#21](https://github.com/miyaoka/tugime/issues/21)
+対処: 英語の語の前後をスペースで区切って打つ（`home no menu wo kaeru` は home の menu を 変える）、大文字で打つ（`API`）、tugime の辞書に `en` で登録する、その文節だけを F10 で打ったままに戻す。issue: [#21](https://github.com/miyaoka/tugime/issues/21)
 
 ## 表示が打った読みどおりにならない
 
