@@ -2,21 +2,24 @@
 // 無指定は開発版にする。手元で組み立てたものが配布版と同じ bundle id を名乗り、入れた配布版を上書きしないようにするため
 // 使い方: [TUGIME_BUILD_CHANNEL=stable] [TUGIME_VERSION=<版>] bun scripts/build-app.ts
 import { $ } from "bun";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dictionary } from "./fetch-dictionary";
 import { genmai } from "./fetch-genmai";
-import { BUNDLE_ID, CHANNELS, SYNC_APP_KEY } from "./lib/channels";
+import { BUNDLE_ID, CHANNELS, COMMIT_KEY, SYNC_APP_KEY } from "./lib/channels";
 import { root } from "./lib/root";
 
 const channelName = process.env.TUGIME_BUILD_CHANNEL ?? "";
 const channel = CHANNELS.get(channelName);
 if (!channel)
   throw new Error(`TUGIME_BUILD_CHANNEL は stable か無指定: ${channelName}`);
-const { bundleId, name, sync } = channel;
+const { bundleId, name, sync, commit } = channel;
 const version = process.env.TUGIME_VERSION || "0.0.0";
 const app = join(root, "dist", `${name}.app`);
+// 組み立ての間にコミットされても、組み立てに使ったソースの状態を書くよう、swift build より先に読む
+const built = commit ? await builtCommit() : undefined;
 
 // SwiftPM の既定のビルドの仕組みは toolchain の版で違う。native はリソースを .app の Contents/Resources から探さないので、swiftbuild に固定する。
 // 対象は Apple Silicon だけなので arm64 だけを組み立てる。swiftbuild は指定しないと Intel 向けも含めた universal にする
@@ -32,6 +35,16 @@ const build = [
   "--arch",
   "arm64",
 ];
+
+/// HEAD の短いコミット。未追跡のファイルも swift build に入るので、追跡外も含めて変更があれば -dirty を付ける。
+/// ソースの zip のように root の直下に .git が無ければ unknown にする。git -C は親のディレクトリの別のリポジトリを探すので、git を呼ぶ前に見る。
+/// worktree の .git はファイルなので、ファイルでもディレクトリでもよい
+async function builtCommit() {
+  if (!existsSync(join(root, ".git"))) return "unknown";
+  const head = (await $`git -C ${root} rev-parse --short HEAD`.text()).trim();
+  const dirty = (await $`git -C ${root} status --porcelain`.text()).trim();
+  return dirty ? `${head}-dirty` : head;
+}
 
 /// テンプレートの __KEY__ を値に置き換えて書き、plutil で確かめる
 async function fill(
@@ -85,6 +98,8 @@ await fill(join(root, "App/Info.plist"), join(app, "Contents/Info.plist"), {
   VERSION: version,
   NAME: name,
 });
+if (built)
+  await $`plutil -insert ${COMMIT_KEY} -string ${built} ${join(app, "Contents/Info.plist")}`;
 // 入力ソースの一覧に出るモードの表示名
 for (const lproj of ["en.lproj", "ja.lproj"]) {
   await mkdir(join(app, "Contents/Resources", lproj), { recursive: true });

@@ -57,12 +57,27 @@ private struct SettingsView: View {
                     }
                 }
             }
+            Section("情報") {
+                LabeledContent("バージョン") {
+                    Text(buildVersion).textSelection(.enabled)
+                }
+            }
         }
         .formStyle(.grouped)
         .frame(width: 480)
         .fixedSize()
     }
 }
+
+/// 組み立てと検査も同じ TugimeCommit のキーを読む
+private let buildVersion: String = {
+    let info = Bundle.main
+    if let commit = info.object(forInfoDictionaryKey: "TugimeCommit") as? String { return commit }
+    guard let version = info.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
+        fatalError("Info.plist に CFBundleShortVersionString が無い")
+    }
+    return version
+}()
 
 /// 配布版の辞書を開発版の辞書へ写す道具（TugimeSync）。開発版にだけ同梱するので、同梱されているかで出すかを決める
 enum DictionarySync {

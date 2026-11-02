@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { constants } from "node:os";
 import { join } from "node:path";
-import { CHANNELS, SYNC_APP_KEY } from "./lib/channels";
+import { CHANNELS, COMMIT_KEY, SYNC_APP_KEY } from "./lib/channels";
 import { root } from "./lib/root";
 
 const USAGE = "使い方: bun scripts/check-app.ts <.app>";
@@ -88,6 +88,18 @@ if (channel.sync) {
 console.log(
   `辞書を写す道具 ${channel.sync ? "あり（entitlements なし）" : "なし"}`,
 );
+
+// 組み立てたコミットは開発版にだけ書く。配布版の設定の窓は版を出す
+const commit =
+  await $`plutil -extract ${COMMIT_KEY} raw ${join(app, "Contents/Info.plist")}`
+    .nothrow()
+    .quiet();
+assert.strictEqual(
+  commit.exitCode === 0,
+  channel.commit,
+  `${channel.name} の ${COMMIT_KEY} の有無が想定と違う`,
+);
+console.log(`${COMMIT_KEY} ${channel.commit ? commit.text().trim() : "なし"}`);
 
 // 対象は Apple Silicon だけなので、実行ファイルと同梱のフレームワークは arm64 だけを含む
 for (const binary of [
