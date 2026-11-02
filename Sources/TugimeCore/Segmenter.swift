@@ -396,9 +396,12 @@ public final class Segmenter {
                     continue
                 }
                 if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseEnds.contains(end) { continue }
-                // 利用者の辞書で英語として扱う打鍵は、区間全体で一致すれば締め出さない
+                // 利用者の辞書で英語として扱う打鍵は、区間全体で一致すれば締め出さない。数字の後ろを日本語区間として採れるときだけ締め出す
                 if start < afterDigits, afterDigits < end, typedWords[source] == nil,
-                   readingsAt[afterDigits].contains(where: { $0.end == end && Self.canBeJapanese($0.kana) }),
+                   readingsAt[afterDigits].contains(where: { reading in
+                       reading.end == end && Self.canBeJapanese(reading.kana)
+                           && japaneseConverter.convert(kana: reading.kana, context: Self.context(after: chars[..<afterDigits])) != nil
+                   }),
                    prefersJapanese(String(chars[afterDigits..<end]), readable: true) { continue }
                 for previous in start == 0 ? [nil] : [Segment.Kind.japanese, .word] {
                     relax(end, start, englishSegment(source, context: context), after: previous)
