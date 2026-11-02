@@ -58,7 +58,9 @@ private struct SettingsView: View {
                 }
             }
             Section("情報") {
-                LabeledContent("バージョン", value: buildVersion)
+                LabeledContent("バージョン") {
+                    Text(buildVersion).textSelection(.enabled)
+                }
             }
         }
         .formStyle(.grouped)

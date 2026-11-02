@@ -79,4 +79,18 @@ let candidatePanel: IMKCandidates = {
 let rewriteWarning = RewriteWarning()
 // 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる。利用者の辞書も読んでおく
 userDictionaryFile.refresh(into: conversion)
+NSApplication.shared.mainMenu = mainMenu()
 NSApplication.shared.run()
+
+/// ⌘C は、窓のビューが受けなければ mainMenu の項目に送られ、その項目が first responder へ copy: を送る
+/// （Cocoa Event Handling Guide の Handling Key Equivalents）。設定の窓を開いている間も accessory でメニューバーには出ないが、
+/// この項目が無いと設定の窓の文字をコピーできない
+func mainMenu() -> NSMenu {
+    let edit = NSMenu(title: "編集")
+    edit.addItem(withTitle: "コピー", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    let editItem = NSMenuItem()
+    editItem.submenu = edit
+    let menu = NSMenu()
+    menu.addItem(editItem)
+    return menu
+}
