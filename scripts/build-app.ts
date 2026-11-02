@@ -2,6 +2,7 @@
 // 無指定は開発版にする。手元で組み立てたものが配布版と同じ bundle id を名乗り、入れた配布版を上書きしないようにするため
 // 使い方: [TUGIME_BUILD_CHANNEL=stable] [TUGIME_VERSION=<版>] bun scripts/build-app.ts
 import { $ } from "bun";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,8 +36,11 @@ const build = [
   "arm64",
 ];
 
-/// HEAD の短いコミット。未追跡のファイルも swift build に入るので、追跡外も含めて変更があれば -dirty を付ける
+/// HEAD の短いコミット。未追跡のファイルも swift build に入るので、追跡外も含めて変更があれば -dirty を付ける。
+/// ソースの zip のように root の直下に .git が無ければ unknown にする。git -C は親のディレクトリの別のリポジトリを探すので、git を呼ぶ前に見る。
+/// worktree の .git はファイルなので、ファイルでもディレクトリでもよい
 async function builtCommit() {
+  if (!existsSync(join(root, ".git"))) return "unknown";
   const head = (await $`git -C ${root} rev-parse --short HEAD`.text()).trim();
   const dirty = (await $`git -C ${root} status --porcelain`.text()).trim();
   return dirty ? `${head}-dirty` : head;
