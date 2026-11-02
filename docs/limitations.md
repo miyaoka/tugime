@@ -8,19 +8,11 @@
 
 | 打鍵列 | 表示 | 期待 |
 |---|---|---|
-| `homenomenuwokaeru` | homeのメヌを飼える | homeのmenuを変える |
+| `homenomenuwokaeru` | 褒めのめぬを変える | homeのmenuを変える |
 | `setteiwohidesitamamanisuru` | 設定を非でしたままにする | 設定をhideしたままにする |
 | `asitanomeetingmadeniapinosiyouwosiraberu` | 明日のmeetingまでにアピの仕様を調べる | 明日のmeetingまでにapiの仕様を調べる |
 
 対処: 大文字で打つ（`API`）、tugime の辞書に `en` で登録する、その文節だけを F10 で打ったままに戻す。issue: [#21](https://github.com/miyaoka/tugime/issues/21)
-
-## 日本語の語の頭が英語の語として残る
-
-| 打鍵列 | 表示 | 期待 |
-|---|---|---|
-| `sarigiwagakakkoii` | sariぎわがかっこいい | 去り際がかっこいい |
-
-対処: Shift+Space で文節を選び、`sari` の文節は候補から「去り」を、続く `ぎわが` の文節は候補から「際が」を選ぶ。
 
 ## 表示が打った読みどおりにならない
 
