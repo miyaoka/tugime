@@ -97,10 +97,16 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.source).joined() == input)
     }
 
-    /// 採点する読みの長さを超える、読めて英語の語でない綴りも、日本語区間の連なりとして採れるので英語にしない
+    /// 長く読めて英語の語でない綴りは、日本語として採れるので英語にしない
     @Test(arguments: ["yototesahapogatogonugo", "sobazuhihegehewado", "rimigezagumanorodaboho"])
     func readsLongReadableSpellingsAsJapanese(input: String) {
         #expect(segmenter.segment(input).allSatisfy { $0.kind == .japanese })
+    }
+
+    /// 長い日本語の途中に英語の語の綴り（aba・ori）が読めても、全体を 1 つの日本語として読んだ方が自然なら英語にしない
+    @Test(arguments: ["abaiteikunodarou", "setteisareteori"])
+    func keepsEnglishWordsInsideLongJapaneseAsJapanese(input: String) {
+        #expect(segmenter.segment(input).map(\.kind) == [.japanese])
     }
 
     /// 促音の形の数詞（ひゃっ・じゅっ）を含む読みも日本語区間として採り、途中に英字を残さない
@@ -350,6 +356,35 @@ private final class RewritingConverter: JapaneseConverting {
 
     func endComposition() { base.endComposition() }
     func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
+}
+
+/// 本物の変換器に処理を任せ、ある読みだけは変換できないとして nil を返す
+private final class RefusingConverter: JapaneseConverting {
+    private let base: JapaneseConverting = Shared.converter
+    private let refused: String
+
+    init(refusing kana: String) {
+        refused = kana
+    }
+
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
+        kana == refused ? nil : base.convert(kana: kana, context: context)
+    }
+
+    func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
+
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? { base.display(kana: kana, context: context, left: left) }
+
+    func endComposition() { base.endComposition() }
+    func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
+}
+
+/// 日本語として変換できない読みは、英語区間から締め出さない
+@Suite struct UnconvertibleReadingTests {
+    @Test func keepsDigitsAndLettersEnglishWhenTheLettersCannotBeConverted() throws {
+        let segmenter = try Shared.make(RefusingConverter(refusing: "い"))
+        #expect(segmenter.segment("3i").map(\.kind) == [.english])
+    }
 }
 
 /// 打っている途中の表示が、変換して見せた区間で読みと合わないかを返す
