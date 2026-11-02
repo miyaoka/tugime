@@ -362,17 +362,6 @@ public final class Segmenter {
 
         // 位置ごとの、綴りの表で最後まで読める終端とかな
         let readingsAt = (0..<n).map { table.readings(from: $0, in: chars) }
-        // 位置ごとの、日本語区間に続く日本語区間の連なりで届く終端。1 区間で読めない範囲も、
-        // 日本語区間の連なりとして採れるなら日本語として採れるものとして英語区間を締め出す
-        var chained: [Set<Int>] = Array(repeating: [], count: n + 1)
-        for start in stride(from: n - 1, through: 1, by: -1) {
-            for (end, kana) in readingsAt[start] where Self.canBeJapanese(kana) {
-                guard japaneseConverter.convert(kana: kana, context: .start) != nil else { continue }
-                chained[start].insert(end)
-                chained[start].formUnion(chained[end])
-            }
-        }
-
         for start in 0..<n {
             let reachable = start == 0 || !best[start].isEmpty
             guard reachable else { continue }
@@ -396,7 +385,6 @@ public final class Segmenter {
                     relax(end, start, segment, after: predecessor.kind)
                 }
             }
-            let japaneseReach = japaneseEnds.reduce(into: japaneseEnds) { $0.formUnion(chained[$1]) }
             // 句読点は直前の区間に従い、英語の後なら英語区間に入るので、英語区間を句読点から始めない。入力の先頭は、入力欄の前の英語に続いている
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
             // 区間の頭の数字の後ろ。数字に続く英字は、区間の頭の英字と同じく、日本語にする綴りなら英語区間に入れない（3i を 3位 に）
@@ -407,11 +395,11 @@ public final class Segmenter {
                     for predecessor in predecessors { relax(end, start, segment, after: predecessor.kind) }
                     continue
                 }
-                if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseReach.contains(end) { continue }
+                if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseEnds.contains(end) { continue }
                 // 利用者の辞書で英語として扱う打鍵は、区間全体で一致すれば締め出さない
                 if start < afterDigits, afterDigits < end, typedWords[source] == nil,
-                   prefersJapanese(String(chars[afterDigits..<end]), readable: readingsAt[afterDigits].contains { $0.end == end }),
-                   chained[afterDigits].contains(end) { continue }
+                   readingsAt[afterDigits].contains(where: { $0.end == end && Self.canBeJapanese($0.kana) }),
+                   prefersJapanese(String(chars[afterDigits..<end]), readable: true) { continue }
                 for previous in start == 0 ? [nil] : [Segment.Kind.japanese, .word] {
                     relax(end, start, englishSegment(source, context: context), after: previous)
                 }
