@@ -97,10 +97,16 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.source).joined() == input)
     }
 
-    /// 採点する読みの長さを超える、読めて英語の語でない綴りも、日本語区間の連なりとして採れるので英語にしない
+    /// 長く読めて英語の語でない綴りは、日本語として採れるので英語にしない
     @Test(arguments: ["yototesahapogatogonugo", "sobazuhihegehewado", "rimigezagumanorodaboho"])
     func readsLongReadableSpellingsAsJapanese(input: String) {
         #expect(segmenter.segment(input).allSatisfy { $0.kind == .japanese })
+    }
+
+    /// 長い日本語の途中に英語の語の綴り（aba・ori）が読めても、全体を 1 つの日本語として読んだ方が自然なら英語にしない
+    @Test(arguments: ["abaiteikunodarou", "setteisareteori"])
+    func keepsEnglishWordsInsideLongJapaneseAsJapanese(input: String) {
+        #expect(segmenter.segment(input).map(\.kind) == [.japanese])
     }
 
     /// 促音の形の数詞（ひゃっ・じゅっ）を含む読みも日本語区間として採り、途中に英字を残さない
