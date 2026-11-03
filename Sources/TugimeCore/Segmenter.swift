@@ -118,14 +118,14 @@ public final class Segmenter {
         case afterEnglish
 
         /// 前の文字列の最後の文字から決める。無い、空白・改行、文末の記号の後なら文頭、それ以外の ASCII の後なら英語の後、残りは日本語の後。
-        /// 数字で終わるなら、未確定の文字列の中と同じく、数字はその前の文字の側に付く。前が ASCII の英字や記号なら英語の後、それ以外は日本語の後
+        /// 数（numberLength）で終わるなら、未確定の文字列の中と同じく、数はその前の文字の側に付く。前が ASCII の英字や記号なら英語の後、それ以外は日本語の後
         init(after text: String) {
-            let digits = text.reversed().prefix(while: Segmenter.isDigit).count
-            guard digits > 0 else {
+            let number = Segmenter.numberLength(text.reversed())
+            guard number > 0 else {
                 self.init(last: text.last)
                 return
             }
-            let before = text.dropLast(digits).last
+            let before = text.dropLast(number).last
             self = before.map { $0.isASCII && !$0.isWhitespace } == true ? .afterEnglish : .afterJapanese
         }
 
@@ -141,10 +141,33 @@ public final class Segmenter {
         var japaneseContext: JapaneseContext { self == .start ? .start : .afterCaret }
     }
 
-    /// 英語区間に続く日本語区間の評価のしかた。英語区間が数字で終わるなら、その数字に続く形（1500 円、3 回）にする
+    /// 英語区間に続く日本語区間の評価のしかた。英語区間が数（numberLength）で終わるなら、その数に続く形（1500 円、3.5 倍）にする
     static func context(after text: some Collection<Character>) -> JapaneseContext {
-        let digits = String(text.reversed().prefix(while: isDigit).reversed())
-        return digits.isEmpty ? .afterWord : .afterNumber(digits)
+        let number = String(text.suffix(numberLength(text.reversed())))
+        return number.isEmpty ? .afterWord : .afterNumber(number)
+    }
+
+    /// chars の先頭から続く数の長さ。数は数字の連なりと、数字にはさまれた numberSeparators（3.14 1,000 10:30）。数で始まらなければ 0。
+    /// 前後どちらから数えても同じ長さになる
+    static func numberLength(_ chars: some Sequence<Character>) -> Int {
+        var length = 0
+        var pending = 0
+        for c in chars {
+            if isDigit(c) {
+                length += pending + 1
+                pending = 0
+            } else if length > 0, pending == 0, numberSeparators.contains(c) {
+                pending = 1
+            } else {
+                break
+            }
+        }
+        return length
+    }
+
+    /// text 全体が 1 つの数か
+    static func isNumber(_ text: some Collection<Character>) -> Bool {
+        !text.isEmpty && numberLength(text) == text.count
     }
 
     /// ASCII の数字か
@@ -166,10 +189,22 @@ public final class Segmenter {
         chars[i] == "-" && (i > 0 ? chars[i - 1] : before).map(isDigit) == true
     }
 
-    /// start から綴りの表で読み切れる終端ごとのかなのうち、日本語として読めるもの。数の区切りの - をまたぐ読みは除く
+    /// start から日本語として読み切れる終端ごとのかな。綴りの表で読み、数字にはさまれた numberSeparators は打ったまま読みに入れる（3.14 は 3.14）。
+    /// 数の区切りの - をまたぐ読みは除く
     static func japaneseReadings(table: RomajiTable, from start: Int, in chars: [Character], before: Character?) -> [(end: Int, kana: String)] {
         let limit = (start..<chars.count).first { isNumberDash(at: $0, in: chars, before: before) } ?? chars.count
-        return table.readings(from: start, in: chars).filter { $0.end <= limit }
+        var found: [Int: String] = [:]
+        var pending: [(position: Int, kana: String)] = [(start, "")]
+        while let (position, prefix) = pending.popLast() {
+            for reading in table.readings(from: position, in: chars) where reading.end <= limit && found[reading.end] == nil {
+                let kana = prefix + reading.kana
+                found[reading.end] = kana
+                if reading.end < limit, isNumberSeparator(at: reading.end, in: chars, before: before) {
+                    pending.append((reading.end + 1, kana + String(chars[reading.end])))
+                }
+            }
+        }
+        return found.sorted { $0.key < $1.key }.map { (end: $0.key, kana: $0.value) }
     }
 
     /// 綴り全体を日本語として読み切れればかな
@@ -468,11 +503,11 @@ public final class Segmenter {
     }
 
     /// 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
-    /// 日本語として採れるなら英語にしない。数字だけの綴りも同じく英語にしない。数字と英字が混ざる綴り（3i 3a i18n）は、
+    /// 日本語として採れるなら英語にしない。数だけの綴り（1500 3.14）も同じく英語にしない。数字と英字が混ざる綴り（3i 3a i18n）は、
     /// どれにも当たらず、日本語の読みと英語の綴りのもっともらしさを点で比べる。利用者の辞書で英語として扱う打鍵は、どれにも当たらない
     func prefersJapanese(_ source: String, readable: Bool) -> Bool {
         guard typedWords[source] == nil else { return false }
-        guard !source.allSatisfy(Self.isDigit) else { return readable }
+        guard !Self.isNumber(source) else { return readable }
         guard !source.contains(where: Self.isDigit) else { return false }
         return table.isSingleKana(source) || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
     }
@@ -495,20 +530,20 @@ public final class Segmenter {
         return Segment(kind: .english, source: source, reading: source, output: englishOutput(source), score: score, context: context)
     }
 
-    /// 英語区間の綴りの点。数字の連なりは英単語の綴りではないので、日本語区間と同じく採点の変換で数として読んだ点にし、
-    /// 数字で切った残りの綴りをそれぞれ英語の綴りとして測る。区間の頭の数字は区間の文脈で、英字の後の数字は語の後として読む
+    /// 英語区間の綴りの点。数（numberLength）は英単語の綴りではないので、日本語区間と同じく採点の変換で数として読んだ点にし、
+    /// 数字で切った残りの綴りをそれぞれ英語の綴りとして測る。区間の頭の数は区間の文脈で、英字の後の数は語の後として読む
     private func spellingScore(_ source: String, context: JapaneseContext) -> Double {
         var score = 0.0
         var rest = Substring(source)
         while !rest.isEmpty {
-            let digits = rest.prefix(while: Self.isDigit)
-            if !digits.isEmpty {
+            let number = rest.prefix(Self.numberLength(rest))
+            if !number.isEmpty {
                 let at: JapaneseContext = rest.startIndex == source.startIndex ? context : .afterWord
-                guard let number = japaneseConverter.convert(kana: String(digits), context: at) else {
-                    preconditionFailure("数字を数として読めない: \(digits)")
+                guard let reading = japaneseConverter.convert(kana: String(number), context: at) else {
+                    preconditionFailure("数を数として読めない: \(number)")
                 }
-                score += number.value
-                rest = rest.dropFirst(digits.count)
+                score += reading.value
+                rest = rest.dropFirst(number.count)
                 continue
             }
             let spelling = rest.prefix { !Self.isDigit($0) }

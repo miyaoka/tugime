@@ -71,7 +71,7 @@ extension Segmenter {
             }) {
                 text += longest.kana
                 // 数字は日本語でも英語でもないので、数字だけの読みは直前の側を変えない（html5. の . は打ったまま）
-                if !longest.kana.allSatisfy(isDigit) { afterJapanese = true }
+                if !isNumber(longest.kana) { afterJapanese = true }
                 position = longest.end
             } else {
                 text.append(input[position])

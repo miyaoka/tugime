@@ -16,12 +16,12 @@ final class LatticeConverter: JapaneseConverting {
     /// 数の語のコスト。Mozc が入力の数字に置く語と同じ（immutable_converter.cc の kDefaultNumberCost）
     static let numberCost: Int32 = 3000
 
-    /// 読みの start..<end が、数字の連なりの頭から始まる数字だけの並びか。数の語は連なりの頭から始める。
-    /// 読みは後ろへ伸びるので、連なりの終わりは決めず、どこで終わっても 1 語にする。格子は語の読みの最長の文字数より前へ遡らないので、
-    /// それより長い連なりは 1 語にならない
+    /// 読みの start..<end が、数（Segmenter.numberLength。3.14 1,000 も 1 つの数）の頭から始まる数だけの並びか。数の語は数の頭から始める。
+    /// 読みは後ろへ伸びるので、数の終わりは決めず、どこで終わっても 1 語にする。格子は語の読みの最長の文字数より前へ遡らないので、
+    /// それより長い数は 1 語にならない
     private static func isNumber(_ kana: [Character], start: Int, end: Int) -> Bool {
-        guard start == 0 || !Segmenter.isDigit(kana[start - 1]) else { return false }
-        return kana[start..<end].allSatisfy(Segmenter.isDigit)
+        guard Segmenter.numberLength(kana[...start].reversed()) == 1 else { return false }
+        return Segmenter.isNumber(kana[start..<end])
     }
 
     private let dictionary: SystemDictionary

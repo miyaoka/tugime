@@ -69,7 +69,7 @@ private final class LeftRecorder: JapaneseConverting {
 
     /// 数字にはさまれた . , : と、数字の直後の - は、数の一部として打ったまま残す。ほかの記号は直前の区間に従う
     @Test(arguments: [
-        ("3.14", "3.14"), ("1,000enn", "1,000円"), ("10:30kara", "10:30から"), ("kakakuha1500.", "価格は1500。"),
+        ("3.14", "3.14"), ("1,000enn", "1,000円"), ("10:30kara", "10:30から"), ("kakakuha1500.", "価格は1500。"), ("kyouha3.14.", "今日は3.14。"),
         ("2026-11-03", "2026-11-03"), ("03-1234-5678", "03-1234-5678"), ("3-5ninn", "3-5人"), ("3~5nichi", "3〜5日"),
     ])
     func keepsPunctuationBetweenDigitsAsTyped(input: String, expected: String) {
@@ -263,7 +263,7 @@ private final class LeftRecorder: JapaneseConverting {
     }
 
     /// 入力欄の数字に続けて打っても、数字とまとめて打ったときと同じく数字に続く形で区切る。数字の後の句読点も同じ形になる
-    @Test(arguments: [("3", "nin"), ("3", "kai"), ("1500", "ennharaimasu"), ("1500", "."), ("html5", "."), ("3", ".14"), ("1", ",000enn"), ("2026", "-11-03")])
+    @Test(arguments: [("3", "nin"), ("3", "kai"), ("1500", "ennharaimasu"), ("1500", "."), ("html5", "."), ("3", ".14"), ("1", ",000enn"), ("2026", "-11-03"), ("3.14", ".")])
     func continuesConfirmedDigitsLikeTypedDigits(digits: String, input: String) {
         let leading = Segmenter.Leading(digits)
         #expect(digits + output(input, leading: leading) == output(digits + input))
