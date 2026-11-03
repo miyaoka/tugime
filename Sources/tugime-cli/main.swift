@@ -85,7 +85,7 @@ do {
             if isKana {
                 let start = japanese.convert(kana: arg, context: .start)
                 let after = japanese.convert(kana: arg, context: .afterWord)
-                print("J \(arg)\t先頭: \(start.map { "\($0.text) \($0.value)" } ?? "なし")\t英語の後: \(after.map { "\($0.text) \($0.value)" } ?? "なし")")
+                print("J \(arg)\t先頭: \(start.text) \(start.value)\t英語の後: \(after.text) \(after.value)")
                 continue
             }
             print("E \(arg)\t\(english.logProbability(arg))")

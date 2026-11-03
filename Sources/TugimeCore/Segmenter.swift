@@ -260,7 +260,6 @@ public final class Segmenter {
 
     /// 区間を前から順に表示の変換にする。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
     /// 返す配列は spans と同じ順で、日本語区間の要素だけが表示の変換を持つ。
-    /// 日本語区間は採点の変換があるときだけ選ばれ、表示の変換は採点の変換があれば必ず返すので、日本語区間の表示の変換は必ずある。
     /// 末尾の区間（endsWithPendingN なら、最後の打ったままの n の手前）が文の頭（入力の最初の区間か、日本語の記号にした句読点・記号の直後）の
     /// 1 かなだけなら、続けて打つ語の先頭なので、変換せずにかなのまま見せる（ki は 気 ではなく き、kon は こn）。
     /// startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）
@@ -278,9 +277,7 @@ public final class Segmenter {
                     shown += kana
                     return JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])
                 }
-                guard let display = japaneseConverter.display(kana: kana, context: context, left: shown) else {
-                    preconditionFailure("日本語区間の表示の変換が無い: \(kana)")
-                }
+                let display = japaneseConverter.display(kana: kana, context: context, left: shown)
                 shown += display.text
                 return display
             }
@@ -391,9 +388,7 @@ public final class Segmenter {
         let pending = englishSegment("n", context: last.context)
         guard !kana.isEmpty else { return (segments.dropLast() + [pending], true) }
         let rest = String(last.source.dropLast())
-        guard let japanese = japaneseSegment(rest, kana: kana, context: last.context, penalty: 0) else {
-            preconditionFailure("読めた日本語区間から n を外した読みが変換できない: \(rest)")
-        }
+        let japanese = japaneseSegment(rest, kana: kana, context: last.context, penalty: 0)
         return (segments.dropLast() + [japanese, pending], true)
     }
 
@@ -455,9 +450,8 @@ public final class Segmenter {
             let readableEnds = Set(readings.map(\.end))
             for (end, kana) in readings where Self.canBeJapanese(kana) {
                 for predecessor in predecessors {
-                    guard score(at: start, after: predecessor.kind) != nil,
-                          let segment = japaneseSegment(String(chars[start..<end]), kana: kana, context: predecessor.context, penalty: predecessor.penalty)
-                    else { continue }
+                    guard score(at: start, after: predecessor.kind) != nil else { continue }
+                    let segment = japaneseSegment(String(chars[start..<end]), kana: kana, context: predecessor.context, penalty: predecessor.penalty)
                     japaneseEnds.insert(end)
                     relax(end, start, segment, after: predecessor.kind)
                 }
@@ -496,9 +490,8 @@ public final class Segmenter {
     func singleSpan(_ source: String, context: JapaneseContext, preceding: Character?) -> Segment {
         if let word = wordSegment(source, context: context) { return word }
         let english = englishSegment(source, context: context)
-        guard let kana = Self.japaneseReading(table: table, of: source, before: preceding), Self.canBeJapanese(kana),
-              let japanese = japaneseSegment(source, kana: kana, context: context, penalty: Self.japaneseSpanPenalty)
-        else { return english }
+        guard let kana = Self.japaneseReading(table: table, of: source, before: preceding), Self.canBeJapanese(kana) else { return english }
+        let japanese = japaneseSegment(source, kana: kana, context: context, penalty: Self.japaneseSpanPenalty)
         return prefersJapanese(source, readable: true) || japanese.score >= english.score ? japanese : english
     }
 
@@ -512,8 +505,8 @@ public final class Segmenter {
         return table.isSingleKana(source) || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
     }
 
-    private func japaneseSegment(_ source: String, kana: String, context: JapaneseContext, penalty: Double) -> Segment? {
-        guard let reading = japaneseConverter.convert(kana: kana, context: context) else { return nil }
+    private func japaneseSegment(_ source: String, kana: String, context: JapaneseContext, penalty: Double) -> Segment {
+        let reading = japaneseConverter.convert(kana: kana, context: context)
         let score = reading.value - penalty
         return Segment(kind: .japanese, source: source, reading: kana, output: reading.text, score: score, context: reading.context)
     }
@@ -539,10 +532,7 @@ public final class Segmenter {
             let number = rest.prefix(Self.numberLength(rest))
             if !number.isEmpty {
                 let at: JapaneseContext = rest.startIndex == source.startIndex ? context : .afterWord
-                guard let reading = japaneseConverter.convert(kana: String(number), context: at) else {
-                    preconditionFailure("数を数として読めない: \(number)")
-                }
-                score += reading.value
+                score += japaneseConverter.convert(kana: String(number), context: at).value
                 rest = rest.dropFirst(number.count)
                 continue
             }
@@ -576,7 +566,6 @@ public final class Segmenter {
     }
 
     /// 隣り合う日本語区間を 1 つにまとめ、まとめた読みを最初の区間の文脈で変換し直す。
-    /// まとめた読みを変換できなければまとめない。各区間は採点のときに自分の文脈で変換できているので、文節に分けても同じ変換になる。
     /// まとめた区間の点は、区切りを決めた区間ごとの点の和にする
     private func mergeJapanese(_ segments: [Segment]) -> [Segment] {
         var merged: [Segment] = []
@@ -586,10 +575,7 @@ public final class Segmenter {
                 continue
             }
             let reading = last.reading + segment.reading
-            guard let whole = japaneseConverter.convert(kana: reading, context: last.context) else {
-                merged.append(segment)
-                continue
-            }
+            let whole = japaneseConverter.convert(kana: reading, context: last.context)
             merged[merged.count - 1] = Segment(
                 kind: .japanese,
                 source: last.source + segment.source,

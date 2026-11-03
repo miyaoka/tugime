@@ -36,18 +36,21 @@ import Testing
     }
 }
 
-/// 採点は決めた文節で返し、候補は空にする
+/// 採点は決めた文節で返し、候補は空にする。DirectConverter は採点の側の表示を使わない
 private final class FixedScorer: JapaneseConverting {
     var clauses: [String: [ScoredClause]] = [:]
     private(set) var ended = 0
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
-        clauses[kana].map { JapaneseReading(text: $0.map(\.clause.text).joined(), value: 0, clauses: $0, context: context) }
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading {
+        guard let clauses = clauses[kana] else { preconditionFailure("テストで決めていない読み: \(kana)") }
+        return JapaneseReading(text: clauses.map(\.clause.text).joined(), value: 0, clauses: clauses, context: context)
     }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { [] }
 
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? { nil }
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay {
+        preconditionFailure("DirectConverter は採点の側の表示を呼ばない")
+    }
 
     func endComposition() { ended += 1 }
 
@@ -84,7 +87,7 @@ private final class FixedGenerator: DirectDisplayGenerating {
     /// 読みに対応づかない出力も差し替えず、全体を 1 文節にする。読みと合わない表示として扱う
     @Test func keepsAnOutputThatDoesNotFollowTheReading() throws {
         generator.outputs["きょうはいいてんき"] = "今日はええ天気"
-        let shown = try #require(converter.display(kana: "きょうはいいてんき", context: .start, left: ""))
+        let shown = converter.display(kana: "きょうはいいてんき", context: .start, left: "")
         #expect(shown.text == "今日はええ天気")
         #expect(shown.clauses == [JapaneseClause(reading: "きょうはいいてんき", text: "今日はええ天気")])
         #expect(!shown.matchesReading)
@@ -97,7 +100,7 @@ private final class FixedGenerator: DirectDisplayGenerating {
             ScoredClause(JapaneseClause(reading: "まんず", text: "萬子"), userWords: [UsedUserWord(reading: "マンズ", spellings: ["萬子"])]),
         ]
         generator.outputs["まーじゃんのまんず"] = "マージャンのマンズ"
-        let shown = try #require(converter.display(kana: "まーじゃんのまんず", context: .start, left: ""))
+        let shown = converter.display(kana: "まーじゃんのまんず", context: .start, left: "")
         #expect(shown.text == "マージャンの萬子")
         #expect(shown.clauses == [JapaneseClause(reading: "まーじゃんの", text: "マージャンの"), JapaneseClause(reading: "まんず", text: "萬子")])
     }
@@ -107,7 +110,7 @@ private final class FixedGenerator: DirectDisplayGenerating {
     @Test func readsAUserWordAsItsReading() throws {
         scorer.clauses["よろしく"] = [ScoredClause(JapaneseClause(reading: "よろしく", text: "よろしくお願いします"), userWords: [UsedUserWord(reading: "ヨロシク", spellings: ["よろしくお願いします"])])]
         generator.outputs["よろしく"] = "宜しく"
-        let shown = try #require(converter.display(kana: "よろしく", context: .start, left: ""))
+        let shown = converter.display(kana: "よろしく", context: .start, left: "")
         #expect(shown.text == "よろしくお願いします")
         #expect(shown.matchesReading)
         for text in ["どうぞよろしくお願いします", "よろしくお願いしますよろしくお願いします"] {
@@ -133,7 +136,7 @@ private final class FixedGenerator: DirectDisplayGenerating {
     @Test func keepsAnOutputThatHasTheUserWord() throws {
         scorer.clauses["いーそうをきる"] = [ScoredClause(JapaneseClause(reading: "いーそうをきる", text: "一索を切る"), userWords: [UsedUserWord(reading: "イーソウ", spellings: ["一索"])])]
         generator.outputs["いーそうをきる"] = "一索をきる"
-        let shown = try #require(converter.display(kana: "いーそうをきる", context: .start, left: ""))
+        let shown = converter.display(kana: "いーそうをきる", context: .start, left: "")
         #expect(shown.text == "一索をきる")
     }
 
@@ -141,7 +144,7 @@ private final class FixedGenerator: DirectDisplayGenerating {
     @Test func keepsAnOutputWithAnotherRegisteredSpelling() throws {
         scorer.clauses["まんず"] = [ScoredClause(JapaneseClause(reading: "まんず", text: "萬子"), userWords: [UsedUserWord(reading: "マンズ", spellings: ["萬子", "マンズ"])])]
         generator.outputs["まんず"] = "マンズ"
-        let shown = try #require(converter.display(kana: "まんず", context: .start, left: ""))
+        let shown = converter.display(kana: "まんず", context: .start, left: "")
         #expect(shown.text == "マンズ")
     }
 
@@ -149,7 +152,7 @@ private final class FixedGenerator: DirectDisplayGenerating {
     @Test func replacesTheWholeOutputWhenItDoesNotFollowTheReading() throws {
         scorer.clauses["いーそう"] = [ScoredClause(JapaneseClause(reading: "いーそう", text: "一索"), userWords: [UsedUserWord(reading: "イーソウ", spellings: ["一索"])])]
         generator.outputs["いーそう"] = "いーそお"
-        let shown = try #require(converter.display(kana: "いーそう", context: .start, left: ""))
+        let shown = converter.display(kana: "いーそう", context: .start, left: "")
         #expect(shown.clauses == [JapaneseClause(reading: "いーそう", text: "一索")])
     }
 

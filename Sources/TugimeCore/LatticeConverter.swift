@@ -59,7 +59,7 @@ final class LatticeConverter: JapaneseConverting {
 
     /// 採点の前向きの表を読みと始まりの品詞ごとに覚える。読みを 1 かな伸ばすと、前の読みの表に 1 列足すだけで済む。未確定の文字列の寿命だけ持つ
     private var tables: [TableKey: [Position]] = [:]
-    private var readings: [ReadingKey: JapaneseReading?] = [:]
+    private var readings: [ReadingKey: JapaneseReading] = [:]
     private var userEntries: [UserWord] = []
     private var userWordsByReading: [String: [Int]] = [:]
     private var userSpellings: [String: [String]] = [:]
@@ -316,26 +316,26 @@ final class LatticeConverter: JapaneseConverting {
         return clauses
     }
 
-    private func reading(_ kana: String, startRid: UInt16, context: JapaneseContext) -> JapaneseReading? {
+    /// どの位置にも辞書に無い 1 文字を通す道があるので、空でない読みには必ず最良の道がある
+    private func reading(_ kana: String, startRid: UInt16, context: JapaneseContext) -> JapaneseReading {
+        precondition(!kana.isEmpty, "空の読みは変換しない")
         let key = ReadingKey(kana: kana, context: context)
         if let cached = readings[key] { return cached }
-        guard !kana.isEmpty else { return nil }
         let (chars, bytes, offsets) = Self.layout(kana)
         let positions = table(chars, bytes: bytes, offsets: offsets, startRid: startRid)
-        let result = finals(positions, k: 1).first.map { final in
-            let words = preferringUserWords(backtrack(positions, rid: final.rid, rank: final.rank, kana: chars), kana: chars, startRid: startRid)
-            return JapaneseReading(text: words.map(\.text).joined(), value: -Double(final.cost) / Self.scale, clauses: clauses(words, kana: chars), context: context)
-        }
+        let final = finals(positions, k: 1)[0]
+        let words = preferringUserWords(backtrack(positions, rid: final.rid, rank: final.rank, kana: chars), kana: chars, startRid: startRid)
+        let result = JapaneseReading(text: words.map(\.text).joined(), value: -Double(final.cost) / Self.scale, clauses: clauses(words, kana: chars), context: context)
         readings[key] = result
         return result
     }
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading {
         guard case .afterCaret = context else { return reading(kana, startRid: startRid(context), context: context) }
         // カーソルの前の文字が文のどこに当たるかは分からないので、文頭と前の語に続く形のうち自然な方で読む
-        return [reading(kana, startRid: startRid(.start), context: .start), reading(kana, startRid: startRid(.afterWord), context: .afterWord)]
-            .compactMap { $0 }
-            .max { $0.value < $1.value }
+        let start = reading(kana, startRid: startRid(.start), context: .start)
+        let afterWord = reading(kana, startRid: startRid(.afterWord), context: .afterWord)
+        return afterWord.value > start.value ? afterWord : start
     }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] {
@@ -352,10 +352,9 @@ final class LatticeConverter: JapaneseConverting {
     }
 
     /// 表示も採点と同じ変換にする。表示をモデルで選び直すのは DirectConverter
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
-        convert(kana: kana, context: context).map {
-            JapaneseDisplay(text: $0.text, clauses: $0.clauses.map(\.clause), userWords: $0.clauses.flatMap(\.userWords))
-        }
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay {
+        let reading = convert(kana: kana, context: context)
+        return JapaneseDisplay(text: reading.text, clauses: reading.clauses.map(\.clause), userWords: reading.clauses.flatMap(\.userWords))
     }
 
     func endComposition() {
