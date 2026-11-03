@@ -373,6 +373,30 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(clauses.indices.contains(index + 1) && clauses[index + 1].reading.hasPrefix("ど"))
     }
 
+    /// 後ろの文節で選んだ候補は、前の文節を区間の中で伸縮しても、日英判定をやり直す伸縮をしても残る
+    @Test(arguments: [("kyouhaasitanoyoteiwokimetaikedo", -1), ("githubnipushsitakedodameda", 1)])
+    func keepsTheChosenCandidateWhenAnEarlierClauseIsResized(input: String, delta: Int) throws {
+        var clauses = segmenter.clauses(input)
+        let last = clauses.count - 1
+        try #require(last >= 2 && clauses[last].candidates.count > 1)
+        clauses = Clause.selecting(1, at: last, in: clauses)
+        let chosen = clauses[last].output
+        clauses = segmenter.resize(clauses, at: 0, by: delta)
+        #expect(clauses.last?.output == chosen)
+    }
+
+    /// F6〜F10 で文字種を変えた文節も、候補を選んだ文節と同じく、前の文節を伸縮しても残る
+    @Test func keepsTheCharacterFormChosenWithAFunctionKey() throws {
+        var clauses = segmenter.clauses("kyouhaasitanoyoteiwokimetaikedo")
+        let last = clauses.count - 1
+        try #require(last >= 2)
+        let katakana = try #require(segmenter.convertClause(clauses, at: last, to: .katakana))
+        if !clauses[last].candidates.contains(katakana) { clauses[last].candidates.append(katakana) }
+        clauses = Clause.selecting(clauses[last].candidates.firstIndex(of: katakana)!, at: last, in: clauses)
+        clauses = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(clauses.last?.output == katakana)
+    }
+
     /// 句読点は前の文節にも取り込める。2 文字以下の読める綴りは日本語になり、1 かなは 1 文節になるので、前の文節は え に決まる
     @Test func resizingTakesPunctuationIntoTheClauseBefore() {
         let original = segmenter.clauses("e,ki")

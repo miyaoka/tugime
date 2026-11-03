@@ -42,6 +42,32 @@ public struct Clause: Sendable, Equatable {
     }
 
     public var output: String { candidates[selected] }
+
+    /// 利用者が選んだ候補。先頭の候補のままなら nil
+    var chosen: String? { selected == 0 ? nil : output }
+
+    /// 作り直すときに範囲と選んだ候補を守る文節か。伸縮で範囲を決めたか、候補を選んだ文節
+    var kept: Bool { fixedRange || chosen != nil }
+
+    /// 候補 text を選ぶ。候補に無ければ末尾に足して選ぶ
+    mutating func choose(_ text: String) {
+        if let index = candidates.firstIndex(of: text) {
+            selected = index
+        } else {
+            candidates.append(text)
+            selected = candidates.count - 1
+        }
+    }
+}
+
+/// 作り直すときに守る文節。range は読み（打鍵の上で扱うときは打鍵）の中の範囲、chosen は利用者が選んだ候補
+struct KeptClause: Equatable {
+    var range: Range<Int>
+    var chosen: String?
+
+    func shifted(by offset: Int) -> KeptClause {
+        KeptClause(range: (range.lowerBound + offset)..<(range.upperBound + offset), chosen: chosen)
+    }
 }
 
 /// 日英判定で決めた 1 区間
@@ -101,25 +127,31 @@ extension Segmenter {
 
     /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る。
     /// startsAtHead は最初の区間が文の頭（入力の最初か、日本語の記号にした句読点・記号の直後）か。
-    /// fixedKeys は利用者が範囲を決めた文節の打鍵の範囲（segments の打鍵の始まりからの位置）。日本語区間の中に丸ごと収まり、
-    /// 両端がその区間の読みのかなの境目に当たる範囲を守る（`keepingFixedRanges`）
-    private func clauses(of segments: [Segment], left: String, firstIndex: Int, startsAtHead: Bool, fixedKeys: [Range<Int>] = []) -> [Clause] {
+    /// fixedKeys は利用者が範囲を決めたか候補を選んだ文節の打鍵の範囲（segments の打鍵の始まりからの位置）。日本語区間の中に丸ごと収まり、
+    /// 両端がその区間の読みのかなの境目に当たるものを守る（`keepingFixedRanges`）
+    private func clauses(of segments: [Segment], left: String, firstIndex: Int, startsAtHead: Bool, fixedKeys: [KeptClause] = []) -> [Clause] {
         var keyStart = 0
+        var shown = left
         return zip(segments, displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: startsAtHead, endsWithPendingN: false)).enumerated().flatMap { offset, pair in
             let (segment, display) = pair
             defer { keyStart += segment.source.count }
             let span = ClauseSpan(index: firstIndex + offset, source: segment.source, reading: segment.reading, context: segment.context)
             guard let display else {
-                return [Clause(kind: Clause.Kind(segment.kind), reading: segment.reading, candidates: candidates(for: segment), selected: 0, span: span)]
+                let clause = Clause(kind: Clause.Kind(segment.kind), reading: segment.reading, candidates: candidates(for: segment), selected: 0, span: span)
+                shown += clause.output
+                return [clause]
             }
-            let fixed = fixedKeys.compactMap { keys -> Range<Int>? in
+            let fixed = fixedKeys.compactMap { kept -> KeptClause? in
+                let keys = kept.range
                 guard keyStart <= keys.lowerBound, keys.upperBound <= keyStart + segment.source.count,
                       let lower = kanaPosition(atKey: keys.lowerBound - keyStart, in: span),
                       let upper = kanaPosition(atKey: keys.upperBound - keyStart, in: span), lower < upper
                 else { return nil }
-                return lower..<upper
+                return KeptClause(range: lower..<upper, chosen: kept.chosen)
             }
-            return keepingFixedRanges(fixed, in: display, reading: span.reading, context: span.context, span: span)
+            let made = keepingFixedRanges(fixed, in: display, reading: span.reading, context: span.context, span: span, left: shown)
+            shown += made.map(\.output).joined()
+            return made
         }
     }
 
@@ -227,38 +259,40 @@ extension Segmenter {
             in: japaneseConverter.display(kana: restKana, context: .afterWord, left: left + resized.output),
             reading: restKana,
             context: .afterWord,
-            span: span
+            span: span,
+            left: left + resized.output
         )
         let later = redisplay(Array(clauses[(spanIndices.last! + 1)...]), left: left + ([resized] + rest).map(\.output).joined())
         return Array(clauses[..<index]) + [resized] + rest + later
     }
 
     /// 区間の中で index の文節を伸縮して、文節の終わりが区間の読みの end になったとき、残りの読み（end から後ろ）の中で守る、
-    /// 利用者が範囲を決めた文節の範囲。spanClauses は区間の文節を前から並べたもの、spanStart は clauses の中でのその先頭の位置。
+    /// 利用者が範囲を決めたか候補を選んだ文節。spanClauses は区間の文節を前から並べたもの、spanStart は clauses の中でのその先頭の位置。
     /// 伸ばして読みを取り込まれた文節は end より前に始まるので守らない。縮めた（shrunk）ときは、手放した読みに続くすぐ後ろの文節も守らない
-    private func fixedRanges(after index: Int, in spanClauses: [Clause], from end: Int, spanStart: Int, shrunk: Bool) -> [Range<Int>] {
+    private func fixedRanges(after index: Int, in spanClauses: [Clause], from end: Int, spanStart: Int, shrunk: Bool) -> [KeptClause] {
         var position = 0
-        var later: [(range: Range<Int>, fixed: Bool)] = []
+        var later: [(kept: KeptClause, isKept: Bool)] = []
         for (offset, clause) in spanClauses.enumerated() {
             defer { position += clause.reading.count }
             guard spanStart + offset > index, position >= end else { continue }
-            later.append((position..<(position + clause.reading.count), clause.fixedRange))
+            later.append((KeptClause(range: position..<(position + clause.reading.count), chosen: clause.chosen), clause.kept))
         }
-        return later.dropFirst(shrunk ? 1 : 0).filter(\.fixed).map { ($0.range.lowerBound - end)..<($0.range.upperBound - end) }
+        return later.dropFirst(shrunk ? 1 : 0).filter(\.isKept).map { $0.kept.shifted(by: -end) }
     }
 
-    /// index の文節の終わりを打鍵列の end にして後ろの打鍵を作り直すとき、守る、利用者が範囲を決めた文節の打鍵の範囲（end からの位置）。
+    /// index の文節の終わりを打鍵列の end にして後ろの打鍵を作り直すとき、守る、利用者が範囲を決めたか候補を選んだ文節（打鍵の範囲は end からの位置）。
     /// 区間の中での伸縮（`fixedRanges`）と同じく、縮めた（shrunk）ときは手放した打鍵に続くすぐ後ろの文節を守らない。
     /// すぐ後ろの文節は、打鍵の範囲が決まらなくても位置で数える。打鍵の範囲が決まらない文節は守らない
-    private func fixedKeyRanges(after index: Int, in clauses: [Clause], from end: Int, shrunk: Bool) -> [Range<Int>] {
+    private func fixedKeyRanges(after index: Int, in clauses: [Clause], from end: Int, shrunk: Bool) -> [KeptClause] {
         let spans = keySpans(of: clauses)
         return clauses.indices.dropFirst(index + 1).compactMap { i in
-            guard clauses[i].fixedRange, !(shrunk && i == index + 1),
+            guard clauses[i].kept, !(shrunk && i == index + 1),
                   let own = spans.first(where: { $0.span == clauses[i].span }),
                   let range = keyRange(of: clauses, at: i, from: own.start), range.lowerBound >= end
             else { return nil }
-            return (range.lowerBound - end)..<(range.upperBound - end)
+            return KeptClause(range: range, chosen: clauses[i].chosen).shifted(by: -end)
         }
+
     }
 
     /// index の文節を打鍵列の range.lowerBound..<end にして、その打鍵を 1 区間として日英を判定する。
@@ -516,40 +550,50 @@ extension Segmenter {
             }
         }
         // 伸縮した区間より後ろの文節だけなので、最初の文節は入力の最初ではない
+        var text = left
         return zip(groups, displays(of: spans, left: left, startsAtHead: false, endsWithPendingN: false)).flatMap { group, display in
-            display.map { shown in
+            let made = display.map { shown in
                 var start = 0
-                var fixed: [Range<Int>] = []
+                var fixed: [KeptClause] = []
                 for clause in group {
-                    if clause.fixedRange { fixed.append(start..<(start + clause.reading.count)) }
+                    if clause.kept { fixed.append(KeptClause(range: start..<(start + clause.reading.count), chosen: clause.chosen)) }
                     start += clause.reading.count
                 }
-                return keepingFixedRanges(fixed, in: shown, reading: group[0].span.reading, context: group[0].span.context, span: group[0].span)
+                return keepingFixedRanges(fixed, in: shown, reading: group[0].span.reading, context: group[0].span.context, span: group[0].span, left: text)
             } ?? group
+            text += made.map(\.output).joined()
+            return made
         }
     }
 
-    /// 読み reading の表示 shown を文節に分ける。fixed は利用者が伸縮で範囲を決めた文節の、reading の中の範囲。
-    /// 範囲の両端を shown の表記の上で切れるなら（`ShownPieces`）、その範囲の内側では切らず、両端で切る。切れない範囲は守らない。
-    /// ほかの区切りは表示の変換の文節の境目をそのまま使う。表記は shown の文節を切るかつなぐだけなので、文節の表記をつなぐと shown の表記になる。
-    /// context は先頭の文節を変換した文脈
+    /// 読み reading の表示 shown を文節に分ける。fixed は利用者が範囲を決めたか候補を選んだ文節の、reading の中の範囲と選んだ候補。
+    /// 範囲の両端を shown の表記の上で切れるなら（`ShownPieces`）、その範囲の内側では切らず、両端で切り、選んだ候補を選ぶ。
+    /// 切れない範囲は、候補を選んでいなければ守らない。候補を選んでいれば、その文節の前後で読みを分けて変換し、選んだ候補を残す（`splitting`）。
+    /// ほかの区切りは表示の変換の文節の境目をそのまま使う。範囲を切るときの表記は shown の文節を切るかつなぐだけなので、文節の表記をつなぐと shown の表記になる。
+    /// context は先頭の文節を変換した文脈、left は reading より前に表示している文字列
     private func keepingFixedRanges(
-        _ fixed: [Range<Int>], in shown: JapaneseDisplay, reading: String, context: JapaneseContext, span: ClauseSpan
+        _ fixed: [KeptClause], in shown: JapaneseDisplay, reading: String, context: JapaneseContext, span: ClauseSpan, left: String
     ) -> [Clause] {
         let pieces = ShownPieces(shown.clauses)
         let inner = { (position: Int) in position > 0 && position < reading.count }
-        let kept = fixed.filter { range in
-            [range.lowerBound, range.upperBound].filter(inner).allSatisfy(pieces.canCut(atReading:))
+        let cuttable = { (kept: KeptClause) in
+            [kept.range.lowerBound, kept.range.upperBound].filter(inner).allSatisfy(pieces.canCut(atReading:))
         }
+        if let chosen = fixed.first(where: { $0.chosen != nil && !cuttable($0) }) {
+            return splitting(reading, around: chosen, keeping: fixed, context: context, span: span, left: left)
+        }
+        let kept = fixed.filter(cuttable)
         guard !kept.isEmpty else { return japaneseClauses(shown.clauses, context: context, in: span) }
-        let edges = kept.flatMap { [$0.lowerBound, $0.upperBound] }.filter(inner)
-        let cuts = Set(pieces.bounds.filter { cut in inner(cut) && !kept.contains { $0.lowerBound < cut && cut < $0.upperBound } } + edges).sorted()
+        let edges = kept.flatMap { [$0.range.lowerBound, $0.range.upperBound] }.filter(inner)
+        let cuts = Set(pieces.bounds.filter { cut in inner(cut) && !kept.contains { $0.range.lowerBound < cut && cut < $0.range.upperBound } } + edges).sorted()
         let parts = pieces.clauses(cutAt: cuts)
         var position = 0
         return japaneseClauses(parts, context: context, in: span).map { clause in
             defer { position += clause.reading.count }
             var marked = clause
-            marked.fixedRange = kept.contains(position..<(position + clause.reading.count))
+            let match = kept.first { $0.range == position..<(position + clause.reading.count) }
+            marked.fixedRange = match != nil
+            if let chosen = match?.chosen { marked.choose(chosen) }
             return marked
         }
     }
@@ -594,6 +638,48 @@ extension Segmenter {
             }
             return merged
         }
+    }
+
+    /// 選んだ候補のある文節 chosen の範囲で reading を前・その文節・後ろに分け、前と後ろはそれぞれ left に続けて変換して文節に分ける。
+    /// 前と後ろにある、守る文節も守る（`keepingFixedRanges`）
+    private func splitting(
+        _ reading: String, around chosen: KeptClause, keeping fixed: [KeptClause], context: JapaneseContext, span: ClauseSpan, left: String
+    ) -> [Clause] {
+        var made: [Clause] = []
+        var text = left
+        let head = String(reading.prefix(chosen.range.lowerBound))
+        if !head.isEmpty {
+            made += keepingFixedRanges(
+                fixed.filter { $0.range.upperBound <= chosen.range.lowerBound },
+                in: japaneseConverter.display(kana: head, context: context, left: text),
+                reading: head, context: context, span: span, left: text
+            )
+            text += made.map(\.output).joined()
+        }
+        let middle = String(reading.dropFirst(chosen.range.lowerBound).prefix(chosen.range.count))
+        let middleContext = head.isEmpty ? context : .afterWord
+        var clause = Clause(
+            kind: .japanese,
+            reading: middle,
+            candidates: japaneseCandidates(
+                reading: middle, best: japaneseConverter.display(kana: middle, context: middleContext, left: text).text, context: middleContext, span: span
+            ),
+            selected: 0,
+            span: span,
+            fixedRange: true
+        )
+        clause.choose(chosen.chosen!)
+        made.append(clause)
+        text += clause.output
+        let tail = String(reading.dropFirst(chosen.range.upperBound))
+        if !tail.isEmpty {
+            made += keepingFixedRanges(
+                fixed.filter { $0.range.lowerBound >= chosen.range.upperBound }.map { $0.shifted(by: -chosen.range.upperBound) },
+                in: japaneseConverter.display(kana: tail, context: .afterWord, left: text),
+                reading: tail, context: .afterWord, span: span, left: text
+            )
+        }
+        return made
     }
 
     /// index の文節までを確定するときの、確定する文字列、残りの文節、残りの打鍵列。
