@@ -111,4 +111,11 @@ export async function dictionary(): Promise<string> {
   return out;
 }
 
-if (import.meta.main) console.log(await dictionary());
+// --sources は、組み立ての結果を変えるソースを 1 行ずつ出す。CI が、base と head で辞書を組み立て直すかを決めるのに使う
+if (import.meta.main) {
+  console.log(
+    process.argv.includes("--sources")
+      ? builders.join("\n")
+      : await dictionary(),
+  );
+}
