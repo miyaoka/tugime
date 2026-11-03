@@ -372,15 +372,15 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(readings(segmenter.resize(clauses, at: 0, by: 1)) == readings(unset))
     }
 
-    /// 同じ区間の後ろで範囲を決めた文節も、前の文節を区間の中で伸縮して残りを作り直したとき、その範囲のまま残る。
-    /// 縮めて余った読みを受け取るすぐ後ろの文節は、範囲を決めていても作り直す
-    @Test func keepsTheRangeTheUserSetLaterInTheSameSpan() throws {
+    /// 同じ区間の後ろで範囲を決めた文節も、前の文節を区間の中で縮めても伸ばしても、残りを作り直したときにその範囲のまま残る
+    @Test(arguments: [-1, 1])
+    func keepsTheRangeTheUserSetLaterInTheSameSpan(delta: Int) throws {
         var clauses = segmenter.clauses("kyouhaasitanoyoteiwokimetaikedo")
         try #require(clauses.count >= 3 && clauses.allSatisfy { $0.span == clauses[0].span })
         clauses = segmenter.resize(clauses, at: clauses.count - 1, by: -1)
         let kept = Array(readings(clauses).suffix(2))
         #expect(kept.last == "ど")
-        clauses = segmenter.resize(clauses, at: 0, by: -1)
+        clauses = segmenter.resize(clauses, at: 0, by: delta)
         #expect(Array(readings(clauses).suffix(2)) == kept)
     }
 

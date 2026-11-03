@@ -223,7 +223,7 @@ extension Segmenter {
         let end = start + length
         let restKana = String(span.reading.dropFirst(end))
         let rest = restKana.isEmpty ? [] : keepingFixedRanges(
-            fixedRanges(after: index, in: spanIndices.map { clauses[$0] }, from: end, spanStart: spanIndices[0]),
+            fixedRanges(after: index, in: spanIndices.map { clauses[$0] }, from: end, spanStart: spanIndices[0], shrunk: delta < 0),
             in: japaneseConverter.display(kana: restKana, context: .afterWord, left: left + resized.output),
             reading: restKana,
             context: .afterWord,
@@ -235,9 +235,8 @@ extension Segmenter {
 
     /// 区間の中で index の文節を伸縮して、文節の終わりが区間の読みの end になったとき、残りの読み（end から後ろ）の中で守る、
     /// 利用者が範囲を決めた文節の範囲。spanClauses は区間の文節を前から並べたもの、spanStart は clauses の中でのその先頭の位置。
-    /// Mozc の Segments::Resize と同じく、伸縮で読みを受け取るか手放す、すぐ後ろの文節（end で始まらない最初の文節、
-    /// またはその次）は守らない。end がもとの文節の境目に当たり、受け渡す読みが無ければ、後ろの文節はどれも守る
-    private func fixedRanges(after index: Int, in spanClauses: [Clause], from end: Int, spanStart: Int) -> [Range<Int>] {
+    /// 伸ばして読みを取り込まれた文節は end より前に始まるので守らない。縮めた（shrunk）ときは、手放した読みに続くすぐ後ろの文節も守らない
+    private func fixedRanges(after index: Int, in spanClauses: [Clause], from end: Int, spanStart: Int, shrunk: Bool) -> [Range<Int>] {
         var position = 0
         var later: [(range: Range<Int>, fixed: Bool)] = []
         for (offset, clause) in spanClauses.enumerated() {
@@ -245,13 +244,13 @@ extension Segmenter {
             guard spanStart + offset > index, position >= end else { continue }
             later.append((position..<(position + clause.reading.count), clause.fixedRange))
         }
-        let handsOver = later.first?.range.lowerBound != end
-        return later.dropFirst(handsOver ? 1 : 0).filter(\.fixed).map { ($0.range.lowerBound - end)..<($0.range.upperBound - end) }
+        return later.dropFirst(shrunk ? 1 : 0).filter(\.fixed).map { ($0.range.lowerBound - end)..<($0.range.upperBound - end) }
     }
 
     /// index の文節の終わりを打鍵列の end にして後ろの打鍵を作り直すとき、守る、利用者が範囲を決めた文節の打鍵の範囲（end からの位置）。
-    /// 区間の中での伸縮（`fixedRanges`）と同じく、読みを受け渡すすぐ後ろの文節は守らない。打鍵の範囲が決まらない文節は数えない
-    private func fixedKeyRanges(after index: Int, in clauses: [Clause], from end: Int) -> [Range<Int>] {
+    /// 区間の中での伸縮（`fixedRanges`）と同じく、縮めた（shrunk）ときは手放した打鍵に続くすぐ後ろの文節を守らない。
+    /// 打鍵の範囲が決まらない文節は数えない
+    private func fixedKeyRanges(after index: Int, in clauses: [Clause], from end: Int, shrunk: Bool) -> [Range<Int>] {
         let spans = keySpans(of: clauses)
         let later: [(range: Range<Int>, fixed: Bool)] = clauses.indices.dropFirst(index + 1).compactMap { i in
             guard let own = spans.first(where: { $0.span == clauses[i].span }),
@@ -259,8 +258,7 @@ extension Segmenter {
             else { return nil }
             return (range, clauses[i].fixedRange)
         }
-        let handsOver = later.first?.range.lowerBound != end
-        return later.dropFirst(handsOver ? 1 : 0).filter(\.fixed).map { ($0.range.lowerBound - end)..<($0.range.upperBound - end) }
+        return later.dropFirst(shrunk ? 1 : 0).filter(\.fixed).map { ($0.range.lowerBound - end)..<($0.range.upperBound - end) }
     }
 
     /// index の文節を打鍵列の range.lowerBound..<end にして、その打鍵を 1 区間として日英を判定する。
@@ -337,7 +335,7 @@ extension Segmenter {
             left: left + resized.output,
             firstIndex: span.index + 1,
             startsAtHead: markContinuation.map { $0 != .afterEnglish } ?? false,
-            fixedKeys: fixedKeyRanges(after: index, in: clauses, from: end)
+            fixedKeys: fixedKeyRanges(after: index, in: clauses, from: end, shrunk: end < range.upperBound)
         )
         return before + [resized] + rest
     }
