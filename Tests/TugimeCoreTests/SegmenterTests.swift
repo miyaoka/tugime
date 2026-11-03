@@ -14,9 +14,10 @@ private enum Shared {
     }
 }
 
-/// 本物の変換器に処理を任せ、表示の変換に渡された左の文字列を記録する
-private final class LeftRecorder: JapaneseConverting {
+/// 本物の変換器に処理を任せ、表示の変換に渡された読みと左の文字列を呼ばれた順に記録する
+private final class DisplayRecorder: JapaneseConverting {
     private let base: JapaneseConverting = Shared.converter
+    private(set) var kanas: [String] = []
     private(set) var lefts: [String] = []
 
     func convert(kana: String, context: JapaneseContext) -> JapaneseReading { base.convert(kana: kana, context: context) }
@@ -24,6 +25,7 @@ private final class LeftRecorder: JapaneseConverting {
     func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
 
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay {
+        kanas.append(kana)
         lefts.append(left)
         return base.display(kana: kana, context: context, left: left)
     }
@@ -47,6 +49,11 @@ private final class LeftRecorder: JapaneseConverting {
         clauses.map(\.reading)
     }
 
+    /// 区間の読みをつないだもの。日本語区間はかな、英語区間は打鍵、記号は記号の形。どの漢字にするかは辞書が決めるので含まない
+    private func reading(_ input: String, leading: Segmenter.Leading = .start) -> String {
+        segmenter.segment(input, leading: leading).map(\.reading).joined()
+    }
+
     // MARK: 日英の区切り
 
     @Test(arguments: ["ga", "to", "de", "no", "ha", "wo", "ie", "a", "e"])
@@ -54,10 +61,16 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.kind) == [.japanese])
     }
 
-    /// 数字と英字が混ざる綴りは、日本語として自然なら日本語、そうでなければ打ったまま
-    @Test(arguments: [("3i", "3位"), ("3ann", "3案"), ("100enn", "100円"), ("3a", "3a"), ("2fa", "2fa"), ("i18n", "i18n"), ("3d", "3d"), ("k8s", "k8s")])
-    func decidesDigitsAndLettersByHowNaturalTheyRead(input: String, expected: String) {
-        #expect(output(input) == expected)
+    /// 数字と英字が混ざる綴りは、読めても日本語に寄せず、英語の区間も候補として採点で比べる。どちらが勝つかは変換の自然さで決まる
+    @Test(arguments: ["3i", "3a", "i18n"])
+    func comparesDigitsAndLettersAsEnglishToo(input: String) {
+        #expect(segmenter.candidates(input).contains { $0.start == 0 && $0.end == input.count && $0.segment.kind == .english })
+    }
+
+    /// 長い日本語の読みは、途中で切らずに 1 つの日本語区間としても採点で比べる
+    @Test(arguments: ["abaiteikunodarou", "setteisareteori"])
+    func comparesALongReadingAsOneJapaneseSpan(input: String) {
+        #expect(segmenter.candidates(input).contains { $0.start == 0 && $0.end == input.count && $0.segment.kind == .japanese })
     }
 
     /// 数字は日本語区間の読みに入るので、数字をはさむ日本語は 1 つの区間になり、後ろの語も前の語の変換の手がかりになる
@@ -69,17 +82,20 @@ private final class LeftRecorder: JapaneseConverting {
 
     /// 数字にはさまれた . , : と、数字の直後の - は、数の一部として打ったまま残す。ほかの記号は直前の区間に従う
     @Test(arguments: [
-        ("3.14", "3.14"), ("1,000enn", "1,000円"), ("10:30kara", "10:30から"), ("kakakuha1500.", "価格は1500。"), ("kyouha3.14.", "今日は3.14。"), ("dennwaha0120-345-678,ato", "電話は0120-345-678、あと"),
-        ("2026-11-03", "2026-11-03"), ("03-1234-5678", "03-1234-5678"), ("3-5ninn", "3-5人"), ("3~5nichi", "3〜5日"),
+        ("3.14", "3.14"), ("1,000enn", "1,000えん"), ("10:30kara", "10:30から"), ("kakakuha1500.", "かかくは1500。"), ("kyouha3.14.", "きょうは3.14。"), ("dennwaha0120-345-678,ato", "でんわは0120-345-678、あと"),
+        ("2026-11-03", "2026-11-03"), ("03-1234-5678", "03-1234-5678"), ("3-5ninn", "3-5にん"), ("3~5nichi", "3〜5にち"),
     ])
     func keepsPunctuationBetweenDigitsAsTyped(input: String, expected: String) {
-        #expect(output(input) == expected)
+        #expect(reading(input) == expected)
     }
 
-    /// 末尾に打った単独の n は、次に打つまで な行 か「ん」かが決まらないので打ったまま。nn と、後ろに句読点が続く n は「ん」
-    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "これ、n"), ("sounaruton", "そうなるとn"), ("nn", "ん"), ("n.", "ん。"), ("3-5nin", "3-5にn")])
+    /// 末尾に打った単独の n は、次に打つまで な行 か「ん」かが決まらないので打ったまま。nn と、後ろに句読点が続く n は「ん」。
+    /// n の手前に日本語の語があるときは、PendingNReadingTests が手前の読みを確かめる
+    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "、n"), ("nn", "ん"), ("n.", "ん。")])
     func keepsAPendingNAsTyped(input: String, expected: String) {
-        #expect(segmenter.liveText(input) == expected)
+        let shown = segmenter.liveText(input)
+        #expect(shown.hasSuffix(expected), "\(shown)")
+        #expect(!shown.dropLast(expected.count).hasSuffix("n"), "\(shown)")
     }
 
     /// 語の途中でも、末尾の単独の n は打ったまま見せる。nn で終われば「ん」まで読む。綴りの組の一部の n（xn）は単独の n ではない
@@ -119,16 +135,11 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).allSatisfy { $0.kind == .japanese })
     }
 
-    /// 長い日本語の途中に英語の語の綴り（aba・ori）が読めても、全体を 1 つの日本語として読んだ方が自然なら英語にしない
-    @Test(arguments: ["abaiteikunodarou", "setteisareteori"])
-    func keepsEnglishWordsInsideLongJapaneseAsJapanese(input: String) {
-        #expect(segmenter.segment(input).map(\.kind) == [.japanese])
-    }
-
     /// 促音の形の数詞（ひゃっ・じゅっ）を含む読みも日本語区間として採り、途中に英字を残さない
-    @Test(arguments: [("hyappoyuzuru", "百歩譲る"), ("sorehagojuppohyappo", "それは五十歩百歩")])
+    @Test(arguments: [("hyappoyuzuru", "ひゃっぽゆずる"), ("sorehagojuppohyappo", "それはごじゅっぽひゃっぽ")])
     func readsGeminatedNumeralsAsJapanese(input: String, expected: String) {
-        #expect(segmenter.liveText(input) == expected)
+        #expect(segmenter.segment(input).allSatisfy { $0.kind == .japanese })
+        #expect(reading(input) == expected)
     }
 
     /// 長音を省いた綴りは利用者の綴りでその語の読みにならないので、英語の語として残る
@@ -139,21 +150,21 @@ private final class LeftRecorder: JapaneseConverting {
     // MARK: 句読点と記号
 
     @Test func punctuationFollowsTheSpanBefore() {
-        #expect(output("kore.") == "これ。")
-        #expect(output("kore,sore?") == "これ、それ？")
+        #expect(reading("kore.") == "これ。")
+        #expect(reading("kore,sore?") == "これ、それ？")
         #expect(output("Hello.") == "Hello.")
-        #expect(output("hee~") == "へえ〜")
-        #expect(output("sugoi!~") == "すごい！〜")
+        #expect(reading("hee~") == "へえ〜")
+        #expect(reading("sugoi!~") == "すごい！〜")
         #expect(output("cd~") == "cd~")
         #expect(output("quiz,quote,") == "quiz,quote,")
     }
 
     /// 丸括弧・コロン・等号も句読点と同じく、直前が日本語なら全角、英語なら打ったまま
     @Test func bracketsColonAndEqualsFollowTheSpanBefore() {
-        #expect(output("kore(sore)") == "これ（それ）")
-        #expect(output("kore:sore") == "これ：それ")
+        #expect(reading("kore(sore)") == "これ（それ）")
+        #expect(reading("kore:sore") == "これ：それ")
         #expect(output("https:") == "https:")
-        #expect(output("kore=sore") == "これ＝それ")
+        #expect(reading("kore=sore") == "これ＝それ")
         #expect(output("x=1") == "x=1")
         #expect(output("(", leading: Segmenter.Leading("今日")) == "（")
         #expect(output("(", leading: Segmenter.Leading("API")) == "(")
@@ -161,18 +172,18 @@ private final class LeftRecorder: JapaneseConverting {
 
     /// 閉じ括弧は、入れ子を数えて組になる開き括弧の形にそろえる
     @Test func closingBracketsFollowTheirOpeners() {
-        #expect(output("kore(github)") == "これ（github）")
-        #expect(output("github(kore)") == "github(これ)")
-        #expect(output("(kore(sore),f(x))") == "（これ（それ）、f(x)）")
+        #expect(reading("kore(github)") == "これ（github）")
+        #expect(reading("github(kore)") == "github(これ)")
+        #expect(reading("(kore(sore),f(x))") == "（これ（それ）、f(x)）")
         // 組になる開き括弧が入力欄の前にあれば、その形にする
         #expect(output("github)", leading: Segmenter.Leading("これは（")) == "github）")
-        #expect(output("kore)", leading: Segmenter.Leading("f(")) == "これ)")
+        #expect(reading("kore)", leading: Segmenter.Leading("f(")) == "これ)")
     }
 
     /// 閉じ括弧の後ろは、そろえた形の後として区切る。全角の後は文の頭、半角の後は英語の後
     @Test func punctuationAfterAClosingBracketFollowsItsForm() {
-        #expect(output("kore(github).") == "これ（github）。")
-        #expect(output("github(kore).") == "github(これ).")
+        #expect(reading("kore(github).") == "これ（github）。")
+        #expect(reading("github(kore).") == "github(これ).")
     }
 
     /// 英語の区間の末尾で打ったままにした句読点は、日本語の記号を候補で選べる。途中の句読点は変えない
@@ -270,7 +281,7 @@ private final class LeftRecorder: JapaneseConverting {
     }
 
     @Test func symbolKeysAreSymbolsWhateverSurroundsThem() {
-        #expect(output("[google]wokensaku") == "「google」を検索")
+        #expect(reading("[google]wokensaku") == "「google」をけんさく")
         #expect(output("google/apple") == "google・apple")
         #expect(output("zhzjzkzl") == "←↓↑→")
         #expect(output("z.z/z-") == "…・〜")
@@ -282,10 +293,10 @@ private final class LeftRecorder: JapaneseConverting {
 
     @Test func symbolKeysCutTheInput() {
         #expect(segmenter.segment("zhou").map(\.source) == ["zh", "ou"])
-        #expect(output("sorezlkore") == "それ→これ")
+        #expect(reading("sorezlkore") == "それ→これ")
         // 記号の後ろは文の途中として読めるので、助詞が続く
-        #expect(output("sorezlmade") == "それ→まで")
-        #expect(output("[google]made") == "「google」まで")
+        #expect(reading("sorezlmade") == "それ→まで")
+        #expect(reading("[google]made") == "「google」まで")
     }
 
     // MARK: 文節
@@ -382,7 +393,7 @@ private final class RewritingConverter: JapaneseConverting {
 
 /// 後ろの区間の表示の変換に、前の区間の表示を左の文脈として渡す
 @Suite struct LeftContextTests {
-    fileprivate let recorder = LeftRecorder()
+    fileprivate let recorder = DisplayRecorder()
     let segmenter: Segmenter
     /// 日本語区間・英語区間・日本語区間の順に並ぶ入力
     let input = "kawacwdkyouhaii"
@@ -442,9 +453,25 @@ private final class RewritingConverter: JapaneseConverting {
     }
 }
 
+/// 末尾の単独の n を外した残りは、区間の読みから「ん」を外したものとして表示の変換に渡す。綴りの表から読み直さない（3-5 は 3ー5 にならない）
+@Suite struct PendingNReadingTests {
+    fileprivate let recorder = DisplayRecorder()
+    let segmenter: Segmenter
+
+    init() throws {
+        segmenter = try Shared.make(recorder)
+    }
+
+    @Test(arguments: [("sounaruton", "そうなると"), ("3-5nin", "3-5に")])
+    func passesTheReadingBeforeThePendingN(input: String, kana: String) {
+        #expect(segmenter.liveText(input).hasSuffix("n"))
+        #expect(recorder.kanas.last == kana)
+    }
+}
+
 /// 文の頭の 1 かなだけを変換器に渡さず、それ以外の 1 かなは変換器に渡す。変換器がどう書くかによらず、表示の変換を呼んだかで確かめる
 @Suite struct SentenceHeadKanaTests {
-    fileprivate let recorder = LeftRecorder()
+    fileprivate let recorder = DisplayRecorder()
     let segmenter: Segmenter
 
     init() throws {

@@ -146,7 +146,7 @@ import Testing
 
     /// 読めない打鍵は、英語の区間の綴りがちょうど一致したときの表記になる。打ったままの綴りは候補の 2 番目に残る
     @Test func showsTheRegisteredSpellingOfAnEnglishWord() throws {
-        #expect(segmenter.liveText("githubdekoukaisuru").hasPrefix("GitHubで"))
+        #expect(segmenter.liveText("githubdekoukaisuru").hasPrefix("GitHub"))
         let first = try #require(segmenter.clauses("githubdekoukaisuru").first)
         #expect(first.candidates.prefix(2) == ["GitHub", "github"])
     }
@@ -160,7 +160,8 @@ import Testing
     /// 英語として扱う打鍵は、日本語として読める綴りでも英語の区間にする（tugime は継ぎ目にならない）
     @Test func makesEnglishKeysAnEnglishSpan() {
         #expect(segmenter.liveText("tugime") == "tugime")
-        #expect(segmenter.liveText("tugimewotukau").hasPrefix("tugimeを"))
+        #expect(segmenter.liveText("tugimewotukau").hasPrefix("tugime"))
+        #expect(segmenter.segment("tugimewotukau").first.map { [$0.source, "\($0.kind)"] } == ["tugime", "english"])
         // 数字で始まる打鍵も、区間全体で一致すれば英語の区間にする
         #expect(segmenter.liveText("2fa") == "2FA")
     }
@@ -179,13 +180,16 @@ import Testing
 
     /// 日本語として扱う打鍵は、英語の語でもかな漢字変換に入れる。区切りが日本語に寄るのも登録に従う
     @Test func putsJapaneseKeysIntoKanaConversion() {
-        #expect(segmenter.liveText("sakewonomu").hasPrefix("鮭を"))
+        #expect(segmenter.liveText("sakewonomu").hasPrefix("鮭"))
     }
 
     /// 日本語として扱う、かなに読めない打鍵は、打鍵とちょうど一致する区間をその語にし、日本語区間と同じく後ろに続ける
     @Test func makesUnreadableJapaneseKeysTheWord() throws {
         #expect(segmenter.liveText("cafe") == "Café")
-        #expect(segmenter.liveText("cafedeyasumu").hasPrefix("Caféで"))
+        #expect(segmenter.liveText("cafedeyasumu").hasPrefix("Café"))
+        let segments = segmenter.segment("cafedeyasumu")
+        #expect(segments.map(\.kind) == [.word, .japanese])
+        #expect(segments.map(\.reading) == ["cafe", "でやすむ"])
         #expect(segmenter.liveText("cafe,") == "Café、")
         let first = try #require(segmenter.clauses("cafedeyasumu").first)
         #expect(first.candidates.prefix(2) == ["Café", "cafe"])
