@@ -347,34 +347,6 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(readings(clauses).contains("（かふぇ）"))
     }
 
-    /// 利用者が伸縮で範囲を決めた文節は、前の文節を伸縮して後ろを変換し直しても、その範囲のまま残る。表記は区間の全体を変換したものを切る
-    @Test func keepsTheRangeTheUserSetWhenAnEarlierClauseIsResized() throws {
-        let input = "kinouwatasihagooglewotukatta"
-        var clauses = segmenter.clauses(input)
-        let wo = try #require(clauses.firstIndex { $0.reading == "を" })
-        clauses = segmenter.resize(segmenter.resize(clauses, at: wo, by: 1), at: wo, by: 1)
-        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
-        clauses = segmenter.resize(clauses, at: 0, by: 1)
-        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
-        // 範囲を守っても、表記をつなぐと、範囲を決めずに同じ伸縮をしたときと同じ文字列になる
-        let unset = segmenter.resize(segmenter.clauses(input), at: 0, by: 1)
-        #expect(clauses.map(\.output).joined() == unset.map(\.output).joined())
-        // 変換し直した後も、範囲を決めた印は残る
-        clauses = segmenter.resize(clauses, at: 0, by: -1)
-        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
-    }
-
-    /// 範囲の端を表記の上で切れないときは、その範囲を守らず、範囲を決めなかったときと同じ区切りにする（「をつ」の つ は 使 の中）
-    @Test func fallsBackToTheConverterCutsWhenAnEndCannotBeCut() throws {
-        let input = "kinouwatasihagooglewotukatta"
-        var clauses = segmenter.clauses(input)
-        let wo = try #require(clauses.firstIndex { $0.reading == "を" })
-        clauses = segmenter.resize(clauses, at: wo, by: 1)
-        #expect(clauses[wo].reading == "をつ")
-        let unset = segmenter.resize(segmenter.clauses(input), at: 0, by: 1)
-        #expect(readings(segmenter.resize(clauses, at: 0, by: 1)) == readings(unset))
-    }
-
     /// 同じ区間の後ろで範囲を決めた文節も、前の文節を区間の中で縮めても伸ばしても、残りを作り直したときにその範囲のまま残る
     @Test(arguments: [-1, 1])
     func keepsTheRangeTheUserSetLaterInTheSameSpan(delta: Int) throws {
@@ -521,6 +493,74 @@ private final class RewritingConverter: JapaneseConverting {
 
     func endComposition() { base.endComposition() }
     func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
+}
+
+/// 本物の変換器に処理を任せ、決めた読みの表示の変換だけを、決めた文節と表記にする
+private final class FixedDisplayConverter: JapaneseConverting {
+    private let base: JapaneseConverting = Shared.converter
+    private let fixed: [String: [JapaneseClause]]
+
+    init(_ fixed: [String: [JapaneseClause]]) {
+        self.fixed = fixed
+    }
+
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading { base.convert(kana: kana, context: context) }
+
+    func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
+
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay {
+        guard let clauses = fixed[kana] else { return base.display(kana: kana, context: context, left: left) }
+        return JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses)
+    }
+
+    func endComposition() { base.endComposition() }
+    func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
+}
+
+/// 利用者が伸縮で範囲を決めた文節を、後ろを変換し直すときに守るかは、範囲の端を表示の変換の表記の上で切れるかで決まる。
+/// 表記は変換器が決めるので、をつかった の表示を を｜使った に決めて確かめる。google は綴りの表で読めないので英語の区間になり、
+/// 前後の日本語区間を分ける
+@Suite struct FixedRangeCutTests {
+    let segmenter: Segmenter
+    let input = "kinouwatasihagooglewotukatta"
+
+    init() throws {
+        segmenter = try Shared.make(FixedDisplayConverter([
+            "をつかった": [JapaneseClause(reading: "を", text: "を"), JapaneseClause(reading: "つかった", text: "使った")],
+        ]))
+    }
+
+    private func readings(_ clauses: [Clause]) -> [String] {
+        clauses.map(\.reading)
+    }
+
+    /// 範囲の端（をつか の後ろ）を 使った の後ろで切れるので、前の文節を伸縮して後ろを変換し直しても、その範囲のまま残る。
+    /// 表記は区間の全体を変換したものを切るので、つなぐと範囲を決めずに同じ伸縮をしたときと同じ文字列になる
+    @Test func keepsTheRangeTheUserSetWhenAnEarlierClauseIsResized() throws {
+        var clauses = segmenter.clauses(input)
+        #expect(Array(readings(clauses).suffix(2)) == ["を", "つかった"])
+        let wo = clauses.count - 2
+        clauses = segmenter.resize(segmenter.resize(clauses, at: wo, by: 1), at: wo, by: 1)
+        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
+        let unset = segmenter.resize(segmenter.clauses(input), at: 0, by: 1)
+        #expect(clauses.map(\.output).joined() == unset.map(\.output).joined())
+        // 変換し直した後も、範囲を決めた印は残る
+        clauses = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
+    }
+
+    /// 範囲の端（をつ の後ろ）が 使 の中に当たって切れないときは、その範囲を守らず、表示の変換の区切りにする
+    @Test func fallsBackToTheConverterCutsWhenAnEndCannotBeCut() {
+        var clauses = segmenter.clauses(input)
+        let wo = clauses.count - 2
+        clauses = segmenter.resize(clauses, at: wo, by: 1)
+        #expect(clauses[wo].reading == "をつ")
+        let resized = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(Array(readings(resized).suffix(2)) == ["を", "つかった"])
+        #expect(readings(resized) == readings(segmenter.resize(segmenter.clauses(input), at: 0, by: 1)))
+    }
 }
 
 /// 打っている途中の表示が、変換して見せた区間で読みと合わないかを返す
