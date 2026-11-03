@@ -192,6 +192,7 @@ extension Segmenter {
     /// 1 かなより短くしない（`resizeInsideSpan`）。文節の始まりが 1 つの綴りの途中にあって打鍵を切り出せないときも同じにする。
     /// それ以外（区間の終わりを越えて伸ばすとき、英語の文節、句読点と記号の文節、伸縮で作った区間の文節）は、打鍵列の上で文節の終わりを
     /// 1 単位ずつ動かし（`unitEnd`、`unitStart`）、文節の打鍵を 1 区間として日英を判定して、後ろの打鍵は日英判定と変換をやり直す（`rebuild`）。
+    /// 後ろに利用者が伸縮で作った区間があれば、日英判定をやり直すのはその手前までで、その区間から後ろは区間を残して変換だけをやり直す。
     /// 句読点と記号をまたぐ文節は、またいだ部分を区間に持たせ、1 つの日本語の文節として変換する（`joined`）。伸縮の単位は、その部分ごとに決める。
     /// 利用者の辞書で日本語にした打鍵の文節は伸縮しない。全体を 1 つの文字種にした文節は、区切りから文節を作り直して最初の文節を伸縮する。
     /// 伸縮できなければ元のまま返す
@@ -323,7 +324,9 @@ extension Segmenter {
     }
 
     /// index の文節を打鍵列の range.lowerBound..<end にして、その打鍵を 1 区間として日英を判定する。
-    /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。range は文節の今の打鍵、spanStart はその区間の始まり。
+    /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。後ろに利用者が伸縮で作った区間があれば（`laterResizedSpan`）、
+    /// 日英判定をやり直すのはその手前までにし、その手前を入力の終わりとして区切る。その区間から後ろは、区間を残し、番号と先頭の文脈を付け直して
+    /// 変換だけをやり直す（`redisplay`）。range は文節の今の打鍵、spanStart はその区間の始まり。
     /// 同じ区間の前の文節は、文節の始まりまでを 1 つの区間として持ち直す。そのうえで、直前の文節と合わせた打鍵が区切りの選択の
     /// 1 区間と一致すれば（伸ばして元に戻したとき）、それらの文節をその区間に戻す。一致しなければ、文節は伸縮で作った区間にする
     /// 文節の打鍵が句読点か記号の区間をまたげば、その文節は、またいだ部分を持つ 1 つの日本語の区間にする（`joined`）
@@ -402,8 +405,19 @@ extension Segmenter {
             fixedKeys: fixedKeyRanges(after: index, in: clauses, from: end, shrunk: shrunk)
         )
         guard let kept else { return before + [resized] + judged }
-        let tail = renumbered(Array(clauses[kept.clause...]), from: (judged.last?.span.index ?? span.index) + 1)
-        return before + [resized] + judged + redisplay(tail, left: left + resized.output + judged.map(\.output).joined())
+        var tail = renumbered(Array(clauses[kept.clause...]), from: (judged.last?.span.index ?? span.index) + 1)
+        // 残す区間の前は作り直したので、残す区間の先頭を変換する文脈と、文の頭かを、作り直した前の文節から決め直す
+        let previous = judged.last ?? resized
+        let first = tail[0].span
+        let keptContext = context(after: previous, keys: keys[..<kept.keyStart], leading: leading)
+        for i in tail.indices where tail[i].span == first {
+            tail[i].span.context = keptContext
+        }
+        return before + [resized] + judged + redisplay(
+            tail,
+            left: left + resized.output + judged.map(\.output).joined(),
+            startsAtHead: continuation(afterMarkOf: previous).map { $0 != .afterEnglish } ?? false
+        )
     }
 
     /// index の文節の終わりを打鍵列の end にして後ろの打鍵を作り直すとき、そのまま残す、利用者が伸縮で作った最初の区間。
@@ -593,8 +607,9 @@ extension Segmenter {
 
     /// 区間ごとの文節を、left に続けて前から順に表示の変換にし直す。日本語区間は文節に分け直し、それ以外の区間は選んだ文字列のまま残す。
     /// 日本語区間の表記は区間の全体を 1 回変換して決め、利用者が範囲を決めたか表記を選んだ文節は、その範囲と表記のまま残す（`keepingFixedRanges`）。
-    /// 後ろの区間は、選んだ表記を含めて表示した文字列を左の文脈にして変換する
-    private func redisplay(_ clauses: [Clause], left: String) -> [Clause] {
+    /// 後ろの区間は、選んだ表記を含めて表示した文字列を左の文脈にして変換する。
+    /// startsAtHead は最初の区間が文の頭（日本語の記号にした句読点・記号の直後）か。伸縮した区間より後ろの文節だけを渡すので、入力の最初ではない
+    private func redisplay(_ clauses: [Clause], left: String, startsAtHead: Bool = false) -> [Clause] {
         var groups: [[Clause]] = []
         for clause in clauses {
             if let last = groups.last?.last, last.span == clause.span {
@@ -611,8 +626,7 @@ extension Segmenter {
             case .english, .word, .whole: ShownSpan.other(startsSentence: false)
             }
         }
-        // 伸縮した区間より後ろの文節だけなので、最初の文節は入力の最初ではない
-        return displays(of: spans, left: left, startsAtHead: false, endsWithPendingN: false) { index, display, shown in
+        return displays(of: spans, left: left, startsAtHead: startsAtHead, endsWithPendingN: false) { index, display, shown in
             let group = groups[index]
             let spanClauses = display.map { converted in
                 var start = 0
