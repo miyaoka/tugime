@@ -1,9 +1,9 @@
 import Foundation
 
-/// 2 つの精度の記録で、片方だけが正解した問題
+/// 変更の前（before）と後（after）の精度の記録で、集まりごとの正解率と、片方だけが正解した問題
 public struct Comparison: Sendable {
     public enum Side: String, Sendable {
-        case left, right
+        case before, after
     }
 
     public struct Difference: Sendable {
@@ -11,8 +11,16 @@ public struct Comparison: Sendable {
         /// 正解した側
         public var passedBy: Side
         /// 打てなかった側は nil
-        public var leftOutput: String?
-        public var rightOutput: String?
+        public var beforeOutput: String?
+        public var afterOutput: String?
+    }
+
+    /// 1 つの集まりの、前と後の正解数
+    public struct Rate: Sendable, Equatable {
+        public var set: String
+        public var before: Int
+        public var after: Int
+        public var total: Int
     }
 
     /// 打てなかった問題の出力の欄に書く文字列
@@ -20,18 +28,18 @@ public struct Comparison: Sendable {
 
     public enum Failure: Error, CustomStringConvertible {
         /// 問題ファイルの SHA-256 が違う。違う版の問題どうしは比べない
-        case differentProblems(left: [String: String], right: [String: String])
+        case differentProblems(before: [String: String], after: [String: String])
         /// 片方にしか無い id。同じ版なら起きないので、起きたら記録が壊れている
         case unmatched(String)
         /// 同じ id で読み・左の文脈・判定が違う。問題ファイルは同じでも、読み込みの規則が違う道具で取った記録である
-        case differentProblem(left: Problem, right: Problem)
+        case differentProblem(before: Problem, after: Problem)
         /// 1 つの記録に同じ id が 2 つある。道具が書く記録では起きないので、手で書き換えた記録である
         case duplicateID(String)
         public var description: String {
             switch self {
-            case .differentProblems(let left, let right): "2 つの記録の問題ファイルが違う版である: \(left) / \(right)"
+            case .differentProblems(let before, let after): "2 つの記録の問題ファイルが違う版である: \(before) / \(after)"
             case .unmatched(let id): "片方の記録にしか無い問題: \(id)"
-            case .differentProblem(let left, let right): "\(left.id) の問題が 2 つの記録で違う: \(left) / \(right)"
+            case .differentProblem(let before, let after): "\(before.id) の問題が 2 つの記録で違う: \(before) / \(after)"
             case .duplicateID(let id): "記録に同じ問題が 2 つある: \(id)"
             }
         }
@@ -41,38 +49,82 @@ public struct Comparison: Sendable {
         try Dictionary(results.map { ($0.problem.id, $0) }) { first, _ in throw Failure.duplicateID(first.problem.id) }
     }
 
-    public var left: AccuracyRecord.Header
-    public var right: AccuracyRecord.Header
+    public var before: AccuracyRecord.Header
+    public var after: AccuracyRecord.Header
+    /// 集まりは前の記録に現れた順
+    public var rates: [Rate]
     public var differences: [Difference]
 
-    /// 不変条件: header.problemDigests が一致し、どちらの記録も id が重複せず、id の集合が一致し、同じ id の問題が一致する。並びは左の記録の順
-    public init(left: AccuracyRecord, right: AccuracyRecord) throws {
-        guard left.header.problemDigests == right.header.problemDigests else {
-            throw Failure.differentProblems(left: left.header.problemDigests, right: right.header.problemDigests)
+    /// 不変条件: header.problemDigests が一致し、どちらの記録も id が重複せず、id の集合が一致し、同じ id の問題が一致する。並びは前の記録の順
+    public init(before: AccuracyRecord, after: AccuracyRecord) throws {
+        guard before.header.problemDigests == after.header.problemDigests else {
+            throw Failure.differentProblems(before: before.header.problemDigests, after: after.header.problemDigests)
         }
-        let rightByID = try Self.byID(right.results)
-        let leftIDs = Set(try Self.byID(left.results).keys)
-        if let extra = right.results.first(where: { !leftIDs.contains($0.problem.id) }) {
+        let afterByID = try Self.byID(after.results)
+        let beforeIDs = Set(try Self.byID(before.results).keys)
+        if let extra = after.results.first(where: { !beforeIDs.contains($0.problem.id) }) {
             throw Failure.unmatched(extra.problem.id)
         }
-        self.left = left.header
-        self.right = right.header
-        differences = try left.results.compactMap { l in
-            guard let r = rightByID[l.problem.id] else { throw Failure.unmatched(l.problem.id) }
-            guard l.problem == r.problem else { throw Failure.differentProblem(left: l.problem, right: r.problem) }
-            guard l.passes != r.passes else { return nil }
-            return Difference(problem: l.problem, passedBy: l.passes ? .left : .right, leftOutput: l.typed?.output, rightOutput: r.typed?.output)
+        self.before = before.header
+        self.after = after.header
+        let pairs = try before.results.map { b in
+            guard let a = afterByID[b.problem.id] else { throw Failure.unmatched(b.problem.id) }
+            guard b.problem == a.problem else { throw Failure.differentProblem(before: b.problem, after: a.problem) }
+            return (before: b, after: a)
+        }
+        var sets: [String] = []
+        var counts: [String: Rate] = [:]
+        for pair in pairs {
+            let set = pair.before.problem.set
+            if counts[set] == nil {
+                sets.append(set)
+                counts[set] = Rate(set: set, before: 0, after: 0, total: 0)
+            }
+            counts[set]!.total += 1
+            if pair.before.passes { counts[set]!.before += 1 }
+            if pair.after.passes { counts[set]!.after += 1 }
+        }
+        rates = sets.map { counts[$0]! }
+        differences = pairs.compactMap { pair in
+            guard pair.before.passes != pair.after.passes else { return nil }
+            return Difference(
+                problem: pair.before.problem, passedBy: pair.before.passes ? .before : .after,
+                beforeOutput: pair.before.typed?.output, afterOutput: pair.after.typed?.output
+            )
         }
     }
 
-    /// 先頭に左右の方式。1 件 1 行のタブ区切り: id 正解した側（left|right） かな 左の文脈 左の出力 右の出力 判定。
-    /// 打てなかった側の出力は untypedOutput。最後に「左だけ正解 n 件 / 右だけ正解 m 件」
+    private var beforeOnly: Int { differences.filter { $0.passedBy == .before }.count }
+    private var count: String { "before だけ正解 \(beforeOnly) 件 / after だけ正解 \(differences.count - beforeOnly) 件" }
+
+    private static func percent(_ passed: Int, _ total: Int) -> String {
+        String(format: "%.1f%%", Double(passed) / Double(total) * 100)
+    }
+
+    private func row(_ d: Difference) -> [String] {
+        [d.problem.id, d.passedBy.rawValue, d.problem.kana, d.problem.left] + [d.beforeOutput, d.afterOutput].map { $0 ?? Self.untypedOutput } + [d.problem.check.kind]
+    }
+
+    /// 先頭に前と後の方式、続いて集まりごとの正解率（集まり before after 問題数）。
+    /// 片方だけが正解した問題は 1 件 1 行のタブ区切り: id 正解した側（before|after） かな 入力の前の文脈 前の出力 後の出力 判定。
+    /// 打てなかった側の出力は untypedOutput。最後に件数
     public var lines: [String] {
-        let body = differences.map { d in
-            let outputs = [d.leftOutput, d.rightOutput].map { $0 ?? Self.untypedOutput }
-            return ([d.problem.id, d.passedBy.rawValue, d.problem.kana, d.problem.left] + outputs + [d.problem.check.kind]).joined(separator: "\t")
-        }
-        let leftOnly = differences.filter { $0.passedBy == .left }.count
-        return ["left\t\(left.method)", "right\t\(right.method)"] + body + ["左だけ正解 \(leftOnly) 件 / 右だけ正解 \(differences.count - leftOnly) 件"]
+        let header = ["before\t\(before.method)", "after\t\(after.method)"]
+        let rateLines = rates.map { [$0.set, Self.percent($0.before, $0.total), Self.percent($0.after, $0.total), String($0.total)].joined(separator: "\t") }
+        return header + rateLines + differences.map { row($0).joined(separator: "\t") } + [count]
+    }
+
+    /// PR のコメントに置く Markdown。集まりごとの正解率の表、件数、片方だけが正解した問題の表（折りたたみ）
+    public var markdown: [String] {
+        let rateTable = ["| 集まり | before | after | 問題数 |", "| --- | --- | --- | --- |"]
+            + rates.map { "| \($0.set) | \(Self.percent($0.before, $0.total)) | \(Self.percent($0.after, $0.total)) | \($0.total) |" }
+        let problemTable = ["| 問題 | 正解した側 | 読み | 入力の前の文脈 | before | after | 判定 |", "| --- | --- | --- | --- | --- | --- | --- |"]
+            + differences.map { "| " + row($0).map(Self.cell).joined(separator: " | ") + " |" }
+        return rateTable + ["", count, "", "<details><summary>片方だけが正解した問題</summary>", ""] + problemTable + ["", "</details>"]
+    }
+
+    /// 表の 1 マス。縦棒と改行は表を壊すので置き換える
+    private static func cell(_ text: String) -> String {
+        text.replacingOccurrences(of: "|", with: "\\|").replacingOccurrences(of: "\n", with: " ")
     }
 }

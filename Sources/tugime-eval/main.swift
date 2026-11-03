@@ -11,8 +11,9 @@ let usage = """
           全問題の読みを綴りの表で打鍵列にし、問題の前の文脈を入力欄のカーソルの前の文字列として、方式と基準（lattice）で入力メソッドと同じく打ち、
           問題ごとの記録を書き、集まりごと・判定ごとの正解数を出す。綴りで書けない読みの問題は打たずに不正解とする。
           モデルを使う方式の出力が、打てた問題の全件で基準と一致したら、記録を書き、集計を出さずに終了コード 1
-      tugime-eval compare <記録.jsonl> <記録.jsonl>
-          片方だけが正解した問題を 1 件 1 行で出す
+      tugime-eval compare [--markdown] <前の記録.jsonl> <後の記録.jsonl>
+          集まりごとの正解率を前（before）と後（after）で並べ、片方だけが正解した問題を 1 件 1 行で出す。
+          --markdown は同じ内容を、PR のコメントに置く Markdown の表で出す
       tugime-eval keystrokes --method <方式> --problems <dir> --out <最後の表示.tsv>
           AJIMEE-Bench の文を、問題の文脈と、上限の長さまで文をつないだ文脈の後に 1 打鍵ずつ打ち、1 打鍵の時間・読み込み時間・最大常駐量を出す。
           --out には 打鍵列 と最後の表示 をタブ区切りで書く（tugime-cli --live の出力と同じ形）
@@ -66,10 +67,13 @@ let commands: [String: (ArraySlice<String>) throws -> Void] = [
         )
     },
     "compare": { args in
-        guard args.count == 2 else { throw UsageError(message: "記録を 2 つ渡す") }
-        let left = try AccuracyRecord.read(from: URL(fileURLWithPath: args[args.startIndex]))
-        let right = try AccuracyRecord.read(from: URL(fileURLWithPath: args[args.startIndex + 1]))
-        try Comparison(left: left, right: right).lines.forEach { print($0) }
+        let markdown = args.first == "--markdown"
+        let records = markdown ? args.dropFirst() : args
+        guard records.count == 2 else { throw UsageError(message: "記録を 2 つ渡す") }
+        let before = try AccuracyRecord.read(from: URL(fileURLWithPath: records[records.startIndex]))
+        let after = try AccuracyRecord.read(from: URL(fileURLWithPath: records[records.startIndex + 1]))
+        let comparison = try Comparison(before: before, after: after)
+        (markdown ? comparison.markdown : comparison.lines).forEach { print($0) }
     },
     "keystrokes": { args in
         let watchdog = Watchdog(limits: .keystroke)
