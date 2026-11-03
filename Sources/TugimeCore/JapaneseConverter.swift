@@ -110,15 +110,15 @@ public enum JapaneseContext: Sendable, Hashable {
     case afterNumber(String)
 }
 
+/// どのメソッドも kana に空でない読みを受け取る。辞書に無い文字はかなのまま通すので、空でない読みは必ず変換できる
 public protocol JapaneseConverting: AnyObject {
     /// 区切りの採点に使う最良の変換
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading?
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading
     /// 候補の窓に並べる変換結果。評価値の高い順で、重複は除く。件数は変換エンジンが決める。context に afterCaret は渡さず、convert が返した context を渡す
     func alternatives(kana: String, context: JapaneseContext) -> [String]
     /// 区切りが決まった区間を表示するための変換。採点のように何百回も呼ばないので、重くて質の高い変換を使ってよい。
-    /// left は入力欄のカーソルより前の文字列に、入力の中でこの区間より前に表示している文字列をつないだもの。context は afterCaret を渡さず、convert が返した context を渡す。
-    /// convert が変換を返すかなと文脈には、必ず変換を返す
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay?
+    /// left は入力欄のカーソルより前の文字列に、入力の中でこの区間より前に表示している文字列をつないだもの。context は afterCaret を渡さず、convert が返した context を渡す
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay
     /// 未確定の文字列を確定・取り消ししたときに、その文字列のために覚えたものを捨てる
     func endComposition()
     /// 利用者の語を words に丸ごと置き換える。endComposition で捨てるものも捨てるので、呼ぶと未確定の文字列が終わる。

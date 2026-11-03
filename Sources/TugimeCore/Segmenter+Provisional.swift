@@ -12,14 +12,18 @@ extension Segmenter {
         for base in converted.reversed() where keys.hasPrefix(base.keys) {
             guard let split = splitPending(base.display.text, typed: base.keys, table: table) else { continue }
             let rest = keys.dropFirst(base.keys.count - split.pending)
-            let text = split.kept + provisionalText(of: rest, afterJapanese: afterJapanese(split.kept, leading: leading), table: table)
+            let preceding = split.kept.last ?? leading.text.last
+            let text = split.kept + provisionalText(of: rest, afterJapanese: afterJapanese(split.kept, leading: leading), preceding: preceding, table: table)
             return LiveDisplay(text: text, differsFromInput: base.display.differsFromInput)
         }
-        return LiveDisplay(text: provisionalText(of: keys, afterJapanese: afterJapanese("", leading: leading), table: table), differsFromInput: false)
+        let text = provisionalText(of: keys, afterJapanese: afterJapanese("", leading: leading), preceding: leading.text.last, table: table)
+        return LiveDisplay(text: text, differsFromInput: false)
     }
 
-    /// 表示 shown の後ろの句読点を日本語の記号にするか。区切りと同じく、未確定の文字列の中では直前が日本語か、先頭では入力欄の直前（leading）で決める
+    /// 表示 shown の後ろの句読点を日本語の記号にするか。区切りと同じく、未確定の文字列の中では直前が日本語か、先頭では入力欄の直前（leading）で決める。
+    /// 数字で終わるなら、区切りと同じく数字の前の文字の側に付く（Continuation）
     static func afterJapanese(_ shown: String, leading: Leading) -> Bool {
+        if shown.last.map(isDigit) == true { return Continuation(after: leading.text + shown) != .afterEnglish }
         guard let last = shown.last else { return leading.continuation != .afterEnglish }
         return !last.isASCII
     }
@@ -44,8 +48,9 @@ extension Segmenter {
 
     /// 変換が届く前に見せる keys の読み。区切りと同じく、記号の打鍵は記号にし、句読点は直前が日本語なら日本語の記号にする。
     /// それ以外は前から、読める所は最も長く読んでかなにし、読めない打鍵は打ったまま残す（kar → かr）。
-    /// 打っている途中の表示と同じく、末尾の単独の n（RomajiTable.readingBeforePendingN）は次の打鍵まで決めないので打ったまま残す
-    static func provisionalText(of keys: some StringProtocol, afterJapanese startsAfterJapanese: Bool, table: RomajiTable) -> String {
+    /// 打っている途中の表示と同じく、末尾の単独の n（RomajiTable.readingBeforePendingN）は次の打鍵まで決めないので打ったまま残す。
+    /// 数の区切り（isNumberSeparator、isNumberDash）も区切りと同じく打ったまま残す。preceding は keys の直前の文字
+    static func provisionalText(of keys: some StringProtocol, afterJapanese startsAfterJapanese: Bool, preceding: Character?, table: RomajiTable) -> String {
         let input = Array(keys)
         var text = ""
         var afterJapanese = startsAfterJapanese
@@ -55,14 +60,18 @@ extension Segmenter {
                 text += symbol.mark
                 afterJapanese = true
                 position += symbol.key.count
+            } else if isNumberSeparator(at: position, in: input, before: preceding) {
+                text.append(input[position])
+                position += 1
             } else if afterJapanese, let mark = punctuation[input[position]] {
                 text += mark
                 position += 1
-            } else if let longest = table.readings(from: position, in: input).last(where: {
+            } else if let longest = japaneseReadings(table: table, from: position, in: input, before: preceding).last(where: {
                 $0.end < input.count || table.readingBeforePendingN(String(input[position...])) == nil
             }) {
                 text += longest.kana
-                afterJapanese = true
+                // 数字は日本語でも英語でもないので、数字だけの読みは直前の側を変えない（html5. の . は打ったまま）
+                if !isNumber(longest.kana) { afterJapanese = true }
                 position = longest.end
             } else {
                 text.append(input[position])

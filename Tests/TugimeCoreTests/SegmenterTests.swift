@@ -19,11 +19,11 @@ private final class LeftRecorder: JapaneseConverting {
     private let base: JapaneseConverting = Shared.converter
     private(set) var lefts: [String] = []
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { base.convert(kana: kana, context: context) }
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading { base.convert(kana: kana, context: context) }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
 
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay {
         lefts.append(left)
         return base.display(kana: kana, context: context, left: left)
     }
@@ -54,14 +54,30 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.kind) == [.japanese])
     }
 
-    /// 数字に続く英字も、区間の頭の英字と同じく、日本語にする綴りなら英語区間に入れない。読めない英字は数字と英語のまま
-    @Test(arguments: [("3i", [Segment.Kind.english, .japanese]), ("100enn", [.english, .japanese]), ("3d", [.english]), ("k8s", [.english])])
-    func readsSpellingsAfterDigitsLikeSpellingsAtTheStart(input: String, kinds: [Segment.Kind]) {
-        #expect(segmenter.segment(input).map(\.kind) == kinds)
+    /// 数字と英字が混ざる綴りは、日本語として自然なら日本語、そうでなければ打ったまま
+    @Test(arguments: [("3i", "3位"), ("3ann", "3案"), ("100enn", "100円"), ("3a", "3a"), ("2fa", "2fa"), ("i18n", "i18n"), ("3d", "3d"), ("k8s", "k8s")])
+    func decidesDigitsAndLettersByHowNaturalTheyRead(input: String, expected: String) {
+        #expect(output(input) == expected)
+    }
+
+    /// 数字は日本語区間の読みに入るので、数字をはさむ日本語は 1 つの区間になり、後ろの語も前の語の変換の手がかりになる
+    @Test func keepsJapaneseAroundDigitsInOneSpan() {
+        let segments = segmenter.segment("3kamo4kamoyasumu")
+        #expect(segments.map(\.kind) == [.japanese])
+        #expect(segments.map(\.reading) == ["3かも4かもやすむ"])
+    }
+
+    /// 数字にはさまれた . , : と、数字の直後の - は、数の一部として打ったまま残す。ほかの記号は直前の区間に従う
+    @Test(arguments: [
+        ("3.14", "3.14"), ("1,000enn", "1,000円"), ("10:30kara", "10:30から"), ("kakakuha1500.", "価格は1500。"), ("kyouha3.14.", "今日は3.14。"), ("dennwaha0120-345-678,ato", "電話は0120-345-678、あと"),
+        ("2026-11-03", "2026-11-03"), ("03-1234-5678", "03-1234-5678"), ("3-5ninn", "3-5人"), ("3~5nichi", "3〜5日"),
+    ])
+    func keepsPunctuationBetweenDigitsAsTyped(input: String, expected: String) {
+        #expect(output(input) == expected)
     }
 
     /// 末尾に打った単独の n は、次に打つまで な行 か「ん」かが決まらないので打ったまま。nn と、後ろに句読点が続く n は「ん」
-    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "これ、n"), ("sounaruton", "そうなるとn"), ("nn", "ん"), ("n.", "ん。")])
+    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "これ、n"), ("sounaruton", "そうなるとn"), ("nn", "ん"), ("n.", "ん。"), ("3-5nin", "3-5にn")])
     func keepsAPendingNAsTyped(input: String, expected: String) {
         #expect(segmenter.liveText(input) == expected)
     }
@@ -246,11 +262,10 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(context.leading(field: .start) == .start)
     }
 
-    /// 入力欄の数字に続けて打っても、数字とまとめて打ったときと同じく数字に続く形で区切る
-    @Test(arguments: [("3", "nin"), ("3", "kai"), ("1500", "ennharaimasu")])
+    /// 入力欄の数字に続けて打っても、数字とまとめて打ったときと同じく数字に続く形で区切る。数字の後の句読点も同じ形になる
+    @Test(arguments: [("3", "nin"), ("3", "kai"), ("1500", "ennharaimasu"), ("1500", "."), ("html5", "."), ("3", ".14"), ("1", ",000enn"), ("2026", "-11-03"), ("3.14", ".")])
     func continuesConfirmedDigitsLikeTypedDigits(digits: String, input: String) {
         let leading = Segmenter.Leading(digits)
-        #expect(segmenter.segment(input, leading: leading).map(\.kind) == segmenter.segment(digits + input).dropFirst().map(\.kind))
         #expect(digits + output(input, leading: leading) == output(digits + input))
     }
 
@@ -342,49 +357,19 @@ private final class LeftRecorder: JapaneseConverting {
 private final class RewritingConverter: JapaneseConverting {
     private let base: JapaneseConverting = Shared.converter
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? { base.convert(kana: kana, context: context) }
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading { base.convert(kana: kana, context: context) }
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
 
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
-        base.display(kana: kana, context: context, left: left).map { shown in
-            var clauses = shown.clauses
-            clauses[clauses.count - 1].text += "ゑ"
-            return JapaneseDisplay(text: shown.text + "ゑ", clauses: clauses)
-        }
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay {
+        let shown = base.display(kana: kana, context: context, left: left)
+        var clauses = shown.clauses
+        clauses[clauses.count - 1].text += "ゑ"
+        return JapaneseDisplay(text: shown.text + "ゑ", clauses: clauses)
     }
 
     func endComposition() { base.endComposition() }
     func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
-}
-
-/// 本物の変換器に処理を任せ、ある読みだけは変換できないとして nil を返す
-private final class RefusingConverter: JapaneseConverting {
-    private let base: JapaneseConverting = Shared.converter
-    private let refused: String
-
-    init(refusing kana: String) {
-        refused = kana
-    }
-
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
-        kana == refused ? nil : base.convert(kana: kana, context: context)
-    }
-
-    func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
-
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? { base.display(kana: kana, context: context, left: left) }
-
-    func endComposition() { base.endComposition() }
-    func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
-}
-
-/// 日本語として変換できない読みは、英語区間から締め出さない
-@Suite struct UnconvertibleReadingTests {
-    @Test func keepsDigitsAndLettersEnglishWhenTheLettersCannotBeConverted() throws {
-        let segmenter = try Shared.make(RefusingConverter(refusing: "い"))
-        #expect(segmenter.segment("3i").map(\.kind) == [.english])
-    }
 }
 
 /// 打っている途中の表示が、変換して見せた区間で読みと合わないかを返す

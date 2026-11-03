@@ -19,12 +19,11 @@ protocol DirectDisplayGenerating: AnyObject {
 /// - 表示の clauses は、読みを繋ぐと kana、表記を繋ぐと text。文節の境目の読みの位置は採点の変換から借り、
 ///   ReadingAlignment で出力の側の位置が確定した境目でだけ切る。対応づかない出力は 1 文節（kana, 出力）にする。
 ///   どの境目も採点の文節の境目なので、表示の文節は採点の文節をちょうど何個か束ねたものになる
-/// - convert が変換を返すかなと文脈には、display も必ず返す
 final class DirectConverter: JapaneseConverting {
     private let scorer: any JapaneseConverting
     private let generator: any DirectDisplayGenerating
     /// 区間・文脈・左の文字列ごとの表示。Segmenter は 1 打鍵の中で同じ区間を何度も表示にするので、生成を 1 回にする。未確定の文字列の寿命だけ持つ
-    private var displays: [DisplayKey: JapaneseDisplay?] = [:]
+    private var displays: [DisplayKey: JapaneseDisplay] = [:]
 
     private struct DisplayKey: Hashable {
         var kana: String
@@ -37,7 +36,7 @@ final class DirectConverter: JapaneseConverting {
         self.generator = generator
     }
 
-    func convert(kana: String, context: JapaneseContext) -> JapaneseReading? {
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading {
         scorer.convert(kana: kana, context: context)
     }
 
@@ -45,17 +44,16 @@ final class DirectConverter: JapaneseConverting {
         scorer.alternatives(kana: kana, context: context)
     }
 
-    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay? {
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay {
         let key = DisplayKey(kana: kana, context: context, left: left)
         if let cached = displays[key] { return cached }
-        let shown = scorer.convert(kana: kana, context: context).map { scored in
-            let text = generator.generate(left: ZenzPrompt.leftContext(context: context, left: left), kana: kana)
-            var cuts: [Int] = []
-            for scoredClause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + scoredClause.clause.reading.count) }
-            let output = ReadingAlignment(text: text, reading: kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: kana, text: text)]
-            let clauses = Self.keepingUserWords(output, scored: scored.clauses)
-            return JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses, userWords: scored.clauses.flatMap(\.userWords))
-        }
+        let scored = scorer.convert(kana: kana, context: context)
+        let text = generator.generate(left: ZenzPrompt.leftContext(context: context, left: left), kana: kana)
+        var cuts: [Int] = []
+        for scoredClause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + scoredClause.clause.reading.count) }
+        let output = ReadingAlignment(text: text, reading: kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: kana, text: text)]
+        let clauses = Self.keepingUserWords(output, scored: scored.clauses)
+        let shown = JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses, userWords: scored.clauses.flatMap(\.userWords))
         displays[key] = shown
         return shown
     }

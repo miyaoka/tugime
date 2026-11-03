@@ -159,7 +159,7 @@ public struct EnglishModel: Sendable {
         let lowered = text.lowercased()
         let unknown = Self.unknownLogWeight + spellingLogProbability(lowered)
         guard let known = logFrequency[lowered] else {
-            // 頻度の表は英字だけの語でできているので、数字や記号を含む綴り（A4 など）は正しい綴りでも必ず表の外になる。補正を当てない
+            // 頻度の表は英字だけの語でできているので、記号を含む綴り（vue.js など）は正しい綴りでも必ず表の外になる。補正を当てない
             let letters = lowered.unicodeScalars.allSatisfy { (97...122).contains($0.value) }
             return letters ? unknown + lengthLogCorrection[min(lowered.count, Self.maxLength)] : unknown
         }

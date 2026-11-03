@@ -167,13 +167,13 @@ extension Segmenter {
         let resized = Clause(
             kind: .japanese,
             reading: reading,
-            candidates: japaneseCandidates(reading: reading, best: japaneseConverter.display(kana: reading, context: context, left: left)?.text, context: context, span: span),
+            candidates: japaneseCandidates(reading: reading, best: japaneseConverter.display(kana: reading, context: context, left: left).text, context: context, span: span),
             selected: 0,
             span: span
         )
         let restKana = String(span.reading.dropFirst(start + length))
         let rest = restKana.isEmpty ? [] : japaneseClauses(
-            japaneseConverter.display(kana: restKana, context: .afterWord, left: left + resized.output)?.clauses ?? [JapaneseClause(reading: restKana, text: restKana)],
+            japaneseConverter.display(kana: restKana, context: .afterWord, left: left + resized.output).clauses,
             context: .afterWord,
             in: span
         )
@@ -201,7 +201,11 @@ extension Segmenter {
             before[i].span = head
         }
         let left = leading.text + before.map(\.output).joined()
-        let fixed = singleSpan(String(keys[range.lowerBound..<end]), context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading))
+        let fixed = singleSpan(
+            String(keys[range.lowerBound..<end]),
+            context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading),
+            preceding: keys[..<range.lowerBound].last ?? leading.text.last
+        )
         let span: ClauseSpan
         if let (segmented, count) = segmentedSpan(fixed, before: before, start: range.lowerBound, end: end, keys: keys, leading: leading) {
             let first = before.count - count
@@ -225,7 +229,7 @@ extension Segmenter {
                 reading: fixed.reading,
                 candidates: japaneseCandidates(
                     reading: fixed.reading,
-                    best: japaneseConverter.display(kana: fixed.reading, context: clauseContext, left: left)?.text,
+                    best: japaneseConverter.display(kana: fixed.reading, context: clauseContext, left: left).text,
                     context: clauseContext,
                     span: span
                 ),
@@ -238,7 +242,8 @@ extension Segmenter {
                 String(keys[end...]),
                 after: fixed.kind == .english ? .afterEnglish : .afterJapanese,
                 context: context(after: resized, keys: keys[..<end], leading: leading),
-                opened: Self.unclosedOpeners(in: left + resized.output)
+                opened: Self.unclosedOpeners(in: left + resized.output),
+                preceding: keys[..<end].last ?? leading.text.last
             ),
             left: left + resized.output,
             firstIndex: span.index + 1
@@ -400,8 +405,8 @@ extension Segmenter {
         }
     }
 
-    private func japaneseCandidates(reading: String, best: String?, context: JapaneseContext, span: ClauseSpan) -> [String] {
-        var list = best.map { [$0] } ?? []
+    private func japaneseCandidates(reading: String, best: String, context: JapaneseContext, span: ClauseSpan) -> [String] {
+        var list = [best]
         // 区間全体の文節では、打ったままの綴りが区切りの選択で英語になりうるなら最良のすぐ後に、そうでなければ最後に置く
         let whole = reading == span.reading
         let typedCanBeEnglish = whole && !prefersJapanese(span.source, readable: true)
@@ -438,7 +443,8 @@ extension Segmenter {
                 let head = String(kana.prefix { $0 == " " })
                 let tail = String(kana.reversed().prefix { $0 == " " })
                 let word = kana.trimmingCharacters(in: .init(charactersIn: " "))
-                if !word.contains(" "), let resolved = japaneseConverter.convert(kana: word, context: segment.context)?.context {
+                if !word.contains(" ") {
+                    let resolved = japaneseConverter.convert(kana: word, context: segment.context).context
                     list += japaneseConverter.alternatives(kana: word, context: resolved).map { head + $0 + tail }
                 }
             }
