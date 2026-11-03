@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // 検証用: 辞書の組み立ての分岐を通す
 import SystemDictionaryLayout
 
 // Mozc の OSS 辞書・連接の表・文節の境目の規則を、SystemDictionaryLayout の並びの 1 つのファイルにする。
