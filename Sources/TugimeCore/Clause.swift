@@ -31,18 +31,17 @@ public struct Clause: Sendable, Equatable {
     public var span: ClauseSpan
     /// 利用者が伸縮で範囲を決め、その範囲がまだ保たれている文節か。作り直すときに範囲を守るかは `keepingFixedRanges` が決める
     public var fixedRange: Bool
-    /// 利用者が先頭以外の候補（候補の窓、F6〜F10、組になる括弧の形）を選んだ文節なら、その表記。
-    /// この文節を含む区間を作り直すときも、範囲を守り、同じ表記を選ぶ（`keepingFixedRanges`）
-    public var fixedValue: String?
+    /// 利用者が選んだ表記。候補の窓・F6〜F10・組になる括弧の形で先頭以外の候補を選ぶと付き、先頭の候補を選び直すと外れる。
+    /// 作り直した文節では、選んだ表記が先頭の候補になっても付けたまま残す。作り直すときに範囲を守るかは `keepingFixedRanges` が決める
+    public internal(set) var fixedValue: String?
 
-    public init(kind: Kind, reading: String, candidates: [String], selected: Int, span: ClauseSpan, fixedRange: Bool = false, fixedValue: String? = nil) {
+    public init(kind: Kind, reading: String, candidates: [String], selected: Int, span: ClauseSpan, fixedRange: Bool = false) {
         self.kind = kind
         self.reading = reading
         self.candidates = candidates
         self.selected = selected
         self.span = span
         self.fixedRange = fixedRange
-        self.fixedValue = fixedValue
     }
 
     public var output: String { candidates[selected] }
@@ -50,14 +49,16 @@ public struct Clause: Sendable, Equatable {
     /// 作り直すときに範囲を守る文節か
     var kept: Bool { fixedRange || fixedValue != nil }
 
-    /// 候補 text を選び、選んだ表記として持つ。候補に無ければ末尾に足して選ぶ
+    /// 候補 text の番号。候補に無ければ末尾に足す
+    mutating func candidateIndex(adding text: String) -> Int {
+        if let index = candidates.firstIndex(of: text) { return index }
+        candidates.append(text)
+        return candidates.count - 1
+    }
+
+    /// 作り直した文節で、利用者が選んでいた表記 text を選び直す
     mutating func fix(_ text: String) {
-        if let index = candidates.firstIndex(of: text) {
-            selected = index
-        } else {
-            candidates.append(text)
-            selected = candidates.count - 1
-        }
+        selected = candidateIndex(adding: text)
         fixedValue = text
     }
 }
@@ -158,8 +159,7 @@ extension Segmenter {
     /// 印と選んだ表記を付け直す。後ろの区間は、選んだ表記を含めて表示した文字列を左の文脈にして変換する
     private func clauses(of segments: [Segment], left: String, firstIndex: Int, startsAtHead: Bool, fixedKeys: [KeptClause] = []) -> [Clause] {
         var keyStart = 0
-        var made: [Clause] = []
-        _ = displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: startsAtHead, endsWithPendingN: false) { offset, display, shown in
+        return displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: startsAtHead, endsWithPendingN: false) { offset, display, shown in
             let segment = segments[offset]
             defer { keyStart += segment.source.count }
             let keys = keyStart..<(keyStart + segment.source.count)
@@ -179,10 +179,8 @@ extension Segmenter {
                 fixedKeys.first { $0.range == keys }?.apply(to: &clause)
                 spanClauses = [clause]
             }
-            made += spanClauses
-            return spanClauses.map(\.output).joined()
-        }
-        return made
+            return (result: spanClauses, shown: spanClauses.map(\.output).joined())
+        }.flatMap { $0 }
     }
 
     /// 区間の打鍵の先頭 key 打鍵に当たる、読みのかなの位置。綴りの途中に当たれば nil
@@ -575,13 +573,12 @@ extension Segmenter {
             let startsSentence = continuation(afterMarkOf: group[group.count - 1]).map { $0 != .afterEnglish } ?? false
             return switch group[0].kind {
             case .japanese: ShownSpan.japanese(kana: group[0].span.reading, context: group[0].span.context, startsSentence: startsSentence)
-            case .punctuation: ShownSpan.mark(group.map(\.output).joined(), startsSentence: startsSentence)
-            case .english, .word, .whole: ShownSpan.fixed(group.map(\.output).joined())
+            case .punctuation: ShownSpan.other(startsSentence: startsSentence)
+            case .english, .word, .whole: ShownSpan.other(startsSentence: false)
             }
         }
         // 伸縮した区間より後ろの文節だけなので、最初の文節は入力の最初ではない
-        var made: [Clause] = []
-        _ = displays(of: spans, left: left, startsAtHead: false, endsWithPendingN: false) { index, display, shown in
+        return displays(of: spans, left: left, startsAtHead: false, endsWithPendingN: false) { index, display, shown in
             let group = groups[index]
             let spanClauses = display.map { converted in
                 var start = 0
@@ -592,10 +589,8 @@ extension Segmenter {
                 }
                 return keepingFixedRanges(fixed, in: converted, reading: group[0].span.reading, context: group[0].span.context, span: group[0].span, left: shown)
             } ?? group
-            made += spanClauses
-            return spanClauses.map(\.output).joined()
-        }
-        return made
+            return (result: spanClauses, shown: spanClauses.map(\.output).joined())
+        }.flatMap { $0 }
     }
 
     /// 読み reading の表示 shown を文節に分ける。fixed は利用者が範囲を決めたか表記を選んだ文節の、reading の中の範囲と印と選んだ表記。

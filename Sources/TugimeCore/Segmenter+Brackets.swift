@@ -45,8 +45,8 @@ extension Clause {
     /// 文節 focus で表記 text を選ぶ。候補に無ければ末尾に足して選ぶ（F6〜F10 で作った文字種）。組になる括弧も selecting と同じく合わせる
     public static func selecting(text: String, at focus: Int, in clauses: [Clause]) -> [Clause] {
         var added = clauses
-        if !added[focus].candidates.contains(text) { added[focus].candidates.append(text) }
-        return selecting(added[focus].candidates.firstIndex(of: text)!, at: focus, in: added)
+        let index = added[focus].candidateIndex(adding: text)
+        return selecting(index, at: focus, in: added)
     }
 
     private mutating func select(_ index: Int) {

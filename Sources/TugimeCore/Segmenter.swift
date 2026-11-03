@@ -233,70 +233,61 @@ public final class Segmenter {
     /// 前の文字列は、区切りの評価と、表示の変換の左の文脈に使う
     public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
         let (segments, pendingN) = keepingPendingN(segment(input, leading: leading))
-        var differs = false
-        let shown = displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true, endsWithPendingN: pendingN)
-        let text = zip(segments, shown).map { segment, display in
-            guard let display else { return segment.output }
-            if !display.matchesReading { differs = true }
-            return display.text
-        }.joined()
-        return LiveDisplay(text: text, differsFromInput: differs)
+        let shown = displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true, endsWithPendingN: pendingN) { index, display, _ in
+            let text = display?.text ?? segments[index].output
+            return (result: (display: display, text: text), shown: text)
+        }
+        return LiveDisplay(text: shown.map(\.text).joined(), differsFromInput: shown.contains { $0.display?.matchesReading == false })
     }
 
-    /// 表示する 1 区間。日本語区間は表示の変換で表記を決め、それ以外は決まった文字列を表示する。
-    /// 句読点と記号の打鍵（mark）は、後ろが文の頭か（startsSentence）を持つ。組に合わせて半角にした閉じ括弧の後ろは英語の後で、文の頭ではない。
-    /// 日本語区間も、文節の伸縮で句読点か記号をまたいでまとめ、記号で終わるなら、後ろが文の頭か（startsSentence）を持つ
+    /// 表示の変換にかける 1 区間。日本語区間は表示の変換で表記を決める。それ以外の区間に表示する文字列は、displays の make が決める。
+    /// どの区間も、後ろが文の頭か（startsSentence）を持つ。句読点と記号の打鍵は、日本語の記号にしたなら後ろが文の頭になる。
+    /// 組に合わせて半角にした閉じ括弧の後ろは英語の後で、文の頭ではない。日本語区間も、文節の伸縮で句読点か記号をまたいでまとめ、
+    /// 記号で終わるなら後ろが文の頭になる
     enum ShownSpan {
         case japanese(kana: String, context: JapaneseContext, startsSentence: Bool)
-        case fixed(String)
-        case mark(String, startsSentence: Bool)
+        case other(startsSentence: Bool)
 
         init(_ segment: Segment) {
             switch segment.kind {
             case .japanese: self = .japanese(kana: segment.reading, context: segment.context, startsSentence: false)
-            case .punctuation: self = .mark(segment.output, startsSentence: Segmenter.continuation(after: segment.source, mark: segment.output) != .afterEnglish)
-            case .english, .word: self = .fixed(segment.output)
+            case .punctuation: self = .other(startsSentence: Segmenter.continuation(after: segment.source, mark: segment.output) != .afterEnglish)
+            case .english, .word: self = .other(startsSentence: false)
             }
         }
 
         /// この区間の後ろが文の頭か
         var startsSentence: Bool {
             switch self {
-            case .japanese(_, _, let startsSentence), .mark(_, let startsSentence): startsSentence
-            case .fixed: false
+            case .japanese(_, _, let startsSentence), .other(let startsSentence): startsSentence
             }
         }
     }
 
-    /// 区間を前から順に表示の変換にする。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
-    /// 返す配列は spans と同じ順で、日本語区間の要素だけが表示の変換を持つ。
+    /// 区間を前から順に表示の変換にし、区間ごとに make で結果を作る。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
+    /// make は、区間の番号・その表示の変換（日本語区間でなければ nil）・それより前に表示している文字列から、区間の結果と、その区間に実際に表示する
+    /// 文字列を返す。表示する文字列は後ろの区間の左の文脈になるので、利用者が選んだ表記があればそれを含める。返す配列は spans と同じ順。
     /// 末尾の区間（endsWithPendingN なら、最後の打ったままの n の手前）が文の頭（入力の最初の区間か、日本語の記号にした句読点・記号の直後）の
     /// 1 かなだけなら、続けて打つ語の先頭なので、変換せずにかなのまま見せる（ki は 気 ではなく き、kon は こn）。
-    /// startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）。
-    /// shownText は、区間の番号・その表示の変換（日本語区間でなければ nil）・それより前に表示している文字列から、その区間に実際に表示する文字列を返す。
-    /// 文節を作りながら、利用者が選んだ表記を後ろの区間の左の文脈に入れるときに渡す。渡さなければ、表示の変換と決まった文字列を表示する
-    func displays(
+    /// startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）
+    func displays<Result>(
         of spans: [ShownSpan], left: String, startsAtHead: Bool, endsWithPendingN: Bool,
-        shownText: (Int, JapaneseDisplay?, String) -> String? = { _, _, _ in nil }
-    ) -> [JapaneseDisplay?] {
+        make: (Int, JapaneseDisplay?, String) -> (result: Result, shown: String)
+    ) -> [Result] {
         var shown = left
         let lastSpan = spans.count - (endsWithPendingN ? 2 : 1)
         return spans.enumerated().map { index, span in
-            let display: JapaneseDisplay?
-            let text: String
-            switch span {
-            case .fixed(let fixed), .mark(let fixed, _):
-                display = nil
-                text = fixed
+            let display: JapaneseDisplay? = switch span {
+            case .other:
+                nil
             case .japanese(let kana, let context, _):
-                let atHead = index == 0 ? startsAtHead : spans[index - 1].startsSentence
-                display = index == lastSpan && atHead && kana.count == 1
+                index == lastSpan && (index == 0 ? startsAtHead : spans[index - 1].startsSentence) && kana.count == 1
                     ? JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])
                     : japaneseConverter.display(kana: kana, context: context, left: shown)
-                text = display!.text
             }
-            shown += shownText(index, display, shown) ?? text
-            return display
+            let made = make(index, display, shown)
+            shown += made.shown
+            return made.result
         }
     }
 
