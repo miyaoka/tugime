@@ -425,31 +425,38 @@ extension Segmenter {
             list.append(segment.source)
             if let mark = segment.source.first.flatMap({ Self.punctuation[$0] }) { list.append(mark) }
         case .word:
-            list += (typedJapaneseWords[segment.source] ?? []) + [segment.source]
+            list += (typedJapaneseWords[segment.source] ?? []) + [segment.source] + typedForms(of: segment.source, context: segment.context)
         case .japanese:
             preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
         case .english:
-            // 利用者の辞書で表記を替えたときは、打ったままの綴りをすぐ後に置く。全角の英字はその次に置く
-            list += [segment.source, Self.text(segment.source, .fullwidthRoman)]
+            // 利用者の辞書で表記を替えたときは、打ったままの綴りをすぐ後に置く
+            list.append(segment.source)
             // 区間の末尾で打ったままにした句読点は、日本語の記号を選べる（github. の . を 。 に）。途中の句読点（vue.js）は変えない
             let trailing = segment.output.reversed().prefix { Self.punctuation[$0] != nil }.count
-            if trailing > 0 {
-                list.append(segment.output.dropLast(trailing) + segment.output.suffix(trailing).map { Self.punctuation[$0]! }.joined())
-            }
-            // 英語と判定した区間も、語を `englishReading` でかなにできればかなを選べるようにする
-            if let kana = englishReading(of: segment.source) {
-                list += [kana, Self.katakana(kana)]
-                // 変換エンジンには前後の空白を除いた 1 語の読みを渡し、候補に空白を付け直す
-                let head = String(kana.prefix { $0 == " " })
-                let tail = String(kana.reversed().prefix { $0 == " " })
-                let word = kana.trimmingCharacters(in: .init(charactersIn: " "))
-                if !word.contains(" ") {
-                    let resolved = japaneseConverter.convert(kana: word, context: segment.context).context
-                    list += japaneseConverter.alternatives(kana: word, context: resolved).map { head + $0 + tail }
-                }
-            }
+            let marked: [String] = trailing > 0
+                ? [String(segment.output.dropLast(trailing)) + segment.output.suffix(trailing).map { Self.punctuation[$0]! }.joined()]
+                : []
+            let forms = typedForms(of: segment.source, context: segment.context)
+            list += [forms[0]] + marked + forms.dropFirst()
         }
         return Self.unique(list)
+    }
+
+    /// かなに読めない打鍵の文節（英語の区間と、利用者の辞書で日本語にした語）で、打ったままの綴りの後に並べる候補。
+    /// 全角の英字と、語を `englishReading` でかなにできればそのかな・カタカナ・変換
+    private func typedForms(of source: String, context: JapaneseContext) -> [String] {
+        var list = [Self.text(source, .fullwidthRoman)]
+        guard let kana = englishReading(of: source) else { return list }
+        list += [kana, Self.katakana(kana)]
+        // 変換エンジンには前後の空白を除いた 1 語の読みを渡し、候補に空白を付け直す
+        let head = String(kana.prefix { $0 == " " })
+        let tail = String(kana.reversed().prefix { $0 == " " })
+        let word = kana.trimmingCharacters(in: .init(charactersIn: " "))
+        if !word.contains(" ") {
+            let resolved = japaneseConverter.convert(kana: word, context: context).context
+            list += japaneseConverter.alternatives(kana: word, context: resolved).map { head + $0 + tail }
+        }
+        return list
     }
 
     private static func unique(_ list: [String]) -> [String] {

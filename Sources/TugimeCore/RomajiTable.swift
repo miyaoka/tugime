@@ -1,11 +1,13 @@
 import Foundation
 
 /// 利用者の綴りの表。打鍵列の区間をかなとして最後まで読めるかを判定する。
+/// 打鍵をそのままかなにする（typedKana）ための、かなにするときだけ足して読む綴りも持つ
 public struct RomajiTable: Sendable {
     public enum ParseError: Error, CustomStringConvertible {
         case malformedLine(Int, String)
         case unknownDirective(Int, String)
         case duplicateSpelling(Int, String)
+        case directiveInTypedKana(Int, String)
         case missingResource
 
         public var description: String {
@@ -13,6 +15,7 @@ public struct RomajiTable: Sendable {
             case .malformedLine(let n, let line): "綴りの表 \(n) 行目を読めない: \(line)"
             case .unknownDirective(let n, let line): "綴りの表 \(n) 行目の指定が分からない: \(line)"
             case .duplicateSpelling(let n, let key): "綴りの表 \(n) 行目の綴り \(key) は前の行にもある"
+            case .directiveInTypedKana(let n, let line): "かなにするときだけ読む綴り \(n) 行目に @ の指定は書けない: \(line)"
             case .missingResource: "既定の綴りの表がバンドルに無い"
             }
         }
@@ -25,31 +28,33 @@ public struct RomajiTable: Sendable {
     let sokuonLetters: Set<Character>
     let nBeforeLetters: Set<Character>
     /// 打鍵をかなにする（typedKana）ときに読む綴り。綴りの表に、かなにするときだけ読む綴りを足したもの
-    let conversionEntries: [String: String]
-    let conversionMaxKeyLength: Int
-    let conversionSokuonLetters: Set<Character>
+    let typedKanaEntries: [String: String]
+    let typedKanaMaxKeyLength: Int
 
-    /// contents は綴りの表、conversion は打鍵をかなにするときだけ足して読む綴り。どちらも同じ書式で、同じ綴りは contents を使う
-    public init(contents: String, conversion: String) throws {
+    /// contents は綴りの表、typedKana は打鍵をかなにするときだけ足して読む綴り。typedKana は綴りの行だけを持ち、同じ綴りは contents を使う
+    public init(contents: String, typedKana: String) throws {
         let table = try Self.parse(contents)
-        let extra = try Self.parse(conversion)
+        let extra = try Self.parse(typedKana)
+        if let line = extra.directives.first { throw ParseError.directiveInTypedKana(line.number, line.text) }
         self.entries = table.entries
         self.rank = table.rank
         self.maxKeyLength = table.entries.keys.map(\.count).max() ?? 0
         self.sokuonLetters = table.sokuon
         self.nBeforeLetters = table.nBefore
-        self.conversionEntries = table.entries.merging(extra.entries) { own, _ in own }
-        self.conversionMaxKeyLength = conversionEntries.keys.map(\.count).max() ?? 0
-        self.conversionSokuonLetters = table.sokuon.union(extra.sokuon)
+        self.typedKanaEntries = table.entries.merging(extra.entries) { own, _ in own }
+        self.typedKanaMaxKeyLength = typedKanaEntries.keys.map(\.count).max() ?? 0
     }
 
     private static func parse(
         _ contents: String
-    ) throws -> (entries: [String: String], rank: [String: Int], sokuon: Set<Character>, nBefore: Set<Character>) {
+    ) throws -> (
+        entries: [String: String], rank: [String: Int], sokuon: Set<Character>, nBefore: Set<Character>, directives: [(number: Int, text: String)]
+    ) {
         var entries: [String: String] = [:]
         var rank: [String: Int] = [:]
         var sokuon: Set<Character> = []
         var nBefore: Set<Character> = []
+        var directives: [(number: Int, text: String)] = []
         for (index, raw) in contents.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
@@ -62,17 +67,18 @@ public struct RomajiTable: Sendable {
                 rank[key] = rank.count
                 continue
             }
+            directives.append((index + 1, line))
             switch key {
             case "@sokuon": sokuon = Set(value)
             case "@n": nBefore = Set(value)
             default: throw ParseError.unknownDirective(index + 1, line)
             }
         }
-        return (entries, rank, sokuon, nBefore)
+        return (entries, rank, sokuon, nBefore, directives)
     }
 
     public static func bundled() throws -> RomajiTable {
-        try RomajiTable(contents: resource("romaji"), conversion: resource("romaji-conversion"))
+        try RomajiTable(contents: resource("romaji"), typedKana: resource("romaji-typed-kana"))
     }
 
     private static func resource(_ name: String) throws -> String {
@@ -82,25 +88,22 @@ public struct RomajiTable: Sendable {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    /// 打鍵を、一般の日本語入力が打鍵をかなにするのと同じく、前から順にかなにする。各位置で読める最も長い綴りを読み、
-    /// 綴りが無ければ、同じ文字の重なりの前の文字を っ、@n の文字の前と末尾の n を ん と読む。どれでもない文字は打ったまま残す
-    /// （github は ぎてゅb）。綴りの表に加えて、かなにするときだけ読む綴りも読む。complete は打ったまま残した文字が無いか
+    /// 打鍵を、Mozc が打鍵をかなにするのと同じく、前から順にかなにする。各位置で読める最も長い綴りを読み、綴りが無ければ、
+    /// 同じ文字の重なり（@sokuon）の前の文字を っ と読む。どれでもない文字は打ったまま残す（github は ぎてゅb）。
+    /// 綴りの表に加えて、かなにするときだけ読む綴り（単独の n を ん と読む行を含む）も読む。complete は打ったまま残した文字が無いか
     public func typedKana(of text: some StringProtocol) -> (kana: String, complete: Bool) {
         let chars = Array(text)
         var kana = ""
         var complete = true
         var pos = 0
         while pos < chars.count {
-            let next = pos + 1 < chars.count ? chars[pos + 1] : nil
-            if let (length, value) = longestConversion(at: pos, in: chars) {
+            if let (length, value) = longestTypedKana(at: pos, in: chars) {
                 kana += value
                 pos += length
                 continue
             }
-            if let next, chars[pos] == next, conversionSokuonLetters.contains(next) {
+            if pos + 1 < chars.count, chars[pos] == chars[pos + 1], sokuonLetters.contains(chars[pos]) {
                 kana += "っ"
-            } else if chars[pos] == "n", next.map(nBeforeLetters.contains) ?? true {
-                kana += "ん"
             } else {
                 kana.append(chars[pos])
                 complete = false
@@ -110,9 +113,9 @@ public struct RomajiTable: Sendable {
         return (kana, complete)
     }
 
-    private func longestConversion(at pos: Int, in chars: [Character]) -> (length: Int, kana: String)? {
-        for length in stride(from: min(conversionMaxKeyLength, chars.count - pos), through: 1, by: -1) {
-            if let kana = conversionEntries[String(chars[pos..<(pos + length)])] { return (length, kana) }
+    private func longestTypedKana(at pos: Int, in chars: [Character]) -> (length: Int, kana: String)? {
+        for length in stride(from: min(typedKanaMaxKeyLength, chars.count - pos), through: 1, by: -1) {
+            if let kana = typedKanaEntries[String(chars[pos..<(pos + length)])] { return (length, kana) }
         }
         return nil
     }
