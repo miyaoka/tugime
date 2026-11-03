@@ -269,7 +269,7 @@ public final class Segmenter {
     /// 文字列を返す。表示する文字列は後ろの区間の左の文脈になるので、利用者が選んだ表記があればそれを含める。返す配列は spans と同じ順。
     /// 末尾の区間（endsWithPendingN なら、最後の打ったままの n の手前）が文の頭（入力の最初の区間か、日本語の記号にした句読点・記号の直後）の
     /// 1 かなだけなら、続けて打つ語の先頭なので、変換せずにかなのまま見せる（ki は 気 ではなく き、kon は こn）。
-    /// startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）。endsInput は spans の最後が入力の終わりか
+    /// startsAtHead は spans の最初が文の頭（入力の最初か、日本語の記号にした句読点・記号の直後）か。endsInput は spans の最後が入力の終わりか
     /// （文節の伸縮で、後ろに残す区間の手前までを渡すときは偽）。偽なら、末尾の 1 かなも続けて打つ語の先頭ではないので変換する
     func displays<Result>(
         of spans: [ShownSpan], left: String, startsAtHead: Bool, endsInput: Bool, endsWithPendingN: Bool,

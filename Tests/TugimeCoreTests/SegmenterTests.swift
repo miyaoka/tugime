@@ -736,6 +736,20 @@ private final class FixedDisplayConverter: JapaneseConverting {
         ) { _, display, _ in (result: (), shown: display?.text ?? "") }
         #expect(recorder.kanas == converted)
     }
+
+    /// 前の文節を伸縮して後ろを日英判定からやり直すとき、作った区間の手前の最後が文の頭の 1 かなでも、入力の終わりではないので変換に渡す。
+    /// e,kiwapushsita の きわ を き と わ に分け、わ を p まで伸ばして読めない英字を含む作った区間 wap にしてから、e を `,` まで伸ばす
+    @Test func convertsTheLastKanaBeforeAKeptSpan() throws {
+        var clauses = segmenter.clauses("e,kiwapushsita")
+        try #require(clauses.prefix(3).map(\.reading) == ["え", "、", "きわ"])
+        clauses = segmenter.resize(clauses, at: 2, by: -1)
+        clauses = segmenter.resize(clauses, at: 3, by: 1)
+        try #require(clauses[2].reading == "き" && clauses.contains { $0.reading == "wap" && $0.span.resized })
+        let before = recorder.kanas.count
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        try #require(clauses[0].reading == "え、" && clauses.contains { $0.reading == "wap" && $0.span.resized })
+        #expect(recorder.kanas.dropFirst(before).contains("き"))
+    }
 }
 
 /// 後ろの区間の表示の変換に、前の区間の表示を左の文脈として渡す
