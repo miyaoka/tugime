@@ -293,13 +293,15 @@ public final class Segmenter {
         !kana.allSatisfy { $0 == "ー" }
     }
 
-    /// 英語区間を、空白で区切った語ごとに綴りの表で読んだもの。読めない語は打ったまま、空白はそのまま残す。1 語も読めなければ nil
+    /// 英語区間を、空白で区切った語ごとにかなにしたもの（RomajiTable.typedKana）。打ったまま残る文字がある語は打ったまま、空白はそのまま残す。
+    /// 1 語も読めなければ nil
     func englishReading(of source: String) -> String? {
         var readAny = false
         let words = source.split(separator: " ", omittingEmptySubsequences: false).map { word in
-            guard let kana = table.reading(of: word) else { return String(word) }
+            let typed = table.typedKana(of: word)
+            guard !word.isEmpty, typed.complete else { return String(word) }
             readAny = true
-            return kana
+            return typed.kana
         }
         return readAny ? words.joined(separator: " ") : nil
     }

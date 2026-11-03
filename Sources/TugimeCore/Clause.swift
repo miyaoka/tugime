@@ -429,14 +429,14 @@ extension Segmenter {
         case .japanese:
             preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
         case .english:
-            // 利用者の辞書で表記を替えたときは、打ったままの綴りをすぐ後に置く
-            list.append(segment.source)
+            // 利用者の辞書で表記を替えたときは、打ったままの綴りをすぐ後に置く。全角の英字はその次に置く
+            list += [segment.source, Self.text(segment.source, .fullwidthRoman)]
             // 区間の末尾で打ったままにした句読点は、日本語の記号を選べる（github. の . を 。 に）。途中の句読点（vue.js）は変えない
             let trailing = segment.output.reversed().prefix { Self.punctuation[$0] != nil }.count
             if trailing > 0 {
                 list.append(segment.output.dropLast(trailing) + segment.output.suffix(trailing).map { Self.punctuation[$0]! }.joined())
             }
-            // 英語と判定した区間も、`englishReading` で読めればかなを選べるようにする
+            // 英語と判定した区間も、語を `englishReading` でかなにできればかなを選べるようにする
             if let kana = englishReading(of: segment.source) {
                 list += [kana, Self.katakana(kana)]
                 // 変換エンジンには前後の空白を除いた 1 語の読みを渡し、候補に空白を付け直す

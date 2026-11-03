@@ -10,6 +10,7 @@
 #
 # 既定の表は、Mozc のローマ字の表（src/data/preedit/romanji-hiragana.tsv）の綴りを読む。
 # ただし c を k・s・t の代わりに使う綴り（ca ci cu ce co と cya など）は読まない。ch で始まる綴りは読む。
+# 読まない c の綴りは、打鍵をかなにする（F6〜F8）ときだけ romaji-conversion.tsv から足して読む。
 # 記号の打鍵（zh z/ [ など）は綴りの表ではなく入力メソッドが受け持つ。
 # 数字は数字のまま読む。表から外した数字は英語の区間になり、前後の日本語と続けて変換されない。
 # 既定の打ち方は si ti tu hu ji、sya tya ja、xa xtu で、「ん」は nn と打つ。

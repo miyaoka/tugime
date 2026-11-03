@@ -13,12 +13,12 @@ public enum CharacterForm: Sendable, CaseIterable {
 }
 
 extension Segmenter {
-    /// 日本語区間はかな、英語区間は `englishReading` で読めたもの、読めなければ打ったまま、を並べたもの
+    /// 日本語区間はかな、英語区間は打鍵をかなにしたもの（RomajiTable.typedKana。読めない文字は打ったまま）、を並べたもの
     public func wholeReading(_ input: String, leading: Leading = .start) -> String {
         segment(input, leading: leading).map { segment in
             switch segment.kind {
             case .japanese, .punctuation: segment.reading
-            case .english, .word: englishReading(of: segment.source) ?? segment.source
+            case .english, .word: table.typedKana(of: segment.source).kana
             }
         }.joined()
     }
@@ -41,14 +41,14 @@ extension Segmenter {
     public func convertClause(_ clauses: [Clause], at index: Int, to form: CharacterForm) -> String? {
         let clause = clauses[index]
         guard form.usesKeystrokes else {
-            let kana = clause.kind == .english || clause.kind == .word ? englishReading(of: clause.span.source) ?? clause.span.source : clause.reading
+            let kana = clause.kind == .english || clause.kind == .word ? table.typedKana(of: clause.span.source).kana : clause.reading
             return Self.text(kana, form)
         }
         return typedSource(of: clauses, at: index).map { Self.text($0, form) }
     }
 
     /// source は、打鍵から作る文字種なら打鍵、それ以外ならかな
-    private static func text(_ source: String, _ form: CharacterForm) -> String {
+    static func text(_ source: String, _ form: CharacterForm) -> String {
         switch form {
         case .hiragana, .roman:
             source

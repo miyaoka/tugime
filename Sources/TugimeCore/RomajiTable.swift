@@ -24,8 +24,28 @@ public struct RomajiTable: Sendable {
     let maxKeyLength: Int
     let sokuonLetters: Set<Character>
     let nBeforeLetters: Set<Character>
+    /// 打鍵をかなにする（typedKana）ときに読む綴り。綴りの表に、かなにするときだけ読む綴りを足したもの
+    let conversionEntries: [String: String]
+    let conversionMaxKeyLength: Int
+    let conversionSokuonLetters: Set<Character>
 
-    public init(contents: String) throws {
+    /// contents は綴りの表、conversion は打鍵をかなにするときだけ足して読む綴り。どちらも同じ書式で、同じ綴りは contents を使う
+    public init(contents: String, conversion: String) throws {
+        let table = try Self.parse(contents)
+        let extra = try Self.parse(conversion)
+        self.entries = table.entries
+        self.rank = table.rank
+        self.maxKeyLength = table.entries.keys.map(\.count).max() ?? 0
+        self.sokuonLetters = table.sokuon
+        self.nBeforeLetters = table.nBefore
+        self.conversionEntries = table.entries.merging(extra.entries) { own, _ in own }
+        self.conversionMaxKeyLength = conversionEntries.keys.map(\.count).max() ?? 0
+        self.conversionSokuonLetters = table.sokuon.union(extra.sokuon)
+    }
+
+    private static func parse(
+        _ contents: String
+    ) throws -> (entries: [String: String], rank: [String: Int], sokuon: Set<Character>, nBefore: Set<Character>) {
         var entries: [String: String] = [:]
         var rank: [String: Int] = [:]
         var sokuon: Set<Character> = []
@@ -48,18 +68,53 @@ public struct RomajiTable: Sendable {
             default: throw ParseError.unknownDirective(index + 1, line)
             }
         }
-        self.entries = entries
-        self.rank = rank
-        self.maxKeyLength = entries.keys.map(\.count).max() ?? 0
-        self.sokuonLetters = sokuon
-        self.nBeforeLetters = nBefore
+        return (entries, rank, sokuon, nBefore)
     }
 
     public static func bundled() throws -> RomajiTable {
-        guard let url = Bundle.module.url(forResource: "romaji", withExtension: "tsv", subdirectory: "Resources") else {
+        try RomajiTable(contents: resource("romaji"), conversion: resource("romaji-conversion"))
+    }
+
+    private static func resource(_ name: String) throws -> String {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "tsv", subdirectory: "Resources") else {
             throw ParseError.missingResource
         }
-        return try RomajiTable(contents: String(contentsOf: url, encoding: .utf8))
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// 打鍵を、一般の日本語入力が打鍵をかなにするのと同じく、前から順にかなにする。各位置で読める最も長い綴りを読み、
+    /// 綴りが無ければ、同じ文字の重なりの前の文字を っ、@n の文字の前と末尾の n を ん と読む。どれでもない文字は打ったまま残す
+    /// （github は ぎてゅb）。綴りの表に加えて、かなにするときだけ読む綴りも読む。complete は打ったまま残した文字が無いか
+    public func typedKana(of text: some StringProtocol) -> (kana: String, complete: Bool) {
+        let chars = Array(text)
+        var kana = ""
+        var complete = true
+        var pos = 0
+        while pos < chars.count {
+            let next = pos + 1 < chars.count ? chars[pos + 1] : nil
+            if let (length, value) = longestConversion(at: pos, in: chars) {
+                kana += value
+                pos += length
+                continue
+            }
+            if let next, chars[pos] == next, conversionSokuonLetters.contains(next) {
+                kana += "っ"
+            } else if chars[pos] == "n", next.map(nBeforeLetters.contains) ?? true {
+                kana += "ん"
+            } else {
+                kana.append(chars[pos])
+                complete = false
+            }
+            pos += 1
+        }
+        return (kana, complete)
+    }
+
+    private func longestConversion(at pos: Int, in chars: [Character]) -> (length: Int, kana: String)? {
+        for length in stride(from: min(conversionMaxKeyLength, chars.count - pos), through: 1, by: -1) {
+            if let kana = conversionEntries[String(chars[pos..<(pos + length)])] { return (length, kana) }
+        }
+        return nil
     }
 
     /// start から読み始めて、読み切れる終端ごとのかなを返す。

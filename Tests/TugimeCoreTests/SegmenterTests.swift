@@ -351,6 +351,36 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(segmenter.convertClause(clauses, at: 1, to: .fullwidthRoman) == nil)
         #expect(segmenter.commit(clauses, through: 0) == nil)
     }
+
+    // MARK: 英語の区間の文字種
+
+    /// 英語の区間のかなは、打鍵を前から順にかなにし、読めない文字は打ったまま残す。c の綴りも読む
+    @Test(arguments: [("cafe", "かふぇ", "カフェ"), ("github", "ぎてゅb", "ギテュb"), ("conb", "こんb", "コンb")])
+    func turnsAnEnglishSpanIntoKanaAsTyped(input: String, hiragana: String, katakana: String) {
+        #expect(segmenter.segment(input).map(\.kind) == [.english])
+        #expect(segmenter.convertWhole(input, to: .hiragana) == hiragana)
+        #expect(segmenter.convertWhole(input, to: .katakana) == katakana)
+        let clauses = segmenter.clauses(input)
+        #expect(segmenter.convertClause(clauses, at: 0, to: .hiragana) == hiragana)
+        #expect(segmenter.convertClause(clauses, at: 0, to: .katakana) == katakana)
+    }
+
+    /// c の綴りはかなにするときだけ読み、日英判定の綴りの表では読まない
+    @Test func readsCSpellingsOnlyWhenTurningKeysIntoKana() throws {
+        let table = try Shared.table.get()
+        #expect(table.reading(of: "cafe") == nil)
+        #expect(table.typedKana(of: "cafe") == ("かふぇ", true))
+        #expect(table.typedKana(of: "github") == ("ぎてゅb", false))
+    }
+
+    /// 英語の区間の候補は、打ったままの綴りの次に全角の英字を並べる。語を読み切れればかなも並べ、読み切れなければ並べない
+    @Test func listsFullwidthLettersAfterTheTypedSpelling() {
+        let cafe = segmenter.clauses("cafe")[0].candidates
+        #expect(Array(cafe.prefix(2)) == ["cafe", "ｃａｆｅ"])
+        #expect(cafe.contains("かふぇ"))
+        #expect(cafe.contains("カフェ"))
+        #expect(segmenter.clauses("github")[0].candidates == ["github", "ｇｉｔｈｕｂ"])
+    }
 }
 
 /// 本物の変換器に処理を任せ、表示の変換の末尾に読みに無いかなを足して、読みと合わない表示にする
