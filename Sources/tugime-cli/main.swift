@@ -126,8 +126,13 @@ do {
             case "-": clauses = segmenter.resize(clauses, at: focus, by: -1, leading: leading)
             case ">": focus = min(focus + 1, clauses.count - 1)
             case "<": focus = max(focus - 1, 0)
-            case "1"..."9" where Int(String(op))! < clauses[focus].candidates.count:
-                clauses = Clause.selecting(Int(String(op))!, at: focus, in: clauses)
+            case "1"..."9":
+                let index = Int(String(op))!
+                guard index < clauses[focus].candidates.count else {
+                    print("候補の番号 \(index) は範囲外。選んでいる文節の候補は \(clauses[focus].candidates.count) 個（先頭が 0）")
+                    exit(2)
+                }
+                clauses = Clause.selecting(index, at: focus, in: clauses)
             default:
                 print(usage)
                 exit(2)
