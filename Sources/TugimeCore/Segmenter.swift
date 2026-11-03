@@ -136,7 +136,7 @@ public final class Segmenter {
         return digits.isEmpty ? .afterWord : .afterNumber(digits)
     }
 
-    /// 日本語区間を数字に続く形にする数字
+    /// 数として読む数字。日本語区間の中でも英語区間の中でも、採点の変換の数の語として点を付ける
     static func isDigit(_ c: Character) -> Bool {
         c.isASCII && c.isNumber
     }
@@ -288,6 +288,8 @@ public final class Segmenter {
             let end = i + key.count
             defer { i = end }
             guard symbol != nil || Self.punctuation[chars[i]] != nil else { continue }
+            // 数字にはさまれた句読点は数の一部（3.14 1,000 10:30）なので、入力を切らず打ったまま残す
+            if symbol == nil, i > 0, end < chars.count, Self.isDigit(chars[i - 1]), Self.isDigit(chars[end]) { continue }
             var runSpans: [ScoredSpan] = []
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, observe: collect)
@@ -387,8 +389,6 @@ public final class Segmenter {
             }
             // 句読点は直前の区間に従い、英語の後なら英語区間に入るので、英語区間を句読点から始めない。入力の先頭は、入力欄の前の英語に続いている
             if start > 0, Self.punctuation[chars[start]] != nil { continue }
-            // 区間の頭の数字の後ろ。数字に続く英字は、区間の頭の英字と同じく、日本語にする綴りなら英語区間に入れない（3i を 3位 に）
-            let afterDigits = chars[start...].prefix(while: Self.isDigit).count + start
             for end in (start + 1)...n {
                 let source = String(chars[start..<end])
                 if let segment = wordSegment(source, context: context) {
@@ -396,13 +396,6 @@ public final class Segmenter {
                     continue
                 }
                 if prefersJapanese(source, readable: readableEnds.contains(end)), japaneseEnds.contains(end) { continue }
-                // 利用者の辞書で英語として扱う打鍵は、区間全体で一致すれば締め出さない。数字の後ろを日本語区間として採れるときだけ締め出す
-                if start < afterDigits, afterDigits < end, typedWords[source] == nil,
-                   readingsAt[afterDigits].contains(where: { reading in
-                       reading.end == end && Self.canBeJapanese(reading.kana)
-                           && japaneseConverter.convert(kana: reading.kana, context: Self.context(after: chars[..<afterDigits])) != nil
-                   }),
-                   prefersJapanese(String(chars[afterDigits..<end]), readable: true) { continue }
                 for previous in start == 0 ? [nil] : [Segment.Kind.japanese, .word] {
                     relax(end, start, englishSegment(source, context: context), after: previous)
                 }
@@ -434,9 +427,12 @@ public final class Segmenter {
     }
 
     /// 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
-    /// 日本語として採れるなら英語にしない。利用者の辞書で英語として扱う打鍵は、どれにも当たらない
+    /// 日本語として採れるなら英語にしない。数字だけの綴りも同じく英語にしない。数字と英字が混ざる綴り（3i 3a i18n）は、
+    /// どれにも当たらず、日本語の読みと英語の綴りのもっともらしさを点で比べる。利用者の辞書で英語として扱う打鍵は、どれにも当たらない
     func prefersJapanese(_ source: String, readable: Bool) -> Bool {
         guard typedWords[source] == nil else { return false }
+        guard !source.allSatisfy(Self.isDigit) else { return readable }
+        guard !source.contains(where: Self.isDigit) else { return false }
         return table.isSingleKana(source) || (readable && (source.count <= Self.maxJapaneseFirstLength || !english.isWord(source)))
     }
 
@@ -453,9 +449,32 @@ public final class Segmenter {
 
     private func englishSegment(_ source: String, context: JapaneseContext) -> Segment {
         let singleLetter = source.filter(\.isLetter).count == 1 ? Self.singleLetterEnglishPenalty : 0
-        let spelled = Self.englishWeight * english.logProbability(source) - Self.englishSpanPenalty - singleLetter
+        let spelled = spellingScore(source, context: context) - Self.englishSpanPenalty - singleLetter
         let score = typedWords[source] == nil ? spelled : max(spelled, Self.registeredScore)
         return Segment(kind: .english, source: source, reading: source, output: englishOutput(source), score: score, context: context)
+    }
+
+    /// 英語区間の綴りの点。数字の連なりは英単語の綴りではないので、日本語区間と同じく採点の変換で数として読んだ点にし、
+    /// 数字で切った残りの綴りをそれぞれ英語の綴りとして測る。区間の頭の数字は区間の文脈で、英字の後の数字は語の後として読む
+    private func spellingScore(_ source: String, context: JapaneseContext) -> Double {
+        var score = 0.0
+        var rest = Substring(source)
+        while !rest.isEmpty {
+            let digits = rest.prefix(while: Self.isDigit)
+            if !digits.isEmpty {
+                let at: JapaneseContext = rest.startIndex == source.startIndex ? context : .afterWord
+                guard let number = japaneseConverter.convert(kana: String(digits), context: at) else {
+                    preconditionFailure("数字を数として読めない: \(digits)")
+                }
+                score += number.value
+                rest = rest.dropFirst(digits.count)
+                continue
+            }
+            let spelling = rest.prefix { !Self.isDigit($0) }
+            score += Self.englishWeight * english.logProbability(spelling)
+            rest = rest.dropFirst(spelling.count)
+        }
+        return score
     }
 
     /// 英語区間の表記。空白で区切った綴りのうち、利用者の辞書で英語として扱う打鍵と一致するものを、最初に登録した表記にする

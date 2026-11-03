@@ -13,12 +13,21 @@ final class LatticeConverter: JapaneseConverting {
     static let userWordValue = -userBaseCost / scale
     /// 候補の窓に求める上位の数。同じ表記の道は 1 つにまとめるので、返る件数はこれ以下
     static let listingBest = 20
+    /// 数の語のコスト。Mozc が入力の数字に置く語と同じ（immutable_converter.cc の kDefaultNumberCost）
+    static let numberCost: Int32 = 3000
+
+    /// 読みの start..<end が、数字の連なりの頭から始まる数字だけの並びか。数の語は連なりの頭から始める。
+    /// 読みは後ろへ伸びるので、連なりの終わりは決めず、どこで終わっても 1 語にする
+    private static func isNumber(_ kana: [Character], start: Int, end: Int) -> Bool {
+        guard start == 0 || !Segmenter.isDigit(kana[start - 1]) else { return false }
+        return kana[start..<end].allSatisfy(Segmenter.isDigit)
+    }
 
     private let dictionary: SystemDictionary
 
     private struct Path {
         enum Kind: UInt8 {
-            case start, dictionary, user, unknown
+            case start, dictionary, user, unknown, number
         }
 
         var cost: Int32
@@ -145,6 +154,9 @@ final class LatticeConverter: JapaneseConverting {
             for index in end - start > maxUserReadingChars ? [] : userWordsByReading[String(kana[start..<end])] ?? [] {
                 relax(lid: dictionary.properNounId, rid: dictionary.properNounId, cost: userCost, kind: .user, word: Int32(index))
             }
+            if Self.isNumber(kana, start: start, end: end) {
+                relax(lid: dictionary.numberId, rid: dictionary.numberId, cost: Self.numberCost, kind: .number, word: Int32(start))
+            }
             if start == end - 1 {
                 relax(lid: 0, rid: 0, cost: Self.unknownCost, kind: .unknown, word: Int32(start))
             }
@@ -184,6 +196,9 @@ final class LatticeConverter: JapaneseConverting {
                 words.append(Word(start: start, end: end, text: userEntries[Int(path.word)].word, lid: id, rid: id, user: Int(path.word)))
             case .unknown:
                 words.append(Word(start: start, end: end, text: String(kana[start]), lid: 0, rid: 0, unknown: true))
+            case .number:
+                let id = dictionary.numberId
+                words.append(Word(start: start, end: end, text: String(kana[start..<end]), lid: id, rid: id))
             }
             end = start
             rid = path.prevRid
