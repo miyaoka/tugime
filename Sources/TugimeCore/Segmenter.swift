@@ -50,7 +50,7 @@ public final class Segmenter {
     /// 日本語区間に続く日本語区間で引く値
     static let continuingJapanesePenalty = 2.0
     /// 英語の区間を 1 つ増やすごとに引く値。負なので、英語の区間は増やすほど点が上がる
-    static let englishSpanPenalty = -2.0
+    static let englishSpanPenalty = -10.0
     /// 英字が 1 文字だけの英語の区間で、さらに引く値
     static let singleLetterEnglishPenalty = 3.0
     /// 利用者の辞書で英語として扱う打鍵の区間の評価値の下限と、日本語として扱う読めない打鍵の区間の評価値。
