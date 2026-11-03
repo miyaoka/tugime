@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   # ==============================================================
-  # 配布物の組み立てに関わるファイルが変わったかを調べる。
+  # 配布物の組み立てと、変換の精度の測定に関わるファイルが変わったかを調べる。
   # テストは変更の内容に関わらず常に走らせ、ここの結果で止めない
   # ==============================================================
   changes:
@@ -30,6 +30,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       dist: ${{ steps.dist.outputs.any_modified }}
+      eval: ${{ steps.eval.outputs.any_modified }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,6 +62,29 @@ jobs:
           # 差分を取れなかったときに「変更なし」と同じ結果を返させない
           fail_on_initial_diff_error: true
 
+      # 精度の結果を変えうるもの。tugime-eval が読むコードと辞書、問題集と辞書の取得、道具の版、測り方
+      - uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        id: eval
+        with:
+          files: |
+            Sources/TugimeCore/**
+            Sources/TugimeEngine/**
+            Sources/TugimeEval/**
+            Sources/tugime-eval/**
+            Sources/SystemDictionaryLayout/**
+            Sources/tugime-dictionary/**
+            Package.swift
+            Package.resolved
+            scripts/fetch-dictionary.ts
+            scripts/fetch-eval.ts
+            scripts/lib/**
+            mise.toml
+            mise.lock
+            .github/actions/**
+            .github/workflows/code_validation.yml
+          skip_initial_fetch: true
+          fail_on_initial_diff_error: true
+
   # ==============================================================
   # テスト（macOS 専用の IME なので macOS で走らせる）
   # ==============================================================
@@ -84,9 +108,12 @@ jobs:
 
   # ==============================================================
   # 変換の精度。PR と base の両方で問題集を解き、片方だけが正解した問題を PR にコメントする。PR を止めないので all-green に入れない。
-  # 測れなかったときは、このジョブのチェックが赤になる。このジョブは PR のコードを動かすので、書き込みの権限を持たず、結果を成果物に残すだけにする
+  # 測れなかったときは、このジョブのチェックが赤になる。このジョブは PR のコードを動かすので、書き込みの権限を持たず、結果を成果物に残すだけにする。
+  # 精度の結果を変えうるファイルが変わらない PR では、base と同じ結果になるので測らない
   # ==============================================================
   eval:
+    needs: changes
+    if: needs.changes.outputs.eval == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     defaults:
