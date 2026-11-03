@@ -51,6 +51,7 @@ jobs:
             Package.swift
             Package.resolved
             Sources/TugimeIME/**
+            Sources/TugimeEngine/**
             Sources/TugimeCore/Resources/**
             Sources/SystemDictionaryLayout/**
             Sources/tugime-dictionary/**

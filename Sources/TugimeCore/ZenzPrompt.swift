@@ -7,19 +7,19 @@ import Foundation
 /// - 40 字を超える読みは句読点で区切り、前の区切りの出力を左の文脈に足して続きを変換する
 /// - 出力は読みの 1.3 倍 + 8 トークンまで生成し、最初の改行で切る
 package enum ZenzPrompt {
-    package static let contextMark = "\u{EE02}"
-    package static let inputMark = "\u{EE00}"
-    package static let outputMark = "\u{EE01}"
+    static let contextMark = "\u{EE02}"
+    static let inputMark = "\u{EE00}"
+    static let outputMark = "\u{EE01}"
     package static let maxContextLength = 500
-    package static let chunkLength = 40
-    package static let outputPerKana = 1.3
-    package static let outputMargin = 8
+    static let chunkLength = 40
+    static let outputPerKana = 1.3
+    static let outputMargin = 8
     private static let chunkEnds: Set<Unicode.Scalar> = ["、", "。", "，", "．", "！", "？", "!", "?"]
 
     /// 左の文脈。left が空でなければ left。left が空で数字に続くなら、その数字。
     /// それ以外は空。afterWord で left が空なのは、前の語がある入力欄のカーソルより前の文字列を読めなかったときで、
     /// その語を tugime は知らないので、仮の語を置かずに文脈なしで変換する
-    package static func leftContext(context: JapaneseContext, left: String) -> String {
+    static func leftContext(context: JapaneseContext, left: String) -> String {
         guard left.isEmpty else { return left }
         switch context {
         case .afterNumber(let digits): return digits

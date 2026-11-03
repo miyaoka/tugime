@@ -69,7 +69,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
         resources.release()
     }
 
-    package func generate(left: String, kana: String) -> String {
+    func generate(left: String, kana: String) -> String {
         var output = ""
         var parts = ZenzPrompt.chunks(kana, maxLength: ZenzPrompt.maxChunkLength(positions: maxPositions))[...]
         while let part = parts.popFirst() {
@@ -88,7 +88,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
         return ZenzPrompt.restoreSpaces(output)
     }
 
-    package func reset() {
+    func reset() {
         truncate(0)
         drafts = [:]
     }

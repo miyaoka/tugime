@@ -1,15 +1,17 @@
 import Foundation
 import TugimeCore
 
+/// llama.cpp で zenz 形式のモデルを動かす生成器を作る。ConversionMethod の make と makeSegmenter に渡す
+package func modelGenerator(weight: URL) -> any DirectDisplayGenerating { ZenzGenerator(weight: weight) }
+
 extension ConversionMethod {
-    /// 同梱の綴りの表と語表で、この方式の区切りを作る。区切りはこれからだけ作る
+    /// ConversionMethod.makeSegmenter(dictionary:generator:) に、llama.cpp でモデルを動かす生成器を渡したもの
     public func makeSegmenter(dictionary: SystemDictionary) throws -> Segmenter {
-        try Segmenter(table: .bundled(), english: .bundled(), japanese: make(dictionary: dictionary))
+        try makeSegmenter(dictionary: dictionary, generator: modelGenerator(weight:))
     }
 
-    /// 変換器を作り、モデルを読み込み終えた状態で返す。最初の変換で読み込みの時間が混ざらないよう、ここで先読みまで済ませる。
-    /// モデルを読めなければプロセスごと止まる（fatalError。投げるエラーではないので、呼び出し元は受け止められない）
+    /// ConversionMethod.make(dictionary:generator:) に、llama.cpp でモデルを動かす生成器を渡したもの
     public func make(dictionary: SystemDictionary) -> any JapaneseConverting {
-        make(dictionary: dictionary) { ZenzGenerator(weight: $0) }
+        make(dictionary: dictionary, generator: modelGenerator(weight:))
     }
 }
