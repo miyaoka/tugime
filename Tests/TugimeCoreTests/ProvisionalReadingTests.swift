@@ -26,6 +26,10 @@ import Testing
         // 数の区切りは区切りと同じく打ったまま
         ("3.14", true, "3.14"),
         ("2026-11-03", true, "2026-11-03"),
+        // 数字だけの読みは直前の側を変えない
+        ("html5.", true, "html5."),
+        ("3.", true, "3。"),
+        ("nara3.", true, "なら3。"),
     ])
     func provisionalText(keys: String, afterJapanese: Bool, expected: String) {
         #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, preceding: nil, table: table) == expected)
