@@ -444,10 +444,36 @@ private final class DisplayRecorder: JapaneseConverting {
         clauses = segmenter.resize(clauses, at: push, by: -1)
         let made = try #require(clauses.first { $0.reading == "pus" })
         #expect(made.kind == .english && made.span.resized)
-        let after = Array(readings(clauses).drop { $0 != "pus" })
+        let after = spansFrom(made.span.source, in: clauses)
         clauses = segmenter.resize(clauses, at: 0, by: 1)
         #expect(clauses.contains { $0.reading == "pus" && $0.kind == .english && $0.span.resized })
-        #expect(Array(readings(clauses).drop { $0 != "pus" }) == after)
+        #expect(spansFrom(made.span.source, in: clauses) == after)
+    }
+
+    /// 打鍵 source の区間から後ろの区間の、打鍵・種類・伸縮で作った区間か。区間の中の文節の切り方は変換が決めるので含めない
+    private func spansFrom(_ source: String, in clauses: [Clause]) -> [String] {
+        var shapes: [String] = []
+        var last: ClauseSpan?
+        for clause in clauses where clause.span != last {
+            last = clause.span
+            if shapes.isEmpty, clause.span.source != source { continue }
+            shapes.append("\(clause.span.source) \(clause.kind) \(clause.span.resized)")
+        }
+        return shapes
+    }
+
+    /// 作った区間の手前で開き丸括弧の形が変わったら、その区間を残さず後ろを日英判定からやり直すので、閉じ丸括弧は開き丸括弧と同じ形になる。
+    /// ( は直前が日本語の に なら （、先頭を伸ばして英語の githubni に取り込ませると打ったままの ( になる
+    @Test func rejudgesAMadeSpanWhenTheOpenBracketBeforeItChangesForm() throws {
+        var clauses = segmenter.clauses("githubni(pushsita)")
+        let push = try #require(clauses.firstIndex { $0.reading == "push" })
+        clauses = segmenter.resize(clauses, at: push, by: -1)
+        try #require(clauses.contains { $0.reading == "pus" && $0.span.resized } && clauses.contains { $0.output == "（" })
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        try #require(clauses[0].reading == "githubni")
+        let text = clauses.map(\.output).joined()
+        #expect(text.filter { $0 == "(" }.count == text.filter { $0 == ")" }.count)
+        #expect(text.filter { $0 == "（" }.count == text.filter { $0 == "）" }.count)
     }
 
     /// 作った区間は、伸ばした文節に取り込まれたときと、縮めて手放した打鍵のすぐ後ろにあるときは残さず、日英判定をやり直す。
@@ -691,6 +717,24 @@ private final class FixedDisplayConverter: JapaneseConverting {
     @Test func flagsAConvertedSpanThatDoesNotFollowTheReading() throws {
         let segmenter = try Shared.make(RewritingConverter())
         #expect(segmenter.liveDisplay("kawacwdkyouhaii").differsFromInput)
+    }
+}
+
+/// 文の頭の 1 かなを変換せずに見せるのは、それが入力の最後の区間のときだけ。後ろに区間が続くなら変換に渡す
+@Suite struct LastKanaDisplayTests {
+    fileprivate let recorder = DisplayRecorder()
+    let segmenter: Segmenter
+
+    init() throws {
+        segmenter = try Shared.make(recorder)
+    }
+
+    @Test(arguments: [(true, [String]()), (false, ["き"])])
+    func convertsTheLastKanaOnlyWhenTheInputContinues(endsInput: Bool, converted: [String]) {
+        _ = segmenter.displays(
+            of: [.japanese(kana: "き", context: .start, startsSentence: false)], left: "", startsAtHead: true, endsInput: endsInput, endsWithPendingN: false
+        ) { _, display, _ in (result: (), shown: display?.text ?? "") }
+        #expect(recorder.kanas == converted)
     }
 }
 

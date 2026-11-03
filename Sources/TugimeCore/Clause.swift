@@ -149,17 +149,17 @@ extension Segmenter {
     /// 区切りを選び、日本語区間を文節に分けて、文節ごとに候補の一覧を付ける。
     /// 日本語区間は、前の文字列と前の区間の表示を左の文脈にして表示の変換で文節に分ける
     public func clauses(_ input: String, leading: Leading = .start) -> [Clause] {
-        clauses(of: segment(input, leading: leading), left: leading.text, firstIndex: 0, startsAtHead: true)
+        clauses(of: segment(input, leading: leading), left: leading.text, firstIndex: 0, startsAtHead: true, endsInput: true)
     }
 
     /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る。
-    /// startsAtHead は最初の区間が文の頭（入力の最初か、日本語の記号にした句読点・記号の直後）か。
+    /// startsAtHead は最初の区間が文の頭（入力の最初か、日本語の記号にした句読点・記号の直後）か。endsInput は最後の区間が入力の終わりか（`displays`）。
     /// fixedKeys は利用者が範囲を決めたか表記を選んだ文節の打鍵の範囲（segments の打鍵の始まりからの位置）。日本語区間の中に丸ごと収まり、
     /// 両端がその区間の読みのかなの境目に当たるものを守る（`keepingFixedRanges`）。英語・句読点と記号の区間は、打鍵の範囲が区間と同じものの
     /// 印と選んだ表記を付け直す。後ろの区間は、選んだ表記を含めて表示した文字列を左の文脈にして変換する
-    private func clauses(of segments: [Segment], left: String, firstIndex: Int, startsAtHead: Bool, fixedKeys: [KeptClause] = []) -> [Clause] {
+    private func clauses(of segments: [Segment], left: String, firstIndex: Int, startsAtHead: Bool, endsInput: Bool, fixedKeys: [KeptClause] = []) -> [Clause] {
         var keyStart = 0
-        return displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: startsAtHead, endsWithPendingN: false) { offset, display, shown in
+        return displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: startsAtHead, endsInput: endsInput, endsWithPendingN: false) { offset, display, shown in
             let segment = segments[offset]
             defer { keyStart += segment.source.count }
             let keys = keyStart..<(keyStart + segment.source.count)
@@ -291,7 +291,8 @@ extension Segmenter {
             span: span,
             left: left + resized.output
         )
-        let later = redisplay(Array(clauses[(spanIndices.last! + 1)...]), left: left + ([resized] + rest).map(\.output).joined())
+        // 区間の中での伸縮なので、後ろの区間の直前は記号で終わらない日本語の文節で、文の頭ではない
+        let later = redisplay(Array(clauses[(spanIndices.last! + 1)...]), left: left + ([resized] + rest).map(\.output).joined(), startsAtHead: false)
         return Array(clauses[..<index]) + [resized] + rest + later
     }
 
@@ -389,34 +390,46 @@ extension Segmenter {
         // 句読点か記号で終わる文節の後ろは、区切り・変換の文脈・文の頭かのどれも、その記号の後として決める
         let markContinuation = continuation(afterMarkOf: resized)
         let shrunk = end < range.upperBound
+        // 後ろの打鍵を keyEnd の手前まで日英判定からやり直す。keyEnd が打鍵列の終わりでなければ、その手前は入力の終わりではない
+        let judge = { (keyEnd: Int) in
+            self.clauses(
+                of: self.segment(
+                    String(keys[end..<keyEnd]),
+                    after: markContinuation ?? (fixed.kind == .english ? .afterEnglish : .afterJapanese),
+                    context: self.context(after: resized, keys: keys[..<end], leading: leading),
+                    opened: Self.unclosedOpeners(in: left + resized.output),
+                    preceding: keys[..<end].last ?? leading.text.last
+                ),
+                left: left + resized.output,
+                firstIndex: span.index + 1,
+                startsAtHead: markContinuation.map { $0 != .afterEnglish } ?? false,
+                endsInput: keyEnd == keys.count,
+                fixedKeys: self.fixedKeyRanges(after: index, in: clauses, from: end, shrunk: shrunk)
+            )
+        }
         // 後ろに利用者が伸縮で作った区間があれば、日英判定をやり直すのはその手前までにし、その区間から後ろは区間をそのまま残す
-        let kept = laterResizedSpan(after: index, in: clauses, from: end, shrunk: shrunk)
-        let judged = self.clauses(
-            of: segment(
-                String(keys[end..<(kept?.keyStart ?? keys.count)]),
-                after: markContinuation ?? (fixed.kind == .english ? .afterEnglish : .afterJapanese),
-                context: context(after: resized, keys: keys[..<end], leading: leading),
-                opened: Self.unclosedOpeners(in: left + resized.output),
-                preceding: keys[..<end].last ?? leading.text.last
-            ),
-            left: left + resized.output,
-            firstIndex: span.index + 1,
-            startsAtHead: markContinuation.map { $0 != .afterEnglish } ?? false,
-            fixedKeys: fixedKeyRanges(after: index, in: clauses, from: end, shrunk: shrunk)
-        )
-        guard let kept else { return before + [resized] + judged }
+        guard let kept = laterResizedSpan(after: index, in: clauses, from: end, shrunk: shrunk) else {
+            return before + [resized] + judge(keys.count)
+        }
+        let judged = judge(kept.keyStart)
+        let shownBefore = left + resized.output + judged.map(\.output).joined()
+        // 残す区間の後ろの閉じ丸括弧は、手前の開き丸括弧の形で決めてある。手前の閉じていない開き丸括弧の並びが変わったら残さない
+        guard Self.unclosedOpeners(in: shownBefore) == Self.unclosedOpeners(in: leading.text + clauses[..<kept.clause].map(\.output).joined()) else {
+            return before + [resized] + judge(keys.count)
+        }
         var tail = renumbered(Array(clauses[kept.clause...]), from: (judged.last?.span.index ?? span.index) + 1)
-        // 残す区間の前は作り直したので、残す区間の先頭を変換する文脈と、文の頭かを、作り直した前の文節から決め直す
+        // 残す区間の前は作り直したので、残す日本語区間の先頭を変換する文脈と、文の頭かを、作り直した前の文節から決め直す。
+        // 英語・句読点と記号の区間は、表示を選んだ文字列のまま残すので、文脈を付け直さない
         let previous = judged.last ?? resized
         let first = tail[0].span
-        let keptContext = context(after: previous, keys: keys[..<kept.keyStart], leading: leading)
-        for i in tail.indices where tail[i].span == first {
-            tail[i].span.context = keptContext
+        if tail[0].kind == .japanese {
+            let keptContext = context(after: previous, keys: keys[..<kept.keyStart], leading: leading)
+            for i in tail.indices where tail[i].span == first {
+                tail[i].span.context = keptContext
+            }
         }
         return before + [resized] + judged + redisplay(
-            tail,
-            left: left + resized.output + judged.map(\.output).joined(),
-            startsAtHead: continuation(afterMarkOf: previous).map { $0 != .afterEnglish } ?? false
+            tail, left: shownBefore, startsAtHead: continuation(afterMarkOf: previous).map { $0 != .afterEnglish } ?? false
         )
     }
 
@@ -428,7 +441,7 @@ extension Segmenter {
         let next = index + 1
         return clauses.indices.dropFirst(next).lazy.compactMap { i -> (keyStart: Int, clause: Int)? in
             let span = clauses[i].span
-            guard span.resized, span != clauses[index].span, i == 0 || clauses[i - 1].span != span,
+            guard span.resized, span != clauses[index].span, clauses[i - 1].span != span,
                   !(shrunk && clauses[next].span == span),
                   let start = spans.first(where: { $0.span == span })?.start, start >= end
             else { return nil }
@@ -608,8 +621,9 @@ extension Segmenter {
     /// 区間ごとの文節を、left に続けて前から順に表示の変換にし直す。日本語区間は文節に分け直し、それ以外の区間は選んだ文字列のまま残す。
     /// 日本語区間の表記は区間の全体を 1 回変換して決め、利用者が範囲を決めたか表記を選んだ文節は、その範囲と表記のまま残す（`keepingFixedRanges`）。
     /// 後ろの区間は、選んだ表記を含めて表示した文字列を左の文脈にして変換する。
-    /// startsAtHead は最初の区間が文の頭（日本語の記号にした句読点・記号の直後）か。伸縮した区間より後ろの文節だけを渡すので、入力の最初ではない
-    private func redisplay(_ clauses: [Clause], left: String, startsAtHead: Bool = false) -> [Clause] {
+    /// startsAtHead は最初の区間が文の頭（日本語の記号にした句読点・記号の直後）か。伸縮した区間より後ろの文節を入力の終わりまで渡すので、入力の最初ではなく、
+    /// 最後の区間は入力の終わりである
+    private func redisplay(_ clauses: [Clause], left: String, startsAtHead: Bool) -> [Clause] {
         var groups: [[Clause]] = []
         for clause in clauses {
             if let last = groups.last?.last, last.span == clause.span {
@@ -626,7 +640,7 @@ extension Segmenter {
             case .english, .word, .whole: ShownSpan.other(startsSentence: false)
             }
         }
-        return displays(of: spans, left: left, startsAtHead: startsAtHead, endsWithPendingN: false) { index, display, shown in
+        return displays(of: spans, left: left, startsAtHead: startsAtHead, endsInput: true, endsWithPendingN: false) { index, display, shown in
             let group = groups[index]
             let spanClauses = display.map { converted in
                 var start = 0
