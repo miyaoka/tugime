@@ -330,7 +330,7 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(clauses.count == 1)
         #expect(clauses[0].kind == .japanese)
         #expect(clauses[0].reading == "（かふぇ）")
-        // かなと打ったままの形は規則で決まる。変換した表記は例文の記録で確かめる
+        // かなと打ったままの形は規則で決まる。変換した表記は点で決まるので書かない
         #expect(Set(["（かふぇ）", "(cafe)"]).isSubset(of: clauses[0].candidates))
         for _ in 0..<6 { clauses = segmenter.resize(clauses, at: 0, by: -1) }
         #expect(clauses.map(\.kind) == original.map(\.kind))
@@ -347,18 +347,20 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(readings(clauses).contains("（かふぇ）"))
     }
 
-    /// 句読点は前の文節にも取り込める
+    /// 句読点は前の文節にも取り込める。2 文字以下の読める綴りは日本語になり、1 かなは 1 文節になるので、前の文節は え に決まる
     @Test func resizingTakesPunctuationIntoTheClauseBefore() {
-        let clauses = segmenter.resize(segmenter.clauses("kore,are"), at: 0, by: 1)
-        #expect(readings(clauses) == ["これ、", "are"])
-        #expect(clauses.map(\.kind) == [.japanese, .english])
+        let original = segmenter.clauses("e,ki")
+        #expect(readings(original) == ["え", "、", "き"])
+        let clauses = segmenter.resize(original, at: 0, by: 1)
+        #expect(clauses[0].reading == "え、")
+        #expect(clauses[0].kind == .japanese)
     }
 
     /// 句読点で終わる文節の後ろは、区切りの選択と同じく句読点の後の文の頭として表示する（文の頭の 1 かなは変換しない）
     @Test func showsTheRestAfterATakenPunctuationLikeAfterThePunctuation() throws {
-        let original = segmenter.clauses("kore,ki")
+        let original = segmenter.clauses("e,ki")
         let taken = segmenter.resize(original, at: 0, by: 1)
-        #expect(readings(taken) == ["これ、", "き"])
+        #expect(readings(taken) == ["え、", "き"])
         let last = try #require(taken.last)
         #expect(last.output == last.reading)
         let shrunk = segmenter.resize(segmenter.resize(original, at: 1, by: 1), at: 1, by: -1)
