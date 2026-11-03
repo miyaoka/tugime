@@ -193,7 +193,7 @@ import Testing
 
     /// 文節の伸縮で打鍵を 1 区間として判定し直すときも、読めない日本語の打鍵はその語の区間にする
     @Test func makesUnreadableJapaneseKeysTheWordWhenResized() {
-        let span = segmenter.singleSpan("cafe", context: .start)
+        let span = segmenter.singleSpan("cafe", context: .start, preceding: nil)
         #expect(span.kind == .word)
         #expect(span.output == "Café")
     }

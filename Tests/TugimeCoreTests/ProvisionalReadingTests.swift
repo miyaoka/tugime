@@ -23,15 +23,24 @@ import Testing
         // 記号の打鍵は前によらず記号
         ("[", false, "「"),
         ("shsi", false, "shし"),
+        // 数の区切りは区切りと同じく打ったまま
+        ("3.14", true, "3.14"),
+        ("2026-11-03", true, "2026-11-03"),
     ])
     func provisionalText(keys: String, afterJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, preceding: nil, table: table) == expected)
+    }
+
+    /// 入力の先頭の数の区切りは、直前の文字（入力欄や前の表示）が数字かで決める
+    @Test(arguments: [(".14", "3", ".14"), ("-11-03", "2026", "-11-03"), (".", "3", "。")])
+    func readsANumberSeparatorAfterThePrecedingDigits(keys: String, preceding: String, expected: String) {
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: preceding.last, table: table) == expected)
     }
 
     /// 末尾の単独の n は打ったまま。nn、後ろに打鍵が続く n、綴りの組の一部の n（xn）は読む
     @Test(arguments: [("n", "n"), ("bn", "bn"), ("ka,n", "か、n"), ("kon", "こn"), ("nn", "ん"), ("konnn", "こんn"), ("kona", "こな"), ("xn", "ん")])
     func keepsAPendingNAsTyped(keys: String, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: nil, table: table) == expected)
     }
 
     @Test(arguments: [

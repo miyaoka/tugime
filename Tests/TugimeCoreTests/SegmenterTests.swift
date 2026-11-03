@@ -263,7 +263,7 @@ private final class LeftRecorder: JapaneseConverting {
     }
 
     /// 入力欄の数字に続けて打っても、数字とまとめて打ったときと同じく数字に続く形で区切る。数字の後の句読点も同じ形になる
-    @Test(arguments: [("3", "nin"), ("3", "kai"), ("1500", "ennharaimasu"), ("1500", "."), ("html5", ".")])
+    @Test(arguments: [("3", "nin"), ("3", "kai"), ("1500", "ennharaimasu"), ("1500", "."), ("html5", "."), ("3", ".14"), ("1", ",000enn"), ("2026", "-11-03")])
     func continuesConfirmedDigitsLikeTypedDigits(digits: String, input: String) {
         let leading = Segmenter.Leading(digits)
         #expect(digits + output(input, leading: leading) == output(digits + input))

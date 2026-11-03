@@ -201,7 +201,11 @@ extension Segmenter {
             before[i].span = head
         }
         let left = leading.text + before.map(\.output).joined()
-        let fixed = singleSpan(String(keys[range.lowerBound..<end]), context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading))
+        let fixed = singleSpan(
+            String(keys[range.lowerBound..<end]),
+            context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading),
+            preceding: keys[..<range.lowerBound].last ?? leading.text.last
+        )
         let span: ClauseSpan
         if let (segmented, count) = segmentedSpan(fixed, before: before, start: range.lowerBound, end: end, keys: keys, leading: leading) {
             let first = before.count - count
@@ -238,7 +242,8 @@ extension Segmenter {
                 String(keys[end...]),
                 after: fixed.kind == .english ? .afterEnglish : .afterJapanese,
                 context: context(after: resized, keys: keys[..<end], leading: leading),
-                opened: Self.unclosedOpeners(in: left + resized.output)
+                opened: Self.unclosedOpeners(in: left + resized.output),
+                preceding: keys[..<end].last ?? leading.text.last
             ),
             left: left + resized.output,
             firstIndex: span.index + 1
