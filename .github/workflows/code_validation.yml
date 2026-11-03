@@ -125,7 +125,8 @@ jobs:
           {
             echo '## 変換の精度（lattice）'
             echo
-            echo "片方だけが正解した問題: $(wc -l < "$RUNNER_TEMP/changed.txt" | tr -d ' ') 件"
+            # compare の行は「問題の id \t left|right \t …」。left は base だけ、right は head だけが正解した問題
+            echo "base だけが正解: $(awk -F'\t' '$2 == "left"' "$RUNNER_TEMP/changed.txt" | wc -l | tr -d ' ') 件、head だけが正解: $(awk -F'\t' '$2 == "right"' "$RUNNER_TEMP/changed.txt" | wc -l | tr -d ' ') 件"
             echo
             echo '<details><summary>片方だけが正解した問題（base / head）</summary>'
             echo
