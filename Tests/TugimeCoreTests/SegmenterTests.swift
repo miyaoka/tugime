@@ -391,10 +391,29 @@ private final class DisplayRecorder: JapaneseConverting {
         let last = clauses.count - 1
         try #require(last >= 2)
         let katakana = try #require(segmenter.convertClause(clauses, at: last, to: .katakana))
-        if !clauses[last].candidates.contains(katakana) { clauses[last].candidates.append(katakana) }
-        clauses = Clause.selecting(clauses[last].candidates.firstIndex(of: katakana)!, at: last, in: clauses)
+        clauses = Clause.selecting(text: katakana, at: last, in: clauses)
         clauses = segmenter.resize(clauses, at: 0, by: -1)
         #expect(clauses.last?.output == katakana)
+    }
+
+    /// 英語の文節で選んだ表記（全角の英字）も、前の文節を伸縮して後ろの打鍵を日英判定からやり直したとき、打鍵の範囲が同じ文節になれば残る。
+    /// github と cwd は綴りの表で読めないので英語、ni と de は 2 文字以下なので日本語になる
+    @Test func keepsTheTextChosenOnAnEnglishClauseWhenTheSpansAfterAreJudgedAgain() throws {
+        var clauses = segmenter.clauses("githubnicwdde")
+        #expect(readings(clauses) == ["github", "に", "cwd", "で"])
+        clauses = Clause.selecting(text: "ｃｗｄ", at: 2, in: clauses)
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        let cwd = try #require(clauses.first { $0.reading == "cwd" })
+        #expect(cwd.output == "ｃｗｄ")
+    }
+
+    /// 先頭の候補に戻した文節は、選んだ表記を持たない
+    @Test func selectingTheFirstCandidateDropsTheChosenText() {
+        var clauses = segmenter.clauses("githubnicwdde")
+        clauses = Clause.selecting(text: "ｃｗｄ", at: 2, in: clauses)
+        #expect(clauses[2].fixedValue == "ｃｗｄ")
+        clauses = Clause.selecting(0, at: 2, in: clauses)
+        #expect(clauses[2].fixedValue == nil)
     }
 
     /// 句読点は前の文節にも取り込める。2 文字以下の読める綴りは日本語になり、1 かなは 1 文節になるので、前の文節は え に決まる
@@ -578,6 +597,17 @@ private final class FixedDisplayConverter: JapaneseConverting {
     }
 
     /// 範囲の端（をつ の後ろ）が 使 の中に当たって切れないときは、その範囲を守らず、表示の変換の区切りにする
+    /// 表記を選んだ文節は、範囲の端が 使 の中に当たって切れなくても、前後の読みを分けて変換し、その範囲と表記のまま残す
+    @Test func keepsAChosenClauseWhoseEndCannotBeCut() {
+        var clauses = segmenter.clauses(input)
+        let wo = clauses.count - 2
+        clauses = segmenter.resize(clauses, at: wo, by: 1)
+        clauses = Clause.selecting(text: "をツ", at: wo, in: clauses)
+        let resized = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(Array(readings(resized).suffix(2)) == ["をつ", "かった"])
+        #expect(resized[resized.count - 2].output == "をツ")
+    }
+
     @Test func fallsBackToTheConverterCutsWhenAnEndCannotBeCut() {
         var clauses = segmenter.clauses(input)
         let wo = clauses.count - 2
@@ -663,6 +693,18 @@ private final class FixedDisplayConverter: JapaneseConverting {
         let resized = segmenter.resize(clauses, at: 0, by: 1)
         #expect(readings(resized) == ["きょうはい", "い", "cwd", "で"])
         #expect(recorder.lefts.last == resized.dropLast().map(\.output).joined())
+    }
+
+    /// 前の文節を伸縮して後ろの区間を変換し直すとき、表記を選んだ文節の後ろの区間は、選んだ表記を左の文脈にして変換する
+    @Test func resizingPassesTheChosenTextToTheLaterSpans() throws {
+        var clauses = segmenter.clauses("kawacwdkyouhacwdde")
+        try #require(clauses.first?.reading == "かわ" && clauses.last?.reading == "で")
+        let chosen = try #require(clauses.lastIndex { $0.kind == .japanese && $0.reading != "で" })
+        let text = try #require(segmenter.convertClause(clauses, at: chosen, to: .katakana))
+        clauses = Clause.selecting(text: text, at: chosen, in: clauses)
+        _ = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(recorder.kanas.last == "で")
+        #expect(recorder.lefts.last?.hasSuffix(text + "cwd") == true)
     }
 
     /// 伸縮した後の表示も、入力欄のカーソルより前の文字列に続けて変換する

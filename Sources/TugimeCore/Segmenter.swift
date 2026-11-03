@@ -272,25 +272,31 @@ public final class Segmenter {
     /// 返す配列は spans と同じ順で、日本語区間の要素だけが表示の変換を持つ。
     /// 末尾の区間（endsWithPendingN なら、最後の打ったままの n の手前）が文の頭（入力の最初の区間か、日本語の記号にした句読点・記号の直後）の
     /// 1 かなだけなら、続けて打つ語の先頭なので、変換せずにかなのまま見せる（ki は 気 ではなく き、kon は こn）。
-    /// startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）
-    func displays(of spans: [ShownSpan], left: String, startsAtHead: Bool, endsWithPendingN: Bool) -> [JapaneseDisplay?] {
+    /// startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）。
+    /// shownText は、区間の番号・その表示の変換（日本語区間でなければ nil）・それより前に表示している文字列から、その区間に実際に表示する文字列を返す。
+    /// 文節を作りながら、利用者が選んだ表記を後ろの区間の左の文脈に入れるときに渡す。渡さなければ、表示の変換と決まった文字列を表示する
+    func displays(
+        of spans: [ShownSpan], left: String, startsAtHead: Bool, endsWithPendingN: Bool,
+        shownText: (Int, JapaneseDisplay?, String) -> String? = { _, _, _ in nil }
+    ) -> [JapaneseDisplay?] {
         var shown = left
         let lastSpan = spans.count - (endsWithPendingN ? 2 : 1)
         return spans.enumerated().map { index, span in
+            let display: JapaneseDisplay?
+            let text: String
             switch span {
-            case .fixed(let text), .mark(let text, _):
-                shown += text
-                return nil
+            case .fixed(let fixed), .mark(let fixed, _):
+                display = nil
+                text = fixed
             case .japanese(let kana, let context, _):
                 let atHead = index == 0 ? startsAtHead : spans[index - 1].startsSentence
-                if index == lastSpan, atHead, kana.count == 1 {
-                    shown += kana
-                    return JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])
-                }
-                let display = japaneseConverter.display(kana: kana, context: context, left: shown)
-                shown += display.text
-                return display
+                display = index == lastSpan && atHead && kana.count == 1
+                    ? JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])
+                    : japaneseConverter.display(kana: kana, context: context, left: shown)
+                text = display!.text
             }
+            shown += shownText(index, display, shown) ?? text
+            return display
         }
     }
 

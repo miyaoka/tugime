@@ -34,11 +34,24 @@ extension Segmenter {
 
 extension Clause {
     /// 文節 focus の候補 index を選ぶ。その文節が丸括弧 1 文字なら、入れ子を数えて組になる括弧の文節を探し、
-    /// それも丸括弧 1 文字なら同じ形の候補を選ぶ。組の括弧がほかの文字と同じ文節にあるときは変えない
+    /// それも丸括弧 1 文字なら同じ形の候補を選ぶ。組の括弧がほかの文字と同じ文節にあるときは変えない。
+    /// 先頭以外の候補を選んだ文節は、その表記を選んだ表記（fixedValue）として持つ。先頭の候補に戻すと外す
     public static func selecting(_ index: Int, at focus: Int, in clauses: [Clause]) -> [Clause] {
         var selected = clauses
-        selected[focus].selected = index
+        selected[focus].select(index)
         return pairingBrackets(selected, at: focus)
+    }
+
+    /// 文節 focus で表記 text を選ぶ。候補に無ければ末尾に足して選ぶ（F6〜F10 で作った文字種）。組になる括弧も selecting と同じく合わせる
+    public static func selecting(text: String, at focus: Int, in clauses: [Clause]) -> [Clause] {
+        var added = clauses
+        if !added[focus].candidates.contains(text) { added[focus].candidates.append(text) }
+        return selecting(added[focus].candidates.firstIndex(of: text)!, at: focus, in: added)
+    }
+
+    private mutating func select(_ index: Int) {
+        selected = index
+        fixedValue = index == 0 ? nil : candidates[index]
     }
 
     private static func pairingBrackets(_ clauses: [Clause], at focus: Int) -> [Clause] {
@@ -67,7 +80,7 @@ extension Clause {
         let wanted = open ? opens[c] : opens.first(where: { $0.value == c })?.key
         guard clauses[target].output.count == 1, let wanted, let index = clauses[target].candidates.firstIndex(of: String(wanted)) else { return clauses }
         var paired = clauses
-        paired[target].selected = index
+        paired[target].select(index)
         return paired
     }
 }
