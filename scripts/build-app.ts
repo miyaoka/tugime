@@ -10,6 +10,7 @@ import { dictionary } from "./fetch-dictionary";
 import { genmai } from "./fetch-genmai";
 import { BUNDLE_ID, CHANNELS, COMMIT_KEY, SYNC_APP_KEY } from "./lib/channels";
 import { root } from "./lib/root";
+import { swiftBuild } from "./lib/swift-build";
 
 const channelName = process.env.TUGIME_BUILD_CHANNEL ?? "";
 const channel = CHANNELS.get(channelName);
@@ -20,21 +21,6 @@ const version = process.env.TUGIME_VERSION || "0.0.0";
 const app = join(root, "dist", `${name}.app`);
 // 組み立ての間にコミットされても、組み立てに使ったソースの状態を書くよう、swift build より先に読む
 const built = commit ? await builtCommit() : undefined;
-
-// SwiftPM の既定のビルドの仕組みは toolchain の版で違う。native はリソースを .app の Contents/Resources から探さないので、swiftbuild に固定する。
-// 対象は Apple Silicon だけなので arm64 だけを組み立てる。swiftbuild は指定しないと Intel 向けも含めた universal にする
-const build = [
-  "swift",
-  "build",
-  "--package-path",
-  root,
-  "-c",
-  "release",
-  "--build-system",
-  "swiftbuild",
-  "--arch",
-  "arm64",
-];
 
 /// HEAD の短いコミット。未追跡のファイルも swift build に入るので、追跡外も含めて変更があれば -dirty を付ける。
 /// ソースの zip のように root の直下に .git が無ければ unknown にする。git -C は親のディレクトリの別のリポジトリを探すので、git を呼ぶ前に見る。
@@ -66,9 +52,9 @@ console.log("== システム辞書");
 const systemDictionary = await dictionary();
 
 console.log("== swift build");
-await $`${build} --product tugime`;
-if (sync) await $`${build} --product tugime-sync`;
-const bin = (await $`${build} --show-bin-path`.text()).trim();
+await $`${swiftBuild} --product tugime`;
+if (sync) await $`${swiftBuild} --product tugime-sync`;
+const bin = (await $`${swiftBuild} --show-bin-path`.text()).trim();
 
 console.log(`== 組み立て ${app}`);
 await rm(app, { recursive: true, force: true });
