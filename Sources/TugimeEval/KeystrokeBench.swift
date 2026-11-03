@@ -84,7 +84,7 @@ public enum KeystrokeBench {
 
     public struct Report: Sendable {
         public var method: String
-        /// ConversionMethod.make(dictionary:) と区切りの準備にかかった時間。モデルの先読みを含む。システム辞書は mmap で開いてから渡すので、引いたページを読む時間は打鍵の側に入る
+        /// ConversionMethod.makeSegmenter(dictionary:generator:) で区切りを作るのにかかった時間。モデルの先読みを含む。システム辞書は mmap で開いてから渡すので、引いたページを読む時間は打鍵の側に入る
         public var loadSeconds: Double
         /// 読み込み直後と、全打鍵の後の最大常駐量（getrusage の ru_maxrss、macOS はバイト）
         public var peakBytesAfterLoad: Int
@@ -109,10 +109,11 @@ public enum KeystrokeBench {
     /// 不変条件:
     /// - 文ごとに、打鍵列の先頭 1 文字から全体まで 1 打鍵ずつ伸ばして liveText(prefix, leading: leading) を呼ぶ。入力メソッドが打鍵ごとに呼ぶのと同じ
     /// - 文の前に endComposition を呼ぶ。文の中では呼ばない（入力メソッドは打ち終えるまで覚えを持ち越す）
-    public static func run(
+    package static func run(
         selection: KeystrokeScript.Selection,
         method: ConversionMethod,
         dictionary: SystemDictionary,
+        generator: ConversionMethod.ModelGenerator,
         watchdog: Watchdog,
         progress: (String) -> Void
     ) throws -> Report {
@@ -120,7 +121,7 @@ public enum KeystrokeBench {
         let clock = ContinuousClock()
         let loadStart = clock.now
         watchdog.armLoad("読み込み \(method.spec)")
-        let segmenter = try method.makeSegmenter(dictionary: dictionary)
+        let segmenter = try method.makeSegmenter(dictionary: dictionary, generator: generator)
         let loadSeconds = seconds(clock.now - loadStart)
         let peakAfterLoad = maxResidentBytes()
         progress("変換器の読み込み \(String(format: "%.2f", loadSeconds))s、文 \(selection.scripts.count) 件（綴りで書けず外した文 \(selection.skipped.count) 件）")

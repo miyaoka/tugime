@@ -1,5 +1,6 @@
 import Foundation
 import TugimeCore
+import TugimeEngine
 
 let usage = """
     使い方（先頭に次を付けられる。--before <文字列> は入力欄のカーソルの前にその文字列がある状態として変換する。

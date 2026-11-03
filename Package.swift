@@ -26,12 +26,14 @@ let package = Package(
         ),
         .target(
             name: "TugimeCore",
-            dependencies: ["llama", "SystemDictionaryLayout"],
+            dependencies: ["SystemDictionaryLayout"],
             resources: [.copy("Resources")]
         ),
+        // 変換器を組み立てる。表示の変換のモデルを動かす llama.cpp に依存するのはここだけ
+        .target(name: "TugimeEngine", dependencies: ["TugimeCore", "llama"]),
         .executableTarget(
             name: "tugime-cli",
-            dependencies: ["TugimeCore"]
+            dependencies: ["TugimeCore", "TugimeEngine"]
         ),
         // 変換の方式とモデルを比べる検証の道具。配布物には入れない。測定は手元で実行する
         .target(
@@ -40,12 +42,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "tugime-eval",
-            dependencies: ["TugimeCore", "TugimeEval"]
+            dependencies: ["TugimeCore", "TugimeEngine", "TugimeEval"]
         ),
         .target(name: "UserDictionaryLayout"),
         .executableTarget(
             name: "TugimeIME",
-            dependencies: ["TugimeCore", "UserDictionaryLayout"],
+            dependencies: ["TugimeCore", "TugimeEngine", "UserDictionaryLayout"],
             // 入力メソッドの呼び出しはすべてメインスレッドで届くので、既定の隔離をメインアクターにする（SE-0466）
             swiftSettings: [.defaultIsolation(MainActor.self)],
             linkerSettings: [.linkedFramework("InputMethodKit")]

@@ -111,4 +111,22 @@ export async function dictionary(): Promise<string> {
   return out;
 }
 
-if (import.meta.main) console.log(await dictionary());
+/// 組み立ての結果を変えるソースが、commit と今の作業ツリーで同じか。CI が、base の辞書を組み立て直すかを決めるのに使う
+async function sameSources(commit: string): Promise<boolean> {
+  const { exitCode } =
+    await $`git -C ${root} diff --quiet ${commit} -- ${builders}`.nothrow();
+  if (exitCode === 0) return true;
+  if (exitCode === 1) return false;
+  throw new Error(`git diff が失敗した: ${exitCode}`);
+}
+
+// --compare-sources <commit> は、組み立ての結果を変えるソースが commit と同じなら same、違えば changed を出す
+if (import.meta.main) {
+  const at = process.argv.indexOf("--compare-sources");
+  if (at === -1) console.log(await dictionary());
+  else {
+    const commit = process.argv[at + 1];
+    if (!commit) throw new Error("--compare-sources に commit を渡す");
+    console.log((await sameSources(commit)) ? "same" : "changed");
+  }
+}

@@ -195,17 +195,18 @@ public enum AccuracyRun {
     ///
     /// 不変条件:
     /// - 精度は問題の読みを打ったときに確定する文字列で測る。読みを同梱の綴りの表で打鍵列に逆にたどり、
-    ///   ConversionMethod.makeSegmenter(dictionary:) で作った区切りの liveText に渡す。対象と基準は同じシステム辞書を使う
+    ///   ConversionMethod.makeSegmenter(dictionary:generator:) で作った区切りの liveText に渡す。対象と基準は同じシステム辞書と生成器を使う
     /// - Problem.left は、入力欄のカーソルより前の文字列として、入力メソッドと同じく Segmenter.Leading(field:) で読んで渡す
     /// - 問題ごとに両方の区切りの endComposition を呼ぶ
     /// - 打鍵列に逆にたどれない問題は打たずに outcome を untypable にし、どちらの方式も不正解とする。打てる問題が無ければ変換器を作る前に止める
     /// - 対象が基準なら区切りは 1 つだけ作り、baselineOutput = output とする
     /// - モデルを使う方式で打てた問題の全件の出力が基準と一致したら、記録を書いた後、集計を出す前に modelHadNoEffect を投げる。
     ///   一致した件数ではなく全件で判定する。一致の件数は集計に出すが判定には使わない
-    public static func run(
+    package static func run(
         problems: LoadedProblems,
         target: ConversionMethod,
         dictionary: SystemDictionary,
+        generator: ConversionMethod.ModelGenerator,
         record url: URL,
         watchdog: Watchdog,
         progress: (String) -> Void,
@@ -220,9 +221,9 @@ public enum AccuracyRun {
         let header = try AccuracyRecord.Header(method: target, problems: problems, startedAt: startedAt)
         let loadStart = clock.now
         watchdog.armLoad("読み込み \(target.spec)")
-        let targetSegmenter = try target.makeSegmenter(dictionary: dictionary)
+        let targetSegmenter = try target.makeSegmenter(dictionary: dictionary, generator: generator)
         watchdog.armLoad("読み込み \(ConversionMethod.baseline.spec)")
-        let baselineSegmenter = target == .baseline ? nil : try ConversionMethod.baseline.makeSegmenter(dictionary: dictionary)
+        let baselineSegmenter = target == .baseline ? nil : try ConversionMethod.baseline.makeSegmenter(dictionary: dictionary, generator: generator)
         progress("変換器の読み込み \(String(format: "%.2f", seconds(clock.now - loadStart)))s、問題 \(problems.problems.count) 件")
 
         var results: [AccuracyRecord.Result] = []

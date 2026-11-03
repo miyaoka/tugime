@@ -6,6 +6,10 @@ import Foundation
 /// 方式を足すときは case を 1 つ足し、接頭辞の定数と `specs` の表に 1 行ずつ足す。switch の網羅はコンパイラが確かめる。
 /// 検証の道具は case を switch せず、使い方の文言も `forms` から作るので、触らずに新しい方式を測れる
 public enum ConversionMethod: Sendable, Hashable {
+    /// モデルのファイルから、表示の文字列を生成するものを作る。モデルを読み込み終えた生成器を返し、最初の変換に読み込みの時間を混ぜない。
+    /// 読めなければプロセスごと止める（投げないので、make の呼び出し元は受け止められない）。llama.cpp でモデルを動かす TugimeEngine の modelGenerator(weight:) を渡す
+    package typealias ModelGenerator = (URL) -> any DirectDisplayGenerating
+
     /// システム辞書の格子だけで変換する。検証の基準
     case lattice
     /// 採点と候補の窓はシステム辞書の格子、表示は tugime が zenz 形式の GGUF のモデルを直接動かした出力そのもの
@@ -79,18 +83,17 @@ public enum ConversionMethod: Sendable, Hashable {
     }
 
     /// 同梱の綴りの表と語表で、この方式の区切りを作る。区切りはこれからだけ作る
-    public func makeSegmenter(dictionary: SystemDictionary) throws -> Segmenter {
-        try Segmenter(table: .bundled(), english: .bundled(), japanese: make(dictionary: dictionary))
+    package func makeSegmenter(dictionary: SystemDictionary, generator: ModelGenerator) throws -> Segmenter {
+        try Segmenter(table: .bundled(), english: .bundled(), japanese: make(dictionary: dictionary, generator: generator))
     }
 
-    /// 変換器を作り、モデルを読み込み終えた状態で返す。最初の変換で読み込みの時間が混ざらないよう、ここで先読みまで済ませる。
-    /// モデルを読めなければプロセスごと止まる（fatalError。投げるエラーではないので、呼び出し元は受け止められない）
-    public func make(dictionary: SystemDictionary) -> any JapaneseConverting {
+    /// この方式の変換器を作る。モデルを使う方式は、generator でモデルを読む
+    package func make(dictionary: SystemDictionary, generator: ModelGenerator) -> any JapaneseConverting {
         switch self {
         case .lattice:
             LatticeConverter(dictionary: dictionary)
         case .direct(let weight):
-            DirectConverter(scorer: LatticeConverter(dictionary: dictionary), generator: ZenzGenerator(weight: weight))
+            DirectConverter(scorer: LatticeConverter(dictionary: dictionary), generator: generator(weight))
         }
     }
 }

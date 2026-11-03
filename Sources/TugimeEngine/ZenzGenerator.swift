@@ -1,5 +1,6 @@
 import Foundation
 import llama
+import TugimeCore
 
 /// zenz 形式のモデル（GGUF）を llama.cpp で動かし、読みから出力の文字列を貪欲に生成する。llama.cpp を直接触るのはこのファイルだけ。
 ///
