@@ -97,7 +97,7 @@ public final class Segmenter {
         }
 
         /// 入力が前の文字列のどこに続くか
-        var continuation: Continuation { Continuation(after: text.last) }
+        var continuation: Continuation { Continuation(after: text) }
 
         /// 入力の最初の日本語区間の評価のしかた。前の文字列が数字で終わるなら、未確定の文字列の中の数字の後と同じく、その数字に続く形にする。
         /// 確定してから続きを打っても、まとめて打ったときと同じ評価になる
@@ -114,11 +114,22 @@ public final class Segmenter {
         case start
         /// 日本語の文の途中
         case afterJapanese
-        /// 英字・数字・記号など ASCII の後
+        /// 英字・記号など ASCII の後
         case afterEnglish
 
-        /// 前の文字列の最後の文字から決める。無い、空白・改行、文末の記号の後なら文頭、それ以外の ASCII の後なら英語の後、残りは日本語の後
-        init(after last: Character?) {
+        /// 前の文字列の最後の文字から決める。無い、空白・改行、文末の記号の後なら文頭、それ以外の ASCII の後なら英語の後、残りは日本語の後。
+        /// 数字で終わるなら、未確定の文字列の中と同じく、数字はその前の文字の側に付く。前が ASCII の英字や記号なら英語の後、それ以外は日本語の後
+        init(after text: String) {
+            let digits = text.reversed().prefix(while: Segmenter.isDigit).count
+            guard digits > 0 else {
+                self.init(last: text.last)
+                return
+            }
+            let before = text.dropLast(digits).last
+            self = before.map { $0.isASCII && !$0.isWhitespace } == true ? .afterEnglish : .afterJapanese
+        }
+
+        private init(last: Character?) {
             guard let last, !last.isWhitespace, !last.unicodeScalars.contains(where: \.properties.isSentenceTerminal) else {
                 self = .start
                 return
@@ -136,10 +147,13 @@ public final class Segmenter {
         return digits.isEmpty ? .afterWord : .afterNumber(digits)
     }
 
-    /// 数として読む数字。日本語区間の中でも英語区間の中でも、採点の変換の数の語として点を付ける
+    /// ASCII の数字か
     static func isDigit(_ c: Character) -> Bool {
         c.isASCII && c.isNumber
     }
+
+    /// 数字にはさまれたとき、入力を切らず数の一部として打ったまま残す句読点（3.14 1,000 10:30）
+    static let numberSeparators: Set<Character> = [".", ",", ":"]
 
     /// liveDisplay の文字列
     public func liveText(_ input: String, leading: Leading = .start) -> String {
@@ -288,8 +302,7 @@ public final class Segmenter {
             let end = i + key.count
             defer { i = end }
             guard symbol != nil || Self.punctuation[chars[i]] != nil else { continue }
-            // 数字にはさまれた句読点は数の一部（3.14 1,000 10:30）なので、入力を切らず打ったまま残す
-            if symbol == nil, i > 0, end < chars.count, Self.isDigit(chars[i - 1]), Self.isDigit(chars[end]) { continue }
+            if symbol == nil, Self.numberSeparators.contains(chars[i]), i > 0, end < chars.count, Self.isDigit(chars[i - 1]), Self.isDigit(chars[end]) { continue }
             var runSpans: [ScoredSpan] = []
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, observe: collect)
@@ -362,8 +375,13 @@ public final class Segmenter {
             best[end][segment.kind] = Cell(score: total, segment: segment, from: start, previousKind: previous)
         }
 
-        // 位置ごとの、綴りの表で最後まで読める終端とかな
-        let readingsAt = (0..<n).map { table.readings(from: $0, in: chars) }
+        // 位置ごとの、綴りの表で最後まで読める終端とかな。数字の直後の - は数の区切り（2026-11-03 03-1234-5678）で長音ではないので、
+        // それを含む読みは日本語の候補にしない
+        let numberDashes = chars.indices.filter { chars[$0] == "-" && $0 > 0 && Self.isDigit(chars[$0 - 1]) }
+        let readingsAt = (0..<n).map { start in
+            let limit = numberDashes.first { $0 >= start } ?? n
+            return table.readings(from: start, in: chars).filter { $0.end <= limit }
+        }
         for start in 0..<n {
             let reachable = start == 0 || !best[start].isEmpty
             guard reachable else { continue }

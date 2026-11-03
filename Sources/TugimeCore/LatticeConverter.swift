@@ -17,7 +17,8 @@ final class LatticeConverter: JapaneseConverting {
     static let numberCost: Int32 = 3000
 
     /// 読みの start..<end が、数字の連なりの頭から始まる数字だけの並びか。数の語は連なりの頭から始める。
-    /// 読みは後ろへ伸びるので、連なりの終わりは決めず、どこで終わっても 1 語にする
+    /// 読みは後ろへ伸びるので、連なりの終わりは決めず、どこで終わっても 1 語にする。格子は語の読みの最長の文字数より前へ遡らないので、
+    /// それより長い連なりは 1 語にならない
     private static func isNumber(_ kana: [Character], start: Int, end: Int) -> Bool {
         guard start == 0 || !Segmenter.isDigit(kana[start - 1]) else { return false }
         return kana[start..<end].allSatisfy(Segmenter.isDigit)
@@ -32,7 +33,7 @@ final class LatticeConverter: JapaneseConverting {
 
         var cost: Int32
         var start: Int32
-        /// 辞書の語の番号、利用者の語の番号、辞書に無い 1 かなの位置
+        /// 辞書の語の番号、利用者の語の番号、辞書に無い 1 かなと数の語の始まりの位置
         var word: Int32
         var kind: Kind
         var prevRank: UInt8
