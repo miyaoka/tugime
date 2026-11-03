@@ -347,6 +347,17 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(readings(clauses).contains("（かふぇ）"))
     }
 
+    /// 利用者が伸縮で範囲を決めた文節は、前の文節を伸縮して後ろを変換し直しても、その範囲のまま残る。表記は区間の全体を変換したものを切る
+    @Test func keepsTheRangeTheUserSetWhenAnEarlierClauseIsResized() throws {
+        var clauses = segmenter.clauses("kinouwatasihagooglewotukatta")
+        let wo = try #require(clauses.firstIndex { $0.reading == "を" })
+        clauses = segmenter.resize(segmenter.resize(clauses, at: wo, by: 1), at: wo, by: 1)
+        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
+        #expect(clauses.suffix(2).map(\.output).joined() == "を使った")
+    }
+
     /// 句読点は前の文節にも取り込める。2 文字以下の読める綴りは日本語になり、1 かなは 1 文節になるので、前の文節は え に決まる
     @Test func resizingTakesPunctuationIntoTheClauseBefore() {
         let original = segmenter.clauses("e,ki")

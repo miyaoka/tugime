@@ -29,13 +29,16 @@ public struct Clause: Sendable, Equatable {
     public var selected: Int
     /// この文節を含む区間。同じ区間の文節は同じ値を持つ
     public var span: ClauseSpan
+    /// 利用者が伸縮で範囲を決めた文節か。後ろの文節を変換し直しても、この文節の内側では切らず、両端では切る（Mozc の FIXED_BOUNDARY）
+    public var fixedRange: Bool
 
-    public init(kind: Kind, reading: String, candidates: [String], selected: Int, span: ClauseSpan) {
+    public init(kind: Kind, reading: String, candidates: [String], selected: Int, span: ClauseSpan, fixedRange: Bool = false) {
         self.kind = kind
         self.reading = reading
         self.candidates = candidates
         self.selected = selected
         self.span = span
+        self.fixedRange = fixedRange
     }
 
     public var output: String { candidates[selected] }
@@ -198,7 +201,8 @@ extension Segmenter {
             reading: reading,
             candidates: japaneseCandidates(reading: reading, best: japaneseConverter.display(kana: reading, context: context, left: left).text, context: context, span: span),
             selected: 0,
-            span: span
+            span: span,
+            fixedRange: true
         )
         let restKana = String(span.reading.dropFirst(start + length))
         let rest = restKana.isEmpty ? [] : japaneseClauses(
@@ -267,9 +271,10 @@ extension Segmenter {
                     span: span
                 ),
                 selected: 0,
-                span: span
+                span: span,
+                fixedRange: true
             )
-            : Clause(kind: Clause.Kind(fixed.kind), reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span)
+            : Clause(kind: Clause.Kind(fixed.kind), reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span, fixedRange: true)
         // 句読点か記号で終わる文節の後ろは、区切り・変換の文脈・文の頭かのどれも、その記号の後として決める
         let markContinuation = continuation(afterMarkOf: resized)
         let rest = self.clauses(
@@ -444,7 +449,7 @@ extension Segmenter {
     }
 
     /// 区間ごとの文節を、left に続けて前から順に表示の変換にし直す。日本語区間は文節に分け直し、それ以外の区間は選んだ文字列のまま残す。
-    /// 句読点か記号をまたいでまとめた区間は、利用者が決めた 1 文節なので分けない
+    /// 日本語区間の表記は区間の全体を 1 回変換して決め、利用者が伸縮で範囲を決めた文節（fixedRange）は、その範囲のまま残す（`keepingFixedRanges`）
     private func redisplay(_ clauses: [Clause], left: String) -> [Clause] {
         var groups: [[Clause]] = []
         for clause in clauses {
@@ -464,11 +469,33 @@ extension Segmenter {
         }
         // 伸縮した区間より後ろの文節だけなので、最初の文節は入力の最初ではない
         return zip(groups, displays(of: spans, left: left, startsAtHead: false, endsWithPendingN: false)).flatMap { group, display in
-            let span = group[0].span
-            return display.map { shown in
-                let parts = span.parts.isEmpty ? shown.clauses : [JapaneseClause(reading: span.reading, text: shown.text)]
-                return japaneseClauses(parts, context: span.context, in: span)
-            } ?? group
+            display.map { keepingFixedRanges(of: group, in: $0) } ?? group
+        }
+    }
+
+    /// 日本語区間の文節 group を、区間の表示 shown の文節にする。group に利用者が範囲を決めた文節があれば、その範囲の内側では切らず、
+    /// 両端で切る。ほかの区切りは表示の変換が決めたものを使う。表記は shown を読みの位置で切るので、文節の表記をつなぐと shown の表記になる。
+    /// 表記と読みの対応で位置が決まらない区切りは切らない（ReadingAlignment）
+    private func keepingFixedRanges(of group: [Clause], in shown: JapaneseDisplay) -> [Clause] {
+        let span = group[0].span
+        var start = 0
+        var fixed: [Range<Int>] = []
+        for clause in group {
+            if clause.fixedRange { fixed.append(start..<(start + clause.reading.count)) }
+            start += clause.reading.count
+        }
+        guard !fixed.isEmpty else { return japaneseClauses(shown.clauses, context: span.context, in: span) }
+        var shownCuts: [Int] = []
+        for clause in shown.clauses.dropLast() { shownCuts.append((shownCuts.last ?? 0) + clause.reading.count) }
+        let edges = fixed.flatMap { [$0.lowerBound, $0.upperBound] }.filter { $0 > 0 && $0 < span.reading.count }
+        let cuts = Set(shownCuts.filter { cut in !fixed.contains { $0.lowerBound < cut && cut < $0.upperBound } } + edges).sorted()
+        let parts = ReadingAlignment(text: shown.text, reading: span.reading)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: span.reading, text: shown.text)]
+        var position = 0
+        return japaneseClauses(parts, context: span.context, in: span).map { clause in
+            defer { position += clause.reading.count }
+            var kept = clause
+            kept.fixedRange = fixed.contains(position..<(position + clause.reading.count))
+            return kept
         }
     }
 
