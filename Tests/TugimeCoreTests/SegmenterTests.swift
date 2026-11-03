@@ -400,20 +400,38 @@ private final class DisplayRecorder: JapaneseConverting {
     /// github と cwd は綴りの表で読めないので英語、ni と de は 2 文字以下なので日本語になる
     @Test func keepsTheTextChosenOnAnEnglishClauseWhenTheSpansAfterAreJudgedAgain() throws {
         var clauses = segmenter.clauses("githubnicwdde")
-        #expect(readings(clauses) == ["github", "に", "cwd", "で"])
+        try #require(readings(clauses) == ["github", "に", "cwd", "で"])
         clauses = Clause.selecting(text: "ｃｗｄ", at: 2, in: clauses)
         clauses = segmenter.resize(clauses, at: 0, by: 1)
         let cwd = try #require(clauses.first { $0.reading == "cwd" })
         #expect(cwd.output == "ｃｗｄ")
     }
 
-    /// 先頭の候補に戻した文節は、選んだ表記を持たない
-    @Test func selectingTheFirstCandidateDropsTheChosenText() {
-        var clauses = segmenter.clauses("githubnicwdde")
-        clauses = Clause.selecting(text: "ｃｗｄ", at: 2, in: clauses)
-        #expect(clauses[2].fixedValue == "ｃｗｄ")
+    /// 先頭の候補に選び直した文節は、何も選ばなかった文節と同じく、前の文節を伸縮すると作り直す
+    @Test func selectingTheFirstCandidateAgainLetsTheClauseBeRebuilt() throws {
+        let original = segmenter.clauses("githubnicwdde")
+        try #require(readings(original) == ["github", "に", "cwd", "で"])
+        var clauses = Clause.selecting(text: "ｃｗｄ", at: 2, in: original)
         clauses = Clause.selecting(0, at: 2, in: clauses)
-        #expect(clauses[2].fixedValue == nil)
+        let resized = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(resized.map(\.output) == segmenter.resize(original, at: 0, by: 1).map(\.output))
+    }
+
+    /// 丸括弧の形を選び直すと組の括弧も同じ形になり、前の文節を伸縮して後ろを日英判定からやり直しても、両方その形のまま残る。
+    /// ( は直前が日本語なら （ になり、候補で打ったままの ( を選べる。github は綴りの表で読めないので英語、ni は 2 文字以下なので日本語になり、
+    /// github を伸ばすと に を取り込み、後ろの toka(cafe)desu を日英判定からやり直す
+    @Test func keepsBothBracketsOfAChosenFormWhenAnEarlierClauseIsResized() throws {
+        var clauses = segmenter.clauses("githubnitoka(cafe)desu")
+        let open = try #require(clauses.firstIndex { $0.output == "（" })
+        let close = try #require(clauses.firstIndex { $0.output == "）" })
+        try #require(clauses[0].reading == "github" && clauses[open - 1].kind == .japanese)
+        clauses = Clause.selecting(text: "(", at: open, in: clauses)
+        try #require(clauses[close].output == ")")
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        try #require(clauses[0].reading == "githubni")
+        let text = clauses.map(\.output).joined()
+        #expect(text.contains("(") && text.contains(")"))
+        #expect(!text.contains("（") && !text.contains("）"))
     }
 
     /// 句読点は前の文節にも取り込める。2 文字以下の読める綴りは日本語になり、1 かなは 1 文節になるので、前の文節は え に決まる
@@ -596,7 +614,6 @@ private final class FixedDisplayConverter: JapaneseConverting {
         #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
     }
 
-    /// 範囲の端（をつ の後ろ）が 使 の中に当たって切れないときは、その範囲を守らず、表示の変換の区切りにする
     /// 表記を選んだ文節は、範囲の端が 使 の中に当たって切れなくても、前後の読みを分けて変換し、その範囲と表記のまま残す
     @Test func keepsAChosenClauseWhoseEndCannotBeCut() {
         var clauses = segmenter.clauses(input)
@@ -608,6 +625,7 @@ private final class FixedDisplayConverter: JapaneseConverting {
         #expect(resized[resized.count - 2].output == "をツ")
     }
 
+    /// 範囲の端（をつ の後ろ）が 使 の中に当たって切れないときは、その範囲を守らず、表示の変換の区切りにする
     @Test func fallsBackToTheConverterCutsWhenAnEndCannotBeCut() {
         var clauses = segmenter.clauses(input)
         let wo = clauses.count - 2
