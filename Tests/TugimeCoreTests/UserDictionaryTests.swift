@@ -135,7 +135,7 @@ import Testing
     let segmenter: Segmenter
 
     init() throws {
-        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: LatticeConverter(dictionary: TestDictionary.shared))
+        segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
         segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé"))
     }
 

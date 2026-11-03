@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import TugimeCore
 
-/// 本物の変換器と、それで組んだ Segmenter。作るたびに辞書と語表を読むので、全テストで共有する
-private enum Shared {
-    static let converter = LatticeConverter(dictionary: TestDictionary.shared)
-    static let table = Result { try RomajiTable.bundled() }
-    static let english = Result { try EnglishModel.bundled() }
-    static let segmenter = Result { try make(converter) }
-
-    static func make(_ japanese: JapaneseConverting) throws -> Segmenter {
-        try Segmenter(table: table.get(), english: english.get(), japanese: japanese)
-    }
-}
 
 /// 本物の変換器に処理を任せ、表示の変換に渡された読みと左の文字列を呼ばれた順に記録する
 private final class DisplayRecorder: JapaneseConverting {
