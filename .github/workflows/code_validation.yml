@@ -80,7 +80,7 @@ jobs:
       - name: Test
         run: swift test
 
-  # 検証: PR と base の両方で変換の精度を測り、結果を Job Summary に出す
+  # 検証: PR と base の両方で変換の精度を測り、結果を成果物に残す。このジョブは PR のコードを動かすので、書き込みの権限を持たない
   eval:
     runs-on: macos-26
     timeout-minutes: 30
@@ -118,23 +118,69 @@ jobs:
       - name: Accuracy (base)
         run: '"$RUNNER_TEMP/base/.build/release/tugime-eval" accuracy --method lattice --problems "$PROBLEMS" --out "$RUNNER_TEMP/base.jsonl" | tee "$RUNNER_TEMP/base.txt"'
 
-      - name: Summary
+      - name: Report
         run: |
+          mkdir -p "$RUNNER_TEMP/report"
+          .build/release/tugime-eval compare "$RUNNER_TEMP/base.jsonl" "$RUNNER_TEMP/head.jsonl" > "$RUNNER_TEMP/changed.txt"
           {
             echo '## 変換の精度（lattice）'
-            echo '### head'
+            echo
+            echo "片方だけが正解した問題: $(wc -l < "$RUNNER_TEMP/changed.txt" | tr -d ' ') 件"
+            echo
+            echo '<details><summary>片方だけが正解した問題（base / head）</summary>'
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/changed.txt"
+            echo '```'
+            echo '</details>'
+            echo
+            echo '<details><summary>head の集計</summary>'
+            echo
             echo '```'
             cat "$RUNNER_TEMP/head.txt"
             echo '```'
-            echo '### base'
+            echo '</details>'
+            echo
+            echo '<details><summary>base の集計</summary>'
+            echo
             echo '```'
             cat "$RUNNER_TEMP/base.txt"
             echo '```'
-            echo '### 片方だけが正解した問題（base / head）'
-            echo '```'
-            .build/release/tugime-eval compare "$RUNNER_TEMP/base.jsonl" "$RUNNER_TEMP/head.jsonl"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo '</details>'
+          } > "$RUNNER_TEMP/report/comment.md"
+          cat "$RUNNER_TEMP/report/comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-report
+          path: ${{ runner.temp }}/report/comment.md
+
+  # 精度の結果を PR にコメントする。PR のコードを取り出さず、成果物の文章だけを本文として書く
+  eval-comment:
+    needs: eval
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: eval-report
+
+      # 必要な権限をコードで宣言する。PR へのコメントは pull-requests:write で書ける
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+
+      # App が書いた最後のコメントを書き換え、無ければ作る。PR ごとに 1 つのコメントにする
+      - name: Comment
+        run: gh pr comment "$PR" --repo "$REPO" --edit-last --create-if-none --body-file comment.md
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
 
   # ==============================================================
   # scripts の TypeScript の型と整形
