@@ -2,6 +2,7 @@ import Carbon
 import Cocoa
 import InputMethodKit
 import TugimeCore
+import TugimeEngine
 
 /// 日本語モードと英数モードの入力源 ID は、バンドル ID に接尾辞を付けたもの
 enum InputMode: String {

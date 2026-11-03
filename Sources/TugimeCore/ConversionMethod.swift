@@ -78,19 +78,13 @@ public enum ConversionMethod: Sendable, Hashable {
         }
     }
 
-    /// 同梱の綴りの表と語表で、この方式の区切りを作る。区切りはこれからだけ作る
-    public func makeSegmenter(dictionary: SystemDictionary) throws -> Segmenter {
-        try Segmenter(table: .bundled(), english: .bundled(), japanese: make(dictionary: dictionary))
-    }
-
-    /// 変換器を作り、モデルを読み込み終えた状態で返す。最初の変換で読み込みの時間が混ざらないよう、ここで先読みまで済ませる。
-    /// モデルを読めなければプロセスごと止まる（fatalError。投げるエラーではないので、呼び出し元は受け止められない）
-    public func make(dictionary: SystemDictionary) -> any JapaneseConverting {
+    /// 変換器を作る。モデルを動かす generator は、llama.cpp に依存する TugimeEngine が渡す
+    package func make(dictionary: SystemDictionary, generator: (URL) -> any DirectDisplayGenerating) -> any JapaneseConverting {
         switch self {
         case .lattice:
             LatticeConverter(dictionary: dictionary)
         case .direct(let weight):
-            DirectConverter(scorer: LatticeConverter(dictionary: dictionary), generator: ZenzGenerator(weight: weight))
+            DirectConverter(scorer: LatticeConverter(dictionary: dictionary), generator: generator(weight))
         }
     }
 }

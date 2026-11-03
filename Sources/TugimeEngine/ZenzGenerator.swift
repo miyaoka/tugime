@@ -1,5 +1,6 @@
 import Foundation
 import llama
+import TugimeCore
 
 /// zenz 形式のモデル（GGUF）を llama.cpp で動かし、読みから出力の文字列を貪欲に生成する。llama.cpp を直接触るのはこのファイルだけ。
 ///
@@ -68,7 +69,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
         resources.release()
     }
 
-    func generate(left: String, kana: String) -> String {
+    package func generate(left: String, kana: String) -> String {
         var output = ""
         var parts = ZenzPrompt.chunks(kana, maxLength: ZenzPrompt.maxChunkLength(positions: maxPositions))[...]
         while let part = parts.popFirst() {
@@ -87,7 +88,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
         return ZenzPrompt.restoreSpaces(output)
     }
 
-    func reset() {
+    package func reset() {
         truncate(0)
         drafts = [:]
     }

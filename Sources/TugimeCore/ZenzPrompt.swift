@@ -6,20 +6,20 @@ import Foundation
 /// - 左の文脈は最後の 500 字。空白は全角の空白にし、改行は除く
 /// - 40 字を超える読みは句読点で区切り、前の区切りの出力を左の文脈に足して続きを変換する
 /// - 出力は読みの 1.3 倍 + 8 トークンまで生成し、最初の改行で切る
-enum ZenzPrompt {
-    static let contextMark = "\u{EE02}"
-    static let inputMark = "\u{EE00}"
-    static let outputMark = "\u{EE01}"
-    static let maxContextLength = 500
-    static let chunkLength = 40
-    static let outputPerKana = 1.3
-    static let outputMargin = 8
+package enum ZenzPrompt {
+    package static let contextMark = "\u{EE02}"
+    package static let inputMark = "\u{EE00}"
+    package static let outputMark = "\u{EE01}"
+    package static let maxContextLength = 500
+    package static let chunkLength = 40
+    package static let outputPerKana = 1.3
+    package static let outputMargin = 8
     private static let chunkEnds: Set<Unicode.Scalar> = ["、", "。", "，", "．", "！", "？", "!", "?"]
 
     /// 左の文脈。left が空でなければ left。left が空で数字に続くなら、その数字。
     /// それ以外は空。afterWord で left が空なのは、前の語がある入力欄のカーソルより前の文字列を読めなかったときで、
     /// その語を tugime は知らないので、仮の語を置かずに文脈なしで変換する
-    static func leftContext(context: JapaneseContext, left: String) -> String {
+    package static func leftContext(context: JapaneseContext, left: String) -> String {
         guard left.isEmpty else { return left }
         switch context {
         case .afterNumber(let digits): return digits
@@ -28,34 +28,34 @@ enum ZenzPrompt {
         }
     }
 
-    static func text(left: String, kana: String) -> String {
+    package static func text(left: String, kana: String) -> String {
         let context = String(String.UnicodeScalarView(left.unicodeScalars.suffix(maxContextLength)))
         return preprocess((context.isEmpty ? "" : contextMark + context) + inputMark + Kana.katakana(kana) + outputMark)
     }
 
     /// モデルの出力の全角の空白を、入力の空白に戻す
-    static func restoreSpaces(_ output: String) -> String {
+    package static func restoreSpaces(_ output: String) -> String {
         output.replacingOccurrences(of: "\u{3000}", with: " ")
     }
 
     /// 1 つの区切りの出力。最初の改行より後は捨てる
-    static func cutAtNewline(_ output: String) -> String {
+    package static func cutAtNewline(_ output: String) -> String {
         output.firstIndex(of: "\n").map { String(output[..<$0]) } ?? output
     }
 
     /// 1 つの区切りで生成するトークン数の上限。上限で止まった出力も、そのまま出力にする
-    static func outputLimit(_ kana: String) -> Int {
+    package static func outputLimit(_ kana: String) -> Int {
         Int(Double(kana.unicodeScalars.count) * outputPerKana) + outputMargin
     }
 
     /// 出力に位置の半分までを使うとき、1 つの区切りの読みと出力が収まる読みの長さ
-    static func maxChunkLength(positions: Int) -> Int {
+    package static func maxChunkLength(positions: Int) -> Int {
         Int(Double(positions / 2 - outputMargin) / outputPerKana)
     }
 
     /// 句読点で終わる部分を、chunkLength 字を超えない範囲で前から順にまとめる。読みが伸びるだけなら、最後以外の区切りは変わらない。
     /// 句読点の無いまま maxLength 字を超える部分は、maxLength 字ごとに区切る。入力を切り詰めるときに読みが落ちないようにするため
-    static func chunks(_ kana: String, maxLength: Int) -> [String] {
+    package static func chunks(_ kana: String, maxLength: Int) -> [String] {
         let scalars = Array(kana.unicodeScalars)
         guard scalars.count > chunkLength else { return [kana] }
         var raw: [[Unicode.Scalar]] = []
@@ -80,7 +80,7 @@ enum ZenzPrompt {
     }
 
     /// fits が偽を返す区切りを、真を返すまで半分ずつに分ける。読みは削らないので、繋ぐと元の区切りの並びになる
-    static func halving(_ parts: [String], until fits: (String) -> Bool) -> [String] {
+    package static func halving(_ parts: [String], until fits: (String) -> Bool) -> [String] {
         parts.flatMap { part -> [String] in
             if fits(part) { return [part] }
             let scalars = part.unicodeScalars

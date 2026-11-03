@@ -1,5 +1,6 @@
 import Foundation
 import TugimeCore
+import TugimeEngine
 import TugimeEval
 
 // 検証の道具。進捗は標準エラー、結果は標準出力と --out のファイル
@@ -50,6 +51,12 @@ func repositoryDictionary() throws -> SystemDictionary {
     try SystemDictionary(url: SystemDictionary.inRepository(URL(fileURLWithPath: FileManager.default.currentDirectoryPath)))
 }
 
+/// リポジトリの辞書で、方式ごとの区切りを作る
+func segmenterFactory() throws -> (ConversionMethod) throws -> Segmenter {
+    let dictionary = try repositoryDictionary()
+    return { try $0.makeSegmenter(dictionary: dictionary) }
+}
+
 /// サブコマンドの表
 let commands: [String: (ArraySlice<String>) throws -> Void] = [
     "accuracy": { args in
@@ -60,7 +67,7 @@ let commands: [String: (ArraySlice<String>) throws -> Void] = [
         let problems = try ProblemFiles(directory: URL(fileURLWithPath: o["--problems"]!)).load()
         stderr("問題 \(problems.problems.count) 件。判定に写せず捨てた行 \(problems.dropped.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: "、"))")
         try AccuracyRun.run(
-            problems: problems, target: method, dictionary: try repositoryDictionary(), record: URL(fileURLWithPath: o["--out"]!), watchdog: watchdog,
+            problems: problems, target: method, makeSegmenter: try segmenterFactory(), record: URL(fileURLWithPath: o["--out"]!), watchdog: watchdog,
             progress: stderr, report: { print($0) }
         )
     },
@@ -80,7 +87,7 @@ let commands: [String: (ArraySlice<String>) throws -> Void] = [
         for problem in selection.skipped {
             stderr("綴りで書けないので外す: \(problem.id) \(problem.kana)")
         }
-        let report = try KeystrokeBench.run(selection: selection, method: method, dictionary: try repositoryDictionary(), watchdog: watchdog, progress: stderr)
+        let report = try KeystrokeBench.run(selection: selection, method: method, makeSegmenter: try segmenterFactory(), watchdog: watchdog, progress: stderr)
         watchdog.arm(item: "書き出し")
         try (report.finalTextLines.joined(separator: "\n") + "\n").write(toFile: o["--out"]!, atomically: true, encoding: .utf8)
         watchdog.finish()
