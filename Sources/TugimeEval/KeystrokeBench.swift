@@ -112,7 +112,7 @@ public enum KeystrokeBench {
     public static func run(
         selection: KeystrokeScript.Selection,
         method: ConversionMethod,
-        dictionary: SystemDictionary,
+        makeSegmenter: (ConversionMethod) throws -> Segmenter,
         watchdog: Watchdog,
         progress: (String) -> Void
     ) throws -> Report {
@@ -120,7 +120,7 @@ public enum KeystrokeBench {
         let clock = ContinuousClock()
         let loadStart = clock.now
         watchdog.armLoad("読み込み \(method.spec)")
-        let segmenter = try method.makeSegmenter(dictionary: dictionary)
+        let segmenter = try makeSegmenter(method)
         let loadSeconds = seconds(clock.now - loadStart)
         let peakAfterLoad = maxResidentBytes()
         progress("変換器の読み込み \(String(format: "%.2f", loadSeconds))s、文 \(selection.scripts.count) 件（綴りで書けず外した文 \(selection.skipped.count) 件）")

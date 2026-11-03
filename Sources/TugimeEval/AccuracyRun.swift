@@ -205,7 +205,7 @@ public enum AccuracyRun {
     public static func run(
         problems: LoadedProblems,
         target: ConversionMethod,
-        dictionary: SystemDictionary,
+        makeSegmenter: (ConversionMethod) throws -> Segmenter,
         record url: URL,
         watchdog: Watchdog,
         progress: (String) -> Void,
@@ -220,9 +220,9 @@ public enum AccuracyRun {
         let header = try AccuracyRecord.Header(method: target, problems: problems, startedAt: startedAt)
         let loadStart = clock.now
         watchdog.armLoad("読み込み \(target.spec)")
-        let targetSegmenter = try target.makeSegmenter(dictionary: dictionary)
+        let targetSegmenter = try makeSegmenter(target)
         watchdog.armLoad("読み込み \(ConversionMethod.baseline.spec)")
-        let baselineSegmenter = target == .baseline ? nil : try ConversionMethod.baseline.makeSegmenter(dictionary: dictionary)
+        let baselineSegmenter = target == .baseline ? nil : try makeSegmenter(.baseline)
         progress("変換器の読み込み \(String(format: "%.2f", seconds(clock.now - loadStart)))s、問題 \(problems.problems.count) 件")
 
         var results: [AccuracyRecord.Result] = []

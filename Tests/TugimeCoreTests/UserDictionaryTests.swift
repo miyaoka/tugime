@@ -36,7 +36,7 @@ import Testing
 
 /// 本物の変換器に利用者の語を入れる。テストで共有する変換器（SegmenterTests の Shared）の辞書を変えないよう、別に作る
 @Suite struct UserWordConversionTests {
-    let converter = ConversionMethod.baseline.make(dictionary: TestDictionary.shared)
+    let converter = LatticeConverter(dictionary: TestDictionary.shared)
 
     /// 入力全体が利用者の語 1 つでも、その語に変換し、候補の窓にも並べる
     @Test func convertsAndListsTheUserWord() throws {
@@ -135,7 +135,7 @@ import Testing
     let segmenter: Segmenter
 
     init() throws {
-        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: ConversionMethod.baseline.make(dictionary: TestDictionary.shared))
+        segmenter = try Segmenter(table: .bundled(), english: .bundled(), japanese: LatticeConverter(dictionary: TestDictionary.shared))
         segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé"))
     }
 

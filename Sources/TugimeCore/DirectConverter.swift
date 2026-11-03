@@ -1,7 +1,7 @@
 import Foundation
 
 /// 区間の読みと左の文脈から、表示の文字列を生成するもの。DirectConverter はモデルをこれ越しにだけ使うので、テストではモデルなしに差し替えられる
-protocol DirectDisplayGenerating: AnyObject {
+package protocol DirectDisplayGenerating: AnyObject {
     /// left に続く kana の出力。前の生成で覚えたものを使って速くしてよく、そのために出力がそれまでの呼び出しに左右されることがある。
     /// reset の直後の呼び出しは、前の呼び出しに左右されない
     func generate(left: String, kana: String) -> String

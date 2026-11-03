@@ -80,6 +80,30 @@ jobs:
       - name: Test
         run: swift test
 
+  # 検証: 辞書を組み立てず、辞書を読むスイートを外して走らせる
+  test-no-dictionary:
+    runs-on: macos-26
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        build-system: [native, swiftbuild]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - uses: $/.github/actions/setup-environment
+
+      - name: Test
+        run: swift test --build-system "$BUILD_SYSTEM" --skip 'SegmenterTests|LiveDisplayTests|LeftContextTests|SentenceHeadKanaTests|UserWordConversionTests'
+        env:
+          BUILD_SYSTEM: ${{ matrix.build-system }}
+
+      - name: Linked libraries
+        run: find .build -name TugimeCoreTests -path '*MacOS*' -type f -exec otool -L {} \;
+
   # ==============================================================
   # scripts の TypeScript の型と整形
   # ==============================================================
