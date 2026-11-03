@@ -77,7 +77,7 @@ private final class LeftRecorder: JapaneseConverting {
     }
 
     /// 末尾に打った単独の n は、次に打つまで な行 か「ん」かが決まらないので打ったまま。nn と、後ろに句読点が続く n は「ん」
-    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "これ、n"), ("sounaruton", "そうなるとn"), ("nn", "ん"), ("n.", "ん。")])
+    @Test(arguments: [("n", "n"), ("3n", "3n"), ("githubn", "githubn"), ("kore,n", "これ、n"), ("sounaruton", "そうなるとn"), ("nn", "ん"), ("n.", "ん。"), ("3-5nin", "3-5にn")])
     func keepsAPendingNAsTyped(input: String, expected: String) {
         #expect(segmenter.liveText(input) == expected)
     }
