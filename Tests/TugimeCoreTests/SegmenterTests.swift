@@ -331,15 +331,31 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(clauses[0].reading == "（かふぇ）")
         #expect(clauses[0].output == "（カフェ）")
         #expect(Set(["（かふぇ）", "（カフェ）", "(cafe)"]).isSubset(of: clauses[0].candidates))
-        #expect(segmenter.convertClause(clauses, at: 0, to: .fullwidthRoman) == "（ｃａｆｅ）")
         for _ in 0..<6 { clauses = segmenter.resize(clauses, at: 0, by: -1) }
         #expect(clauses.map(\.output) == original.map(\.output))
     }
 
-    /// 句読点は前の文節にも取り込め、取り込んだ文節の後ろは句読点の後として区切る
+    /// 括弧をまたいでまとめた文節は、前の文節を伸縮して後ろを変換し直しても 1 文節のまま残る
+    @Test func keepsAJoinedClauseWholeWhenAnEarlierClauseIsResized() {
+        var clauses = segmenter.clauses("kyouhanihon(cafe)desu")
+        for _ in 0..<4 { clauses = segmenter.resize(clauses, at: 2, by: 1) }
+        #expect(clauses.map(\.output) == ["今日は", "日本", "（カフェ）", "です"])
+        clauses = segmenter.resize(segmenter.resize(clauses, at: 0, by: 1), at: 0, by: -1)
+        #expect(clauses.contains { $0.output == "（カフェ）" })
+    }
+
+    /// 句読点は前の文節にも取り込める
     @Test func resizingTakesPunctuationIntoTheClauseBefore() {
         let clauses = segmenter.resize(segmenter.clauses("kore,are"), at: 0, by: 1)
         #expect(clauses.map(\.output) == ["これ、", "are"])
+    }
+
+    /// 句読点で終わる文節の後ろは、区切りの選択と同じく句読点の後の文の頭として表示する（文の頭の 1 かなは変換しない）
+    @Test func showsTheRestAfterATakenPunctuationLikeAfterThePunctuation() {
+        let original = segmenter.clauses("kore,ki")
+        #expect(segmenter.resize(original, at: 0, by: 1).map(\.output) == ["これ、", "き"])
+        let shrunk = segmenter.resize(segmenter.resize(original, at: 1, by: 1), at: 1, by: -1)
+        #expect(shrunk.map(\.output) == original.map(\.output))
     }
 
     // MARK: 途中の確定

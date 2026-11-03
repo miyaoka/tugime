@@ -22,7 +22,7 @@ public struct Clause: Sendable, Equatable {
     }
 
     public var kind: Kind
-    /// 日本語はかな、全体の変換は全体の読み、それ以外は打ったまま
+    /// 日本語はかな（句読点か記号をまたいでまとめた文節は、その記号と読めない英字も含む）、全体の変換は全体の読み、それ以外は打ったまま
     public var reading: String
     /// 先頭が区切りを選んだときの結果。重複は無い
     public var candidates: [String]
@@ -47,7 +47,7 @@ public struct ClauseSpan: Sendable, Equatable {
     public var index: Int
     /// 打鍵列のうちこの区間に当たる部分
     public var source: String
-    /// 日本語ならかな、それ以外は打ったまま
+    /// 日本語ならかな（句読点か記号をまたいでまとめた区間は、その記号と読めない英字も含む）、それ以外は打ったまま
     public var reading: String
     /// 区間の先頭の文節を変換するときの文脈
     public var context: JapaneseContext
@@ -68,8 +68,22 @@ public struct ClauseSpan: Sendable, Equatable {
 
 /// 句読点か記号をまたいでまとめた区間の 1 部分。まとめる前に見えていた区間の種類と形を持ち、伸縮の単位はこれで決める
 public struct ClausePart: Sendable, Equatable {
-    /// 日本語・英語・句読点と記号のどれか
-    public var kind: Clause.Kind
+    public enum Kind: Sendable, Equatable {
+        case japanese
+        case english
+        /// 句読点と記号
+        case mark
+
+        var clauseKind: Clause.Kind {
+            switch self {
+            case .japanese: .japanese
+            case .english: .english
+            case .mark: .punctuation
+            }
+        }
+    }
+
+    public var kind: Kind
     public var source: String
     /// 日本語はかな、句読点と記号は見えていた形、英語は打ったまま
     public var reading: String
@@ -79,12 +93,13 @@ extension Segmenter {
     /// 区切りを選び、日本語区間を文節に分けて、文節ごとに候補の一覧を付ける。
     /// 日本語区間は、前の文字列と前の区間の表示を左の文脈にして表示の変換で文節に分ける
     public func clauses(_ input: String, leading: Leading = .start) -> [Clause] {
-        clauses(of: segment(input, leading: leading), left: leading.text, firstIndex: 0)
+        clauses(of: segment(input, leading: leading), left: leading.text, firstIndex: 0, startsAtHead: true)
     }
 
-    /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る
-    private func clauses(of segments: [Segment], left: String, firstIndex: Int) -> [Clause] {
-        zip(segments, displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: firstIndex == 0, endsWithPendingN: false)).enumerated().flatMap { offset, pair in
+    /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る。
+    /// startsAtHead は最初の区間が文の頭（入力の最初か、日本語の記号にした句読点・記号の直後）か
+    private func clauses(of segments: [Segment], left: String, firstIndex: Int, startsAtHead: Bool) -> [Clause] {
+        zip(segments, displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: startsAtHead, endsWithPendingN: false)).enumerated().flatMap { offset, pair in
             let (segment, display) = pair
             let span = ClauseSpan(index: firstIndex + offset, source: segment.source, reading: segment.reading, context: segment.context)
             guard let display else {
@@ -218,8 +233,8 @@ extension Segmenter {
         let left = leading.text + before.map(\.output).joined()
         let fixedContext = context(after: before.last, keys: keys[..<range.lowerBound], leading: leading)
         let parts = parts(in: range.lowerBound..<end, of: units, keys: keys, leading: leading)
-        let joinedParts = parts.count > 1 && parts.contains { $0.kind == .punctuation } ? parts : []
-        let fixed = parts.count == 1 && parts[0].kind == .punctuation || !joinedParts.isEmpty
+        let joinedParts = parts.count > 1 && parts.contains { $0.kind == .mark } ? parts : []
+        let fixed = parts.count == 1 && parts[0].kind == .mark || !joinedParts.isEmpty
             ? joined(parts, context: fixedContext)
             : singleSpan(String(keys[range.lowerBound..<end]), context: fixedContext, preceding: keys[..<range.lowerBound].last ?? leading.text.last)
         let span: ClauseSpan
@@ -255,18 +270,19 @@ extension Segmenter {
                 span: span
             )
             : Clause(kind: Clause.Kind(fixed.kind), reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span)
-        // 句読点か記号で終わる文節の後ろは、その記号の後として評価する
-        let lastMark = parts.last.flatMap { $0.kind == .punctuation ? $0 : nil }
+        // 句読点か記号で終わる文節の後ろは、区切り・変換の文脈・文の頭かのどれも、その記号の後として決める
+        let markContinuation = parts.last.flatMap { $0.kind == .mark ? Self.continuation(after: $0.source, mark: $0.reading) : nil }
         let rest = self.clauses(
             of: segment(
                 String(keys[end...]),
-                after: lastMark.map { Self.continuation(after: $0.source, mark: $0.reading) } ?? (fixed.kind == .english ? .afterEnglish : .afterJapanese),
+                after: markContinuation ?? (fixed.kind == .english ? .afterEnglish : .afterJapanese),
                 context: context(after: resized, keys: keys[..<end], leading: leading),
                 opened: Self.unclosedOpeners(in: left + resized.output),
                 preceding: keys[..<end].last ?? leading.text.last
             ),
             left: left + resized.output,
-            firstIndex: span.index + 1
+            firstIndex: span.index + 1,
+            startsAtHead: markContinuation.map { $0 != .afterEnglish } ?? false
         )
         return before + [resized] + rest
     }
@@ -278,37 +294,43 @@ extension Segmenter {
         for unit in units where unit.start < range.upperBound && range.lowerBound < unit.end {
             let start = max(unit.start, range.lowerBound)
             let source = String(keys[start..<min(unit.end, range.upperBound)])
-            let reading = switch unit.kind {
+            let part: ClausePart = switch unit.kind {
             case .japanese:
-                source == unit.span.source
-                    ? unit.span.reading
-                    : Self.japaneseReading(table: table, of: source, before: keys[..<start].last ?? leading.text.last) ?? source
-            case .punctuation: unit.span.reading
-            case .english, .word, .whole: source
+                ClausePart(
+                    kind: .japanese,
+                    source: source,
+                    reading: source == unit.span.source
+                        ? unit.span.reading
+                        : Self.japaneseReading(table: table, of: source, before: keys[..<start].last ?? leading.text.last) ?? source
+                )
+            case .punctuation:
+                ClausePart(kind: .mark, source: source, reading: unit.span.reading)
+            case .english:
+                ClausePart(kind: .english, source: source, reading: source)
+            case .word, .whole:
+                preconditionFailure("利用者の辞書で日本語にした打鍵と全体の変換の区間は、伸縮の単位にならない（unitEnd、unitStart）")
             }
-            if let last = parts.last, last.kind == unit.kind, unit.kind != .punctuation {
-                parts[parts.count - 1].source += source
-                parts[parts.count - 1].reading += reading
+            if let last = parts.last, last.kind == part.kind, part.kind != .mark {
+                parts[parts.count - 1].source += part.source
+                parts[parts.count - 1].reading += part.reading
             } else {
-                parts.append(ClausePart(kind: unit.kind, source: source, reading: reading))
+                parts.append(part)
             }
         }
         return parts
     }
 
     /// 部分を 1 つにした区間。句読点か記号 1 つだけなら、見えていた形の句読点の区間にする。それ以外は、かなをつないだ読みの日本語の区間にする。
-    /// 句読点と記号は見えていた形にする。そのあいだに並ぶ日本語と英語の部分は、英語を含んでも打鍵の全体をかなに読み切れれば（RomajiTable.typedKana）
-    /// そのかなにする。英語の区間を 1 打鍵ずつ取り込むと、残りの打鍵が日本語に判定し直されて部分が分かれる（cafe が c と あふぇ）ので、
-    /// 部分ごとではなく打鍵の全体で読む。読み切れなければ、部分ごとに日本語はかな、英語は `englishReading` で読めたもの、読めなければ打ったままにする。
-    /// 変換エンジンは記号を含む読みを、記号をそのまま通して変換する
+    /// 句読点と記号は見えていた形にする。そのあいだに並ぶ日本語と英語の部分は、英語を含めば、打鍵の全体をかなに読み切れるとき（RomajiTable.typedKana）
+    /// そのかなにする。読み切れなければ、部分ごとに日本語はかな、英語は `englishReading` で読めたもの、読めなければ打ったままにする
     private func joined(_ parts: [ClausePart], context: JapaneseContext) -> Segment {
         let source = parts.map(\.source).joined()
-        if parts.count == 1, parts[0].kind == .punctuation {
+        if parts.count == 1, parts[0].kind == .mark {
             return Segment(kind: .punctuation, source: source, reading: parts[0].reading, output: parts[0].reading, score: 0, context: context)
         }
         var runs: [[ClausePart]] = []
         for part in parts {
-            if part.kind != .punctuation, let last = runs.last?.last, last.kind != .punctuation {
+            if part.kind != .mark, let last = runs.last?.last, last.kind != .mark {
                 runs[runs.count - 1].append(part)
             } else {
                 runs.append([part])
@@ -331,7 +353,7 @@ extension Segmenter {
             return span.span.parts.isEmpty ? [span] : span.span.parts.map { part in
                 defer { start += part.source.count }
                 let piece = ClauseSpan(index: span.span.index, source: part.source, reading: part.reading, context: span.span.context, resized: true)
-                return KeySpan(span: piece, kind: part.kind, start: start)
+                return KeySpan(span: piece, kind: part.kind.clauseKind, start: start)
             }
         }
     }
@@ -397,9 +419,12 @@ extension Segmenter {
     }
 
     /// 文節を変換する文脈。英語の後は前の語に続く形（数字の後は助数詞）、日本語の後は前の文節に続く形、
-    /// 句読点と記号の後は区切りの選択と同じ形
+    /// 句読点と記号の後（句読点か記号で終わるまとめた文節の後を含む）は区切りの選択と同じ形
     private func context(after previous: Clause?, keys: ArraySlice<Character>, leading: Leading) -> JapaneseContext {
         guard let previous else { return leading.japaneseContext }
+        if let last = previous.span.parts.last, last.kind == .mark {
+            return Self.continuation(after: last.source, mark: last.reading).japaneseContext
+        }
         switch previous.kind {
         case .english:
             return Self.context(after: keys)
@@ -412,7 +437,8 @@ extension Segmenter {
         }
     }
 
-    /// 区間ごとの文節を、left に続けて前から順に表示の変換にし直す。日本語区間は文節に分け直し、それ以外の区間は選んだ文字列のまま残す
+    /// 区間ごとの文節を、left に続けて前から順に表示の変換にし直す。日本語区間は文節に分け直し、それ以外の区間は選んだ文字列のまま残す。
+    /// 句読点か記号をまたいでまとめた区間は、利用者が決めた 1 文節なので分けない
     private func redisplay(_ clauses: [Clause], left: String) -> [Clause] {
         var groups: [[Clause]] = []
         for clause in clauses {
@@ -431,7 +457,11 @@ extension Segmenter {
         }
         // 伸縮した区間より後ろの文節だけなので、最初の文節は入力の最初ではない
         return zip(groups, displays(of: spans, left: left, startsAtHead: false, endsWithPendingN: false)).flatMap { group, display in
-            display.map { japaneseClauses($0.clauses, context: group[0].span.context, in: group[0].span) } ?? group
+            let span = group[0].span
+            return display.map { shown in
+                let parts = span.parts.isEmpty ? shown.clauses : [JapaneseClause(reading: span.reading, text: shown.text)]
+                return japaneseClauses(parts, context: span.context, in: span)
+            } ?? group
         }
     }
 
