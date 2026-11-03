@@ -80,29 +80,61 @@ jobs:
       - name: Test
         run: swift test
 
-  # 検証: 辞書を組み立てず、辞書を読むスイートを外して走らせる
-  test-no-dictionary:
+  # 検証: PR と base の両方で変換の精度を測り、結果を Job Summary に出す
+  eval:
     runs-on: macos-26
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        build-system: [native, swiftbuild]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           show-progress: false
+          fetch-depth: 0
+          filter: blob:none
 
       - uses: $/.github/actions/setup-environment
 
-      - name: Test
-        run: swift test --build-system "$BUILD_SYSTEM" --skip 'SegmenterTests|LiveDisplayTests|LeftContextTests|SentenceHeadKanaTests|UserWordConversionTests'
-        env:
-          BUILD_SYSTEM: ${{ matrix.build-system }}
+      - name: Build system dictionary
+        run: bun scripts/fetch-dictionary.ts
 
-      - name: Linked libraries
-        run: find .build -name TugimeCoreTests -path '*MacOS*' -type f -exec otool -L {} \;
+      - name: Fetch problems
+        run: echo "PROBLEMS=$(bun scripts/fetch-eval.ts)" >> "$GITHUB_ENV"
+
+      - name: Build tugime-eval (head)
+        run: swift build -c release --product tugime-eval
+
+      - name: Accuracy (head)
+        run: .build/release/tugime-eval accuracy --method lattice --problems "$PROBLEMS" --out "$RUNNER_TEMP/head.jsonl" | tee "$RUNNER_TEMP/head.txt"
+
+      - name: Check out base
+        run: git worktree add "$RUNNER_TEMP/base" "origin/$BASE_REF"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+
+      - name: Build tugime-eval (base)
+        run: swift build -c release --product tugime-eval --package-path "$RUNNER_TEMP/base"
+
+      # base の道具も、head が組み立てた辞書をリポジトリの直下から読む
+      - name: Accuracy (base)
+        run: '"$RUNNER_TEMP/base/.build/release/tugime-eval" accuracy --method lattice --problems "$PROBLEMS" --out "$RUNNER_TEMP/base.jsonl" | tee "$RUNNER_TEMP/base.txt"'
+
+      - name: Summary
+        run: |
+          {
+            echo '## 変換の精度（lattice）'
+            echo '### head'
+            echo '```'
+            cat "$RUNNER_TEMP/head.txt"
+            echo '```'
+            echo '### base'
+            echo '```'
+            cat "$RUNNER_TEMP/base.txt"
+            echo '```'
+            echo '### 片方だけが正解した問題（base / head）'
+            echo '```'
+            .build/release/tugime-eval compare "$RUNNER_TEMP/base.jsonl" "$RUNNER_TEMP/head.jsonl"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ==============================================================
   # scripts の TypeScript の型と整形
