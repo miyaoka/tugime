@@ -53,14 +53,26 @@ public struct ClauseSpan: Sendable, Equatable {
     public var context: JapaneseContext
     /// 区切りの選択ではなく、文節の伸縮で利用者が打鍵の範囲を決めた区間か
     public var resized: Bool
+    /// 文節の伸縮で句読点か記号をまたいでまとめた区間なら、まとめた部分を前から並べたもの。それ以外は空
+    public var parts: [ClausePart]
 
-    public init(index: Int, source: String, reading: String, context: JapaneseContext, resized: Bool = false) {
+    public init(index: Int, source: String, reading: String, context: JapaneseContext, resized: Bool = false, parts: [ClausePart] = []) {
         self.index = index
         self.source = source
         self.reading = reading
         self.context = context
         self.resized = resized
+        self.parts = parts
     }
+}
+
+/// 句読点か記号をまたいでまとめた区間の 1 部分。まとめる前に見えていた区間の種類と形を持ち、伸縮の単位はこれで決める
+public struct ClausePart: Sendable, Equatable {
+    /// 日本語・英語・句読点と記号のどれか
+    public var kind: Clause.Kind
+    public var source: String
+    /// 日本語はかな、句読点と記号は見えていた形、英語は打ったまま
+    public var reading: String
 }
 
 extension Segmenter {
@@ -84,9 +96,10 @@ extension Segmenter {
 
     /// 文節を伸ばす（delta が正）・縮める（負）。区切りの選択が決めた日本語の区間の中では、区間の読みのかなの上で 1 かなずつ伸縮し、
     /// 1 かなより短くしない（`resizeInsideSpan`）。文節の始まりが 1 つの綴りの途中にあって打鍵を切り出せないときも同じにする。
-    /// それ以外（区間の終わりを越えて伸ばすとき、英語の文節、伸縮で作った区間の文節）は、打鍵列の上で文節の終わりを 1 単位ずつ動かし
-    /// （`unitEnd`、`unitStart`）、文節の打鍵を 1 区間として日英を判定して、後ろの打鍵は日英判定と変換をやり直す（`rebuild`）。
-    /// 句読点と記号の文節は伸縮しない。全体を 1 つの文字種にした文節は、区切りから文節を作り直して最初の文節を伸縮する。
+    /// それ以外（区間の終わりを越えて伸ばすとき、英語の文節、句読点と記号の文節、伸縮で作った区間の文節）は、打鍵列の上で文節の終わりを
+    /// 1 単位ずつ動かし（`unitEnd`、`unitStart`）、文節の打鍵を 1 区間として日英を判定して、後ろの打鍵は日英判定と変換をやり直す（`rebuild`）。
+    /// 句読点と記号をまたぐ文節は、またいだ部分を区間に持たせ、1 つの日本語の文節として変換する（`joined`）。伸縮の単位は、その部分ごとに決める。
+    /// 利用者の辞書で日本語にした打鍵の文節は伸縮しない。全体を 1 つの文字種にした文節は、区切りから文節を作り直して最初の文節を伸縮する。
     /// 伸縮できなければ元のまま返す
     /// leading は clauses より前にある、入力欄のカーソルより前の文字列
     public func resize(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading = .start) -> [Clause] {
@@ -96,7 +109,7 @@ extension Segmenter {
             let resized = resize(segmented, at: 0, by: delta, leading: leading)
             return resized == segmented ? clauses : resized
         }
-        guard clause.kind != .punctuation, clause.kind != .word else { return clauses }
+        guard clause.kind != .word else { return clauses }
         let spans = keySpans(of: clauses)
         let keys = Array(spans.map(\.span.source).joined())
         guard let own = spans.first(where: { $0.span == clause.span }) else { return clauses }
@@ -110,14 +123,15 @@ extension Segmenter {
                 return resizeInsideSpan(clauses, at: index, by: delta, leading: leading) ?? clauses
             }
         }
+        let units = unitSpans(of: spans)
         var end = range.upperBound
         for _ in 0..<abs(delta) {
-            guard let next = delta > 0 ? unitEnd(from: end, in: spans) : unitStart(before: end, in: spans), next > range.lowerBound else {
+            guard let next = delta > 0 ? unitEnd(from: end, in: units) : unitStart(before: end, in: units), next > range.lowerBound else {
                 return clauses
             }
             end = next
         }
-        return rebuild(clauses, at: index, keys: keys, spanStart: own.start, range: range, end: end, leading: leading)
+        return rebuild(clauses, at: index, keys: keys, units: units, spanStart: own.start, range: range, end: end, leading: leading)
     }
 
     /// 文節の打鍵 range.lowerBound..<end と、その直前に並ぶ文節を合わせたものが、打鍵列の全体を区切りの選択にかけたときの
@@ -185,8 +199,9 @@ extension Segmenter {
     /// 後ろの打鍵は、その文節の表示を左の文脈にして日英判定と変換をやり直す。range は文節の今の打鍵、spanStart はその区間の始まり。
     /// 同じ区間の前の文節は、文節の始まりまでを 1 つの区間として持ち直す。そのうえで、直前の文節と合わせた打鍵が区切りの選択の
     /// 1 区間と一致すれば（伸ばして元に戻したとき）、それらの文節をその区間に戻す。一致しなければ、文節は伸縮で作った区間にする
+    /// 文節の打鍵が句読点か記号の区間をまたげば、その文節は、またいだ部分を持つ 1 つの日本語の区間にする（`joined`）
     private func rebuild(
-        _ clauses: [Clause], at index: Int, keys: [Character], spanStart: Int, range: Range<Int>, end: Int, leading: Leading
+        _ clauses: [Clause], at index: Int, keys: [Character], units: [KeySpan], spanStart: Int, range: Range<Int>, end: Int, leading: Leading
     ) -> [Clause] {
         let clause = clauses[index]
         var before = Array(clauses[..<index])
@@ -201,13 +216,14 @@ extension Segmenter {
             before[i].span = head
         }
         let left = leading.text + before.map(\.output).joined()
-        let fixed = singleSpan(
-            String(keys[range.lowerBound..<end]),
-            context: context(after: before.last, keys: keys[..<range.lowerBound], leading: leading),
-            preceding: keys[..<range.lowerBound].last ?? leading.text.last
-        )
+        let fixedContext = context(after: before.last, keys: keys[..<range.lowerBound], leading: leading)
+        let parts = parts(in: range.lowerBound..<end, of: units, keys: keys, leading: leading)
+        let joinedParts = parts.count > 1 && parts.contains { $0.kind == .punctuation } ? parts : []
+        let fixed = parts.count == 1 && parts[0].kind == .punctuation || !joinedParts.isEmpty
+            ? joined(parts, context: fixedContext)
+            : singleSpan(String(keys[range.lowerBound..<end]), context: fixedContext, preceding: keys[..<range.lowerBound].last ?? leading.text.last)
         let span: ClauseSpan
-        if let (segmented, count) = segmentedSpan(fixed, before: before, start: range.lowerBound, end: end, keys: keys, leading: leading) {
+        if joinedParts.isEmpty, let (segmented, count) = segmentedSpan(fixed, before: before, start: range.lowerBound, end: end, keys: keys, leading: leading) {
             let first = before.count - count
             span = ClauseSpan(
                 index: first < before.count ? before[first].span.index : (before.last?.span.index ?? -1) + 1,
@@ -219,7 +235,9 @@ extension Segmenter {
                 before[i].span = span
             }
         } else {
-            span = ClauseSpan(index: (before.last?.span.index ?? -1) + 1, source: fixed.source, reading: fixed.reading, context: fixed.context, resized: true)
+            span = ClauseSpan(
+                index: (before.last?.span.index ?? -1) + 1, source: fixed.source, reading: fixed.reading, context: fixed.context, resized: true, parts: joinedParts
+            )
         }
         // 区間の 2 つ目以降の文節は、前の文節に続く形で変換する
         let clauseContext = before.last?.span == span ? JapaneseContext.afterWord : span.context
@@ -237,10 +255,12 @@ extension Segmenter {
                 span: span
             )
             : Clause(kind: Clause.Kind(fixed.kind), reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span)
+        // 句読点か記号で終わる文節の後ろは、その記号の後として評価する
+        let lastMark = parts.last.flatMap { $0.kind == .punctuation ? $0 : nil }
         let rest = self.clauses(
             of: segment(
                 String(keys[end...]),
-                after: fixed.kind == .english ? .afterEnglish : .afterJapanese,
+                after: lastMark.map { Self.continuation(after: $0.source, mark: $0.reading) } ?? (fixed.kind == .english ? .afterEnglish : .afterJapanese),
                 context: context(after: resized, keys: keys[..<end], leading: leading),
                 opened: Self.unclosedOpeners(in: left + resized.output),
                 preceding: keys[..<end].last ?? leading.text.last
@@ -249,6 +269,71 @@ extension Segmenter {
             firstIndex: span.index + 1
         )
         return before + [resized] + rest
+    }
+
+    /// 打鍵列の range にある、今見えている区間（まとめた区間はその部分）ごとの部分。日本語は打鍵をかなに読み直し、
+    /// 句読点と記号は見えていた形のまま持つ。隣り合う日本語どうし、英語どうしはつなぐ
+    private func parts(in range: Range<Int>, of units: [KeySpan], keys: [Character], leading: Leading) -> [ClausePart] {
+        var parts: [ClausePart] = []
+        for unit in units where unit.start < range.upperBound && range.lowerBound < unit.end {
+            let start = max(unit.start, range.lowerBound)
+            let source = String(keys[start..<min(unit.end, range.upperBound)])
+            let reading = switch unit.kind {
+            case .japanese:
+                source == unit.span.source
+                    ? unit.span.reading
+                    : Self.japaneseReading(table: table, of: source, before: keys[..<start].last ?? leading.text.last) ?? source
+            case .punctuation: unit.span.reading
+            case .english, .word, .whole: source
+            }
+            if let last = parts.last, last.kind == unit.kind, unit.kind != .punctuation {
+                parts[parts.count - 1].source += source
+                parts[parts.count - 1].reading += reading
+            } else {
+                parts.append(ClausePart(kind: unit.kind, source: source, reading: reading))
+            }
+        }
+        return parts
+    }
+
+    /// 部分を 1 つにした区間。句読点か記号 1 つだけなら、見えていた形の句読点の区間にする。それ以外は、かなをつないだ読みの日本語の区間にする。
+    /// 句読点と記号は見えていた形にする。そのあいだに並ぶ日本語と英語の部分は、英語を含んでも打鍵の全体をかなに読み切れれば（RomajiTable.typedKana）
+    /// そのかなにする。英語の区間を 1 打鍵ずつ取り込むと、残りの打鍵が日本語に判定し直されて部分が分かれる（cafe が c と あふぇ）ので、
+    /// 部分ごとではなく打鍵の全体で読む。読み切れなければ、部分ごとに日本語はかな、英語は `englishReading` で読めたもの、読めなければ打ったままにする。
+    /// 変換エンジンは記号を含む読みを、記号をそのまま通して変換する
+    private func joined(_ parts: [ClausePart], context: JapaneseContext) -> Segment {
+        let source = parts.map(\.source).joined()
+        if parts.count == 1, parts[0].kind == .punctuation {
+            return Segment(kind: .punctuation, source: source, reading: parts[0].reading, output: parts[0].reading, score: 0, context: context)
+        }
+        var runs: [[ClausePart]] = []
+        for part in parts {
+            if part.kind != .punctuation, let last = runs.last?.last, last.kind != .punctuation {
+                runs[runs.count - 1].append(part)
+            } else {
+                runs.append([part])
+            }
+        }
+        let kana = runs.map { run in
+            if run.contains(where: { $0.kind == .english }) {
+                let typed = table.typedKana(of: run.map(\.source).joined())
+                if typed.complete { return typed.kana }
+            }
+            return run.map { $0.kind == .english ? englishReading(of: $0.source) ?? $0.source : $0.reading }.joined()
+        }.joined()
+        return Segment(kind: .japanese, source: source, reading: kana, output: kana, score: 0, context: context)
+    }
+
+    /// 伸縮の単位を決める区間の並び。句読点か記号をまたいでまとめた区間は、まとめた部分ごとに分ける
+    private func unitSpans(of spans: [KeySpan]) -> [KeySpan] {
+        spans.flatMap { span in
+            var start = span.start
+            return span.span.parts.isEmpty ? [span] : span.span.parts.map { part in
+                defer { start += part.source.count }
+                let piece = ClauseSpan(index: span.span.index, source: part.source, reading: part.reading, context: span.span.context, resized: true)
+                return KeySpan(span: piece, kind: part.kind, start: start)
+            }
+        }
     }
 
     /// 未確定の打鍵列の中での区間の位置
@@ -278,13 +363,15 @@ extension Segmenter {
     }
 
     /// 打鍵列の position から始まる、文節が取り込む 1 単位の終わり。日本語の区間では読み切れる最短の綴り（っ と単独の ん は
-    /// 次のかなと合わせる）、英語の区間では 1 打鍵（打ったままの句読点を含む）。
-    /// 句読点と記号の区間と、打鍵列の終わりでは nil
+    /// 次のかなと合わせる）、英語の区間では 1 打鍵（打ったままの句読点を含む）、句読点と記号の区間では区間の全体。
+    /// 利用者の辞書で日本語にした打鍵の区間と、打鍵列の終わりでは nil
     private func unitEnd(from position: Int, in spans: [KeySpan]) -> Int? {
         guard let next = spans.first(where: { $0.start <= position && position < $0.end }) else { return nil }
         switch next.kind {
-        case .punctuation, .word, .whole:
+        case .word, .whole:
             return nil
+        case .punctuation:
+            return next.end
         case .english:
             return position + 1
         case .japanese:
@@ -293,12 +380,15 @@ extension Segmenter {
     }
 
     /// 打鍵列の position で終わる、文節が手放す 1 単位の始まり。日本語の区間では区間の始まりから読み切れる綴りの境目のうち
-    /// position より前で最も後ろのもの、英語の区間では 1 打鍵前。句読点と記号の区間と、打鍵列の始まりでは nil
+    /// position より前で最も後ろのもの、英語の区間では 1 打鍵前、句読点と記号の区間では区間の始まり。
+    /// 利用者の辞書で日本語にした打鍵の区間と、打鍵列の始まりでは nil
     private func unitStart(before position: Int, in spans: [KeySpan]) -> Int? {
         guard let span = spans.first(where: { $0.start < position && position <= $0.end }) else { return nil }
         switch span.kind {
-        case .punctuation, .word, .whole:
+        case .word, .whole:
             return nil
+        case .punctuation:
+            return span.start
         case .english:
             return position - 1
         case .japanese:

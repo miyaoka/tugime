@@ -297,6 +297,8 @@ private final class DisplayRecorder: JapaneseConverting {
         ("main,dev", ">+-<-+>+--"),
         ("kyouhatokyo", "+++++----->+-"),
         ("watasihagooglewotukau", ">>+-<+++---->>-+"),
+        ("kyouha(cafe)desu", ">+++++-----<++>+-"),
+        ("kore,are,sore", "+++>-<--->+"),
     ])
     func resizingKeepsEveryKeystroke(input: String, operations: String) {
         var clauses = segmenter.clauses(input)
@@ -316,6 +318,28 @@ private final class DisplayRecorder: JapaneseConverting {
             }
             #expect(keys == input, "\(operation) \(clauses.map(\.output))")
         }
+    }
+
+    /// 括弧の文節を伸ばすと、括弧と中の語を 1 つの日本語の文節にして変換する。縮めると元の区切りに戻る
+    @Test func resizingAcrossBracketsConvertsThemAsOneClause() {
+        let original = segmenter.clauses("(cafe)")
+        #expect(original.map(\.output) == ["（", "cafe", "）"])
+        var clauses = original
+        for _ in 0..<6 { clauses = segmenter.resize(clauses, at: 0, by: 1) }
+        #expect(clauses.count == 1)
+        #expect(clauses[0].kind == .japanese)
+        #expect(clauses[0].reading == "（かふぇ）")
+        #expect(clauses[0].output == "（カフェ）")
+        #expect(Set(["（かふぇ）", "（カフェ）", "(cafe)"]).isSubset(of: clauses[0].candidates))
+        #expect(segmenter.convertClause(clauses, at: 0, to: .fullwidthRoman) == "（ｃａｆｅ）")
+        for _ in 0..<6 { clauses = segmenter.resize(clauses, at: 0, by: -1) }
+        #expect(clauses.map(\.output) == original.map(\.output))
+    }
+
+    /// 句読点は前の文節にも取り込め、取り込んだ文節の後ろは句読点の後として区切る
+    @Test func resizingTakesPunctuationIntoTheClauseBefore() {
+        let clauses = segmenter.resize(segmenter.clauses("kore,are"), at: 0, by: 1)
+        #expect(clauses.map(\.output) == ["これ、", "are"])
     }
 
     // MARK: 途中の確定
