@@ -323,48 +323,58 @@ private final class DisplayRecorder: JapaneseConverting {
     /// 括弧の文節を伸ばすと、括弧と中の語を 1 つの日本語の文節にして変換する。縮めると元の区切りに戻る
     @Test func resizingAcrossBracketsConvertsThemAsOneClause() {
         let original = segmenter.clauses("(cafe)")
-        #expect(original.map(\.output) == ["（", "cafe", "）"])
+        #expect(original.map(\.kind) == [.punctuation, .english, .punctuation])
+        #expect(readings(original) == ["（", "cafe", "）"])
         var clauses = original
         for _ in 0..<6 { clauses = segmenter.resize(clauses, at: 0, by: 1) }
         #expect(clauses.count == 1)
         #expect(clauses[0].kind == .japanese)
         #expect(clauses[0].reading == "（かふぇ）")
-        #expect(clauses[0].output == "（カフェ）")
-        #expect(Set(["（かふぇ）", "（カフェ）", "(cafe)"]).isSubset(of: clauses[0].candidates))
+        // かなと打ったままの形は規則で決まる。変換した表記は例文の記録で確かめる
+        #expect(Set(["（かふぇ）", "(cafe)"]).isSubset(of: clauses[0].candidates))
         for _ in 0..<6 { clauses = segmenter.resize(clauses, at: 0, by: -1) }
-        #expect(clauses.map(\.output) == original.map(\.output))
+        #expect(clauses.map(\.kind) == original.map(\.kind))
+        #expect(readings(clauses) == readings(original))
     }
 
     /// 括弧をまたいでまとめた文節は、前の文節を伸縮して後ろを変換し直しても 1 文節のまま残る
-    @Test func keepsAJoinedClauseWholeWhenAnEarlierClauseIsResized() {
+    @Test func keepsAJoinedClauseWholeWhenAnEarlierClauseIsResized() throws {
         var clauses = segmenter.clauses("kyouhanihon(cafe)desu")
-        for _ in 0..<4 { clauses = segmenter.resize(clauses, at: 2, by: 1) }
-        #expect(clauses.map(\.output) == ["今日は", "日本", "（カフェ）", "です"])
+        let bracket = try #require(clauses.firstIndex { $0.reading == "（" })
+        for _ in 0..<4 { clauses = segmenter.resize(clauses, at: bracket, by: 1) }
+        #expect(readings(clauses).contains("（かふぇ）"))
         clauses = segmenter.resize(segmenter.resize(clauses, at: 0, by: 1), at: 0, by: -1)
-        #expect(clauses.contains { $0.output == "（カフェ）" })
+        #expect(readings(clauses).contains("（かふぇ）"))
     }
 
     /// 句読点は前の文節にも取り込める
     @Test func resizingTakesPunctuationIntoTheClauseBefore() {
         let clauses = segmenter.resize(segmenter.clauses("kore,are"), at: 0, by: 1)
-        #expect(clauses.map(\.output) == ["これ、", "are"])
+        #expect(readings(clauses) == ["これ、", "are"])
+        #expect(clauses.map(\.kind) == [.japanese, .english])
     }
 
     /// 句読点で終わる文節の後ろは、区切りの選択と同じく句読点の後の文の頭として表示する（文の頭の 1 かなは変換しない）
-    @Test func showsTheRestAfterATakenPunctuationLikeAfterThePunctuation() {
+    @Test func showsTheRestAfterATakenPunctuationLikeAfterThePunctuation() throws {
         let original = segmenter.clauses("kore,ki")
-        #expect(segmenter.resize(original, at: 0, by: 1).map(\.output) == ["これ、", "き"])
+        let taken = segmenter.resize(original, at: 0, by: 1)
+        #expect(readings(taken) == ["これ、", "き"])
+        let last = try #require(taken.last)
+        #expect(last.output == last.reading)
         let shrunk = segmenter.resize(segmenter.resize(original, at: 1, by: 1), at: 1, by: -1)
-        #expect(shrunk.map(\.output) == original.map(\.output))
+        #expect(readings(shrunk) == readings(original))
+        #expect(shrunk.last?.output == shrunk.last?.reading)
     }
 
     /// 記号で終わるまとめた文節の後ろは、前の文節を伸縮して変換し直しても、記号の後の文の頭として表示する
-    @Test func keepsTheRestAfterAJoinedClauseAtTheSentenceHeadWhenRedisplayed() {
+    @Test func keepsTheRestAfterAJoinedClauseAtTheSentenceHeadWhenRedisplayed() throws {
         var clauses = segmenter.clauses("kyouhanihon(cafe)ki")
-        for _ in 0..<4 { clauses = segmenter.resize(clauses, at: 2, by: 1) }
-        #expect(clauses.map(\.output) == ["今日は", "日本", "（カフェ）", "き"])
+        let bracket = try #require(clauses.firstIndex { $0.reading == "（" })
+        for _ in 0..<4 { clauses = segmenter.resize(clauses, at: bracket, by: 1) }
+        #expect(Array(readings(clauses).suffix(2)) == ["（かふぇ）", "き"])
         clauses = segmenter.resize(segmenter.resize(clauses, at: 0, by: 1), at: 0, by: -1)
-        #expect(clauses.last?.output == "き")
+        let last = try #require(clauses.last)
+        #expect(last.reading == "き" && last.output == "き")
     }
 
     // MARK: 途中の確定
