@@ -34,7 +34,7 @@ import Testing
     }
 }
 
-/// 本物の変換器に利用者の語を入れる。テストで共有する変換器（SegmenterTests の Shared）の辞書を変えないよう、別に作る
+/// 本物の変換器に利用者の語を入れる
 @Suite struct UserWordConversionTests {
     let converter = LatticeConverter(dictionary: TestDictionary.shared)
 
@@ -130,7 +130,7 @@ import Testing
     }
 }
 
-/// 打鍵で登録した辞書を、区切りに入れる。共有する区切り（SegmenterTests の Shared）の辞書を変えないよう、別に作る
+/// 打鍵で登録した辞書を、区切りに入れる
 @Suite struct UserDictionarySegmenterTests {
     let segmenter: Segmenter
 

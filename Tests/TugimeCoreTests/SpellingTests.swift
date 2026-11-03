@@ -5,7 +5,7 @@ import Testing
     let table: RomajiTable
 
     init() throws {
-        table = try RomajiTable.bundled()
+        table = try Shared.table.get()
     }
 
     private func keys(_ kana: String) -> String? {
