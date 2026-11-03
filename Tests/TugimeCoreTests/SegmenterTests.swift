@@ -375,6 +375,12 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(table.typedKana(of: "github") == ("ぎてゅb", false))
     }
 
+    /// かなにするときだけ読む綴りの表は綴りの行だけを持ち、@ の指定はその表の名前と行を示してエラーにする
+    @Test func rejectsDirectivesInTheTypedKanaTable() {
+        let error = #expect(throws: RomajiTable.ParseError.self) { try RomajiTable(contents: "a\tあ", typedKana: "ca\tか\n@sokuon\tc") }
+        #expect(error == .directiveNotAllowed(file: "romaji-typed-kana.tsv", 2, "@sokuon\tc"))
+    }
+
     /// 英語の区間の候補は、打ったままの綴りの次に全角の英字を並べる。語を読み切れればかなも並べ、読み切れなければ並べない
     @Test func listsFullwidthLettersAfterTheTypedSpelling() {
         let cafe = segmenter.clauses("cafe")[0].candidates

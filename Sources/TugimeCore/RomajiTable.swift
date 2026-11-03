@@ -3,23 +3,27 @@ import Foundation
 /// 利用者の綴りの表。打鍵列の区間をかなとして最後まで読めるかを判定する。
 /// 打鍵をそのままかなにする（typedKana）ための、かなにするときだけ足して読む綴りも持つ
 public struct RomajiTable: Sendable {
-    public enum ParseError: Error, CustomStringConvertible {
-        case malformedLine(Int, String)
-        case unknownDirective(Int, String)
-        case duplicateSpelling(Int, String)
-        case directiveInTypedKana(Int, String)
-        case missingResource
+    /// file は読んだ表の名前（romaji.tsv など）
+    public enum ParseError: Error, CustomStringConvertible, Equatable {
+        case malformedLine(file: String, Int, String)
+        case unknownDirective(file: String, Int, String)
+        case duplicateSpelling(file: String, Int, String)
+        case directiveNotAllowed(file: String, Int, String)
+        case missingResource(String)
 
         public var description: String {
             switch self {
-            case .malformedLine(let n, let line): "綴りの表 \(n) 行目を読めない: \(line)"
-            case .unknownDirective(let n, let line): "綴りの表 \(n) 行目の指定が分からない: \(line)"
-            case .duplicateSpelling(let n, let key): "綴りの表 \(n) 行目の綴り \(key) は前の行にもある"
-            case .directiveInTypedKana(let n, let line): "かなにするときだけ読む綴り \(n) 行目に @ の指定は書けない: \(line)"
-            case .missingResource: "既定の綴りの表がバンドルに無い"
+            case .malformedLine(let file, let n, let line): "\(file) \(n) 行目を読めない: \(line)"
+            case .unknownDirective(let file, let n, let line): "\(file) \(n) 行目の指定が分からない: \(line)"
+            case .duplicateSpelling(let file, let n, let key): "\(file) \(n) 行目の綴り \(key) は前の行にもある"
+            case .directiveNotAllowed(let file, let n, let line): "\(file) \(n) 行目に @ の指定は書けない: \(line)"
+            case .missingResource(let file): "既定の \(file) がバンドルに無い"
             }
         }
     }
+
+    static let tableFile = "romaji.tsv"
+    static let typedKanaFile = "romaji-typed-kana.tsv"
 
     let entries: [String: String]
     /// 綴りごとの、表の中で何番目の行か。同じかなの綴りは上の行が既定の打ち方
@@ -33,9 +37,8 @@ public struct RomajiTable: Sendable {
 
     /// contents は綴りの表、typedKana は打鍵をかなにするときだけ足して読む綴り。typedKana は綴りの行だけを持ち、同じ綴りは contents を使う
     public init(contents: String, typedKana: String) throws {
-        let table = try Self.parse(contents)
-        let extra = try Self.parse(typedKana)
-        if let line = extra.directives.first { throw ParseError.directiveInTypedKana(line.number, line.text) }
+        let table = try Self.parse(contents, file: Self.tableFile, allowsDirectives: true)
+        let extra = try Self.parse(typedKana, file: Self.typedKanaFile, allowsDirectives: false)
         self.entries = table.entries
         self.rank = table.rank
         self.maxKeyLength = table.entries.keys.map(\.count).max() ?? 0
@@ -45,47 +48,46 @@ public struct RomajiTable: Sendable {
         self.typedKanaMaxKeyLength = typedKanaEntries.keys.map(\.count).max() ?? 0
     }
 
+    /// allowsDirectives が偽なら、@ で始まる行をエラーにする
     private static func parse(
-        _ contents: String
-    ) throws -> (
-        entries: [String: String], rank: [String: Int], sokuon: Set<Character>, nBefore: Set<Character>, directives: [(number: Int, text: String)]
-    ) {
+        _ contents: String, file: String, allowsDirectives: Bool
+    ) throws -> (entries: [String: String], rank: [String: Int], sokuon: Set<Character>, nBefore: Set<Character>) {
         var entries: [String: String] = [:]
         var rank: [String: Int] = [:]
         var sokuon: Set<Character> = []
         var nBefore: Set<Character> = []
-        var directives: [(number: Int, text: String)] = []
         for (index, raw) in contents.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
             let fields = line.split(separator: "\t", omittingEmptySubsequences: true)
-            guard fields.count == 2 else { throw ParseError.malformedLine(index + 1, line) }
+            guard fields.count == 2 else { throw ParseError.malformedLine(file: file, index + 1, line) }
             let key = String(fields[0])
             let value = String(fields[1])
             guard key.hasPrefix("@") else {
-                guard entries.updateValue(value, forKey: key) == nil else { throw ParseError.duplicateSpelling(index + 1, key) }
+                guard entries.updateValue(value, forKey: key) == nil else { throw ParseError.duplicateSpelling(file: file, index + 1, key) }
                 rank[key] = rank.count
                 continue
             }
-            directives.append((index + 1, line))
+            guard allowsDirectives else { throw ParseError.directiveNotAllowed(file: file, index + 1, line) }
             switch key {
             case "@sokuon": sokuon = Set(value)
             case "@n": nBefore = Set(value)
-            default: throw ParseError.unknownDirective(index + 1, line)
+            default: throw ParseError.unknownDirective(file: file, index + 1, line)
             }
         }
-        return (entries, rank, sokuon, nBefore, directives)
+        return (entries, rank, sokuon, nBefore)
     }
 
     public static func bundled() throws -> RomajiTable {
-        try RomajiTable(contents: resource("romaji"), typedKana: resource("romaji-typed-kana"))
+        try RomajiTable(contents: resource(tableFile), typedKana: resource(typedKanaFile))
     }
 
-    private static func resource(_ name: String) throws -> String {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "tsv", subdirectory: "Resources") else {
-            throw ParseError.missingResource
+    private static func resource(_ file: String) throws -> String {
+        let name = file as NSString
+        guard let found = Bundle.module.url(forResource: name.deletingPathExtension, withExtension: name.pathExtension, subdirectory: "Resources") else {
+            throw ParseError.missingResource(file)
         }
-        return try String(contentsOf: url, encoding: .utf8)
+        return try String(contentsOf: found, encoding: .utf8)
     }
 
     /// 打鍵を、Mozc が打鍵をかなにするのと同じく、前から順にかなにする。各位置で読める最も長い綴りを読み、綴りが無ければ、

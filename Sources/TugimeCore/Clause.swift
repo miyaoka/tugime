@@ -442,7 +442,7 @@ extension Segmenter {
         return Self.unique(list)
     }
 
-    /// かなに読めない打鍵の文節（英語の区間と、利用者の辞書で日本語にした語）で、打ったままの綴りの後に並べる候補。
+    /// 打ったままの綴りを表記にする文節（英語の区間と、利用者の辞書で日本語にした読めない打鍵の語）で、打ったままの綴りの後に並べる候補。
     /// 全角の英字と、語を `englishReading` でかなにできればそのかな・カタカナ・変換
     private func typedForms(of source: String, context: JapaneseContext) -> [String] {
         var list = [Self.text(source, .fullwidthRoman)]
