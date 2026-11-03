@@ -385,9 +385,12 @@ extension Segmenter {
             : Clause(kind: Clause.Kind(fixed.kind), reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span, fixedRange: true)
         // 句読点か記号で終わる文節の後ろは、区切り・変換の文脈・文の頭かのどれも、その記号の後として決める
         let markContinuation = continuation(afterMarkOf: resized)
-        let rest = self.clauses(
+        let shrunk = end < range.upperBound
+        // 後ろに利用者が伸縮で作った区間があれば、日英判定をやり直すのはその手前までにし、その区間から後ろは区間をそのまま残す
+        let kept = laterResizedSpan(after: index, in: clauses, from: end, shrunk: shrunk)
+        let judged = self.clauses(
             of: segment(
-                String(keys[end...]),
+                String(keys[end..<(kept?.keyStart ?? keys.count)]),
                 after: markContinuation ?? (fixed.kind == .english ? .afterEnglish : .afterJapanese),
                 context: context(after: resized, keys: keys[..<end], leading: leading),
                 opened: Self.unclosedOpeners(in: left + resized.output),
@@ -396,9 +399,40 @@ extension Segmenter {
             left: left + resized.output,
             firstIndex: span.index + 1,
             startsAtHead: markContinuation.map { $0 != .afterEnglish } ?? false,
-            fixedKeys: fixedKeyRanges(after: index, in: clauses, from: end, shrunk: end < range.upperBound)
+            fixedKeys: fixedKeyRanges(after: index, in: clauses, from: end, shrunk: shrunk)
         )
-        return before + [resized] + rest
+        guard let kept else { return before + [resized] + judged }
+        let tail = renumbered(Array(clauses[kept.clause...]), from: (judged.last?.span.index ?? span.index) + 1)
+        return before + [resized] + judged + redisplay(tail, left: left + resized.output + judged.map(\.output).joined())
+    }
+
+    /// index の文節の終わりを打鍵列の end にして後ろの打鍵を作り直すとき、そのまま残す、利用者が伸縮で作った最初の区間。
+    /// 区間の打鍵の始まり（keyStart）と、clauses の中での区間の最初の文節（clause）。end より前に始まる区間（伸ばして取り込まれた区間）は残さない。
+    /// 縮めた（shrunk）ときは、手放した打鍵に続くすぐ後ろの文節の区間も残さない。伸縮した文節のもとの区間は数えない
+    private func laterResizedSpan(after index: Int, in clauses: [Clause], from end: Int, shrunk: Bool) -> (keyStart: Int, clause: Int)? {
+        let spans = keySpans(of: clauses)
+        let next = index + 1
+        return clauses.indices.dropFirst(next).lazy.compactMap { i -> (keyStart: Int, clause: Int)? in
+            let span = clauses[i].span
+            guard span.resized, span != clauses[index].span, i == 0 || clauses[i - 1].span != span,
+                  !(shrunk && clauses[next].span == span),
+                  let start = spans.first(where: { $0.span == span })?.start, start >= end
+            else { return nil }
+            return (start, i)
+        }.first
+    }
+
+    /// 文節の区間の番号を、区間ごとに first から振り直す。残した区間の番号が、日英判定をやり直した区間の番号と重ならないようにする
+    private func renumbered(_ clauses: [Clause], from first: Int) -> [Clause] {
+        var index = first - 1
+        var last: ClauseSpan?
+        return clauses.map { clause in
+            var copy = clause
+            if clause.span != last { index += 1 }
+            last = clause.span
+            copy.span.index = index
+            return copy
+        }
     }
 
     /// 打鍵列の range にある、今見えている区間（まとめた区間はその部分）ごとの部分。日本語は打鍵をかなに読み直し、

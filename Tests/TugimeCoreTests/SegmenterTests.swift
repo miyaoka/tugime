@@ -434,6 +434,18 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(!text.contains("（") && !text.contains("）"))
     }
 
+    /// 後ろにある、利用者が伸縮で作った区間は、前の英語の文節を伸縮して後ろを日英判定からやり直しても、日英も打鍵の範囲もそのまま残る
+    @Test func keepsALaterSpanTheUserMadeWhenTheSpansAfterAreJudgedAgain() throws {
+        var clauses = segmenter.clauses("githubnipushsita")
+        #expect(clauses[0].kind == .english)
+        let push = try #require(clauses.firstIndex { $0.reading == "push" })
+        clauses = segmenter.resize(clauses, at: push, by: -1)
+        let made = try #require(clauses.first { $0.reading == "pus" })
+        #expect(made.kind == .english && made.span.resized)
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(clauses.contains { $0.reading == "pus" && $0.kind == .english && $0.span.resized })
+    }
+
     /// 句読点は前の文節にも取り込める。2 文字以下の読める綴りは日本語になり、1 かなは 1 文節になるので、前の文節は え に決まる
     @Test func resizingTakesPunctuationIntoTheClauseBefore() {
         let original = segmenter.clauses("e,ki")
