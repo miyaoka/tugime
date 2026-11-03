@@ -271,7 +271,7 @@ extension Segmenter {
             )
             : Clause(kind: Clause.Kind(fixed.kind), reading: fixed.reading, candidates: candidates(for: fixed), selected: 0, span: span)
         // 句読点か記号で終わる文節の後ろは、区切り・変換の文脈・文の頭かのどれも、その記号の後として決める
-        let markContinuation = parts.last.flatMap { $0.kind == .mark ? Self.continuation(after: $0.source, mark: $0.reading) : nil }
+        let markContinuation = continuation(afterMarkOf: resized)
         let rest = self.clauses(
             of: segment(
                 String(keys[end...]),
@@ -422,19 +422,25 @@ extension Segmenter {
     /// 句読点と記号の後（句読点か記号で終わるまとめた文節の後を含む）は区切りの選択と同じ形
     private func context(after previous: Clause?, keys: ArraySlice<Character>, leading: Leading) -> JapaneseContext {
         guard let previous else { return leading.japaneseContext }
-        if let last = previous.span.parts.last, last.kind == .mark {
-            return Self.continuation(after: last.source, mark: last.reading).japaneseContext
-        }
+        if let mark = continuation(afterMarkOf: previous) { return mark.japaneseContext }
         switch previous.kind {
         case .english:
             return Self.context(after: keys)
         case .japanese, .word:
             return .afterWord
         case .punctuation:
-            return Self.continuation(after: previous.span.source, mark: previous.span.reading).japaneseContext
+            preconditionFailure("句読点と記号の文節の後ろは continuation(afterMarkOf:) が決める")
         case .whole:
             preconditionFailure("全体の変換の文節は 1 つだけで、後ろに文節を持たない")
         }
+    }
+
+    /// 文節が句読点か記号で終わるなら（句読点と記号の文節と、句読点か記号で終わるまとめた文節）、その後ろの評価のしかた。
+    /// 区切り・変換の文脈・後ろが文の頭かは、どれもこの値から決める
+    private func continuation(afterMarkOf clause: Clause) -> Continuation? {
+        if clause.kind == .punctuation { return Self.continuation(after: clause.span.source, mark: clause.span.reading) }
+        guard let last = clause.span.parts.last, last.kind == .mark else { return nil }
+        return Self.continuation(after: last.source, mark: last.reading)
     }
 
     /// 区間ごとの文節を、left に続けて前から順に表示の変換にし直す。日本語区間は文節に分け直し、それ以外の区間は選んだ文字列のまま残す。
@@ -449,9 +455,10 @@ extension Segmenter {
             }
         }
         let spans = groups.map { group in
-            switch group[0].kind {
-            case .japanese: ShownSpan.japanese(kana: group[0].span.reading, context: group[0].span.context)
-            case .punctuation: ShownSpan.mark(group.map(\.output).joined(), startsSentence: Self.continuation(after: group[0].span.source, mark: group[0].span.reading) != .afterEnglish)
+            let startsSentence = continuation(afterMarkOf: group[group.count - 1]).map { $0 != .afterEnglish } ?? false
+            return switch group[0].kind {
+            case .japanese: ShownSpan.japanese(kana: group[0].span.reading, context: group[0].span.context, startsSentence: startsSentence)
+            case .punctuation: ShownSpan.mark(group.map(\.output).joined(), startsSentence: startsSentence)
             case .english, .word, .whole: ShownSpan.fixed(group.map(\.output).joined())
             }
         }

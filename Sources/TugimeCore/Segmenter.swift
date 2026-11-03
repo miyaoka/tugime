@@ -244,17 +244,26 @@ public final class Segmenter {
     }
 
     /// 表示する 1 区間。日本語区間は表示の変換で表記を決め、それ以外は決まった文字列を表示する。
-    /// 句読点と記号の打鍵（mark）は、後ろが文の頭か（startsSentence）を持つ。組に合わせて半角にした閉じ括弧の後ろは英語の後で、文の頭ではない
+    /// 句読点と記号の打鍵（mark）は、後ろが文の頭か（startsSentence）を持つ。組に合わせて半角にした閉じ括弧の後ろは英語の後で、文の頭ではない。
+    /// 日本語区間も、文節の伸縮で句読点か記号をまたいでまとめ、記号で終わるなら、後ろが文の頭か（startsSentence）を持つ
     enum ShownSpan {
-        case japanese(kana: String, context: JapaneseContext)
+        case japanese(kana: String, context: JapaneseContext, startsSentence: Bool)
         case fixed(String)
         case mark(String, startsSentence: Bool)
 
         init(_ segment: Segment) {
             switch segment.kind {
-            case .japanese: self = .japanese(kana: segment.reading, context: segment.context)
+            case .japanese: self = .japanese(kana: segment.reading, context: segment.context, startsSentence: false)
             case .punctuation: self = .mark(segment.output, startsSentence: Segmenter.continuation(after: segment.source, mark: segment.output) != .afterEnglish)
             case .english, .word: self = .fixed(segment.output)
+            }
+        }
+
+        /// この区間の後ろが文の頭か
+        var startsSentence: Bool {
+            switch self {
+            case .japanese(_, _, let startsSentence), .mark(_, let startsSentence): startsSentence
+            case .fixed: false
             }
         }
     }
@@ -272,8 +281,8 @@ public final class Segmenter {
             case .fixed(let text), .mark(let text, _):
                 shown += text
                 return nil
-            case .japanese(let kana, let context):
-                let atHead = index == 0 ? startsAtHead : { if case .mark(_, true) = spans[index - 1] { true } else { false } }()
+            case .japanese(let kana, let context, _):
+                let atHead = index == 0 ? startsAtHead : spans[index - 1].startsSentence
                 if index == lastSpan, atHead, kana.count == 1 {
                     shown += kana
                     return JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])

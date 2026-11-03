@@ -358,6 +358,15 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(shrunk.map(\.output) == original.map(\.output))
     }
 
+    /// 記号で終わるまとめた文節の後ろは、前の文節を伸縮して変換し直しても、記号の後の文の頭として表示する
+    @Test func keepsTheRestAfterAJoinedClauseAtTheSentenceHeadWhenRedisplayed() {
+        var clauses = segmenter.clauses("kyouhanihon(cafe)ki")
+        for _ in 0..<4 { clauses = segmenter.resize(clauses, at: 2, by: 1) }
+        #expect(clauses.map(\.output) == ["今日は", "日本", "（カフェ）", "き"])
+        clauses = segmenter.resize(segmenter.resize(clauses, at: 0, by: 1), at: 0, by: -1)
+        #expect(clauses.last?.output == "き")
+    }
+
     // MARK: 途中の確定
 
     @Test func committingThroughAClauseKeepsTheRestConverted() throws {
