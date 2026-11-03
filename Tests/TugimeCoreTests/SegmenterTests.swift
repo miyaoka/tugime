@@ -349,13 +349,16 @@ private final class DisplayRecorder: JapaneseConverting {
 
     /// 利用者が伸縮で範囲を決めた文節は、前の文節を伸縮して後ろを変換し直しても、その範囲のまま残る。表記は区間の全体を変換したものを切る
     @Test func keepsTheRangeTheUserSetWhenAnEarlierClauseIsResized() throws {
-        var clauses = segmenter.clauses("kinouwatasihagooglewotukatta")
+        let input = "kinouwatasihagooglewotukatta"
+        var clauses = segmenter.clauses(input)
         let wo = try #require(clauses.firstIndex { $0.reading == "を" })
         clauses = segmenter.resize(segmenter.resize(clauses, at: wo, by: 1), at: wo, by: 1)
         #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
         clauses = segmenter.resize(clauses, at: 0, by: 1)
         #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
-        #expect(clauses.suffix(2).map(\.output).joined() == "を使った")
+        // 範囲を守っても、表記をつなぐと、範囲を決めずに同じ伸縮をしたときと同じ文字列になる
+        let unset = segmenter.resize(segmenter.clauses(input), at: 0, by: 1)
+        #expect(clauses.map(\.output).joined() == unset.map(\.output).joined())
         // 変換し直した後も、範囲を決めた印は残る
         clauses = segmenter.resize(clauses, at: 0, by: -1)
         #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
