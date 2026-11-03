@@ -54,10 +54,23 @@ private final class LeftRecorder: JapaneseConverting {
         #expect(segmenter.segment(input).map(\.kind) == [.japanese])
     }
 
-    /// 数字に続く英字も、区間の頭の英字と同じく、日本語にする綴りなら英語区間に入れない。読めない英字は数字と英語のまま
-    @Test(arguments: [("3i", [Segment.Kind.english, .japanese]), ("100enn", [.english, .japanese]), ("3d", [.english]), ("k8s", [.english])])
-    func readsSpellingsAfterDigitsLikeSpellingsAtTheStart(input: String, kinds: [Segment.Kind]) {
-        #expect(segmenter.segment(input).map(\.kind) == kinds)
+    /// 数字と英字が混ざる綴りは、日本語として自然なら日本語、そうでなければ打ったまま
+    @Test(arguments: [("3i", "3位"), ("3ann", "3案"), ("100enn", "100円"), ("3a", "3a"), ("2fa", "2fa"), ("i18n", "i18n"), ("3d", "3d"), ("k8s", "k8s")])
+    func decidesDigitsAndLettersByHowNaturalTheyRead(input: String, expected: String) {
+        #expect(output(input) == expected)
+    }
+
+    /// 数字は日本語区間の読みに入るので、数字をはさむ日本語は 1 つの区間になり、後ろの語も前の語の変換の手がかりになる
+    @Test func keepsJapaneseAroundDigitsInOneSpan() {
+        let segments = segmenter.segment("3kamo4kamoyasumu")
+        #expect(segments.map(\.kind) == [.japanese])
+        #expect(segments.map(\.reading) == ["3かも4かもやすむ"])
+    }
+
+    /// 数字にはさまれた句読点は、数の一部として打ったまま残す
+    @Test(arguments: [("3.14", "3.14"), ("1,000enn", "1,000円"), ("10:30kara", "10:30から"), ("kakakuha1500.", "価格は1500。")])
+    func keepsPunctuationBetweenDigitsAsTyped(input: String, expected: String) {
+        #expect(output(input) == expected)
     }
 
     /// 末尾に打った単独の n は、次に打つまで な行 か「ん」かが決まらないので打ったまま。nn と、後ろに句読点が続く n は「ん」
@@ -250,7 +263,6 @@ private final class LeftRecorder: JapaneseConverting {
     @Test(arguments: [("3", "nin"), ("3", "kai"), ("1500", "ennharaimasu")])
     func continuesConfirmedDigitsLikeTypedDigits(digits: String, input: String) {
         let leading = Segmenter.Leading(digits)
-        #expect(segmenter.segment(input, leading: leading).map(\.kind) == segmenter.segment(digits + input).dropFirst().map(\.kind))
         #expect(digits + output(input, leading: leading) == output(digits + input))
     }
 
@@ -381,9 +393,9 @@ private final class RefusingConverter: JapaneseConverting {
 
 /// 日本語として変換できない読みは、英語区間から締め出さない
 @Suite struct UnconvertibleReadingTests {
-    @Test func keepsDigitsAndLettersEnglishWhenTheLettersCannotBeConverted() throws {
+    @Test func keepsASingleKanaSpellingEnglishWhenItCannotBeConverted() throws {
         let segmenter = try Shared.make(RefusingConverter(refusing: "い"))
-        #expect(segmenter.segment("3i").map(\.kind) == [.english])
+        #expect(segmenter.segment("i").map(\.kind) == [.english])
     }
 }
 
