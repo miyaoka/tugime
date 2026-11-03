@@ -6,6 +6,7 @@ import { readdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fetchPinned } from "./lib/fetch";
 import { root } from "./lib/root";
+import { swiftBuild } from "./lib/swift-build";
 
 const commit = "c4b2aef7c65e61be394bacadaec200eb5b97f91c";
 
@@ -102,10 +103,8 @@ export async function dictionary(): Promise<string> {
   if (built === undefined || changed > built) {
     console.error(`== 組み立て ${out}`);
     // 標準出力にはパスだけを出すので、組み立ての出力は標準エラーに回す
-    await $`swift build --package-path ${root} -c release --product tugime-dictionary 1>&2`;
-    const bin = (
-      await $`swift build --package-path ${root} -c release --show-bin-path`.text()
-    ).trim();
+    await $`${swiftBuild} --product tugime-dictionary 1>&2`;
+    const bin = (await $`${swiftBuild} --show-bin-path`.text()).trim();
     await $`${join(bin, "tugime-dictionary")} ${source} ${out}.part 1>&2`;
     await rename(`${out}.part`, out);
   }
