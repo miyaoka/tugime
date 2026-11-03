@@ -356,6 +356,44 @@ private final class DisplayRecorder: JapaneseConverting {
         clauses = segmenter.resize(clauses, at: 0, by: 1)
         #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
         #expect(clauses.suffix(2).map(\.output).joined() == "を使った")
+        // 変換し直した後も、範囲を決めた印は残る
+        clauses = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
+    }
+
+    /// 範囲の端を表記の上で切れないときは、その範囲を守らず、範囲を決めなかったときと同じ区切りにする（「をつ」の つ は 使 の中）
+    @Test func fallsBackToTheConverterCutsWhenAnEndCannotBeCut() throws {
+        let input = "kinouwatasihagooglewotukatta"
+        var clauses = segmenter.clauses(input)
+        let wo = try #require(clauses.firstIndex { $0.reading == "を" })
+        clauses = segmenter.resize(clauses, at: wo, by: 1)
+        #expect(clauses[wo].reading == "をつ")
+        let unset = segmenter.resize(segmenter.clauses(input), at: 0, by: 1)
+        #expect(readings(segmenter.resize(clauses, at: 0, by: 1)) == readings(unset))
+    }
+
+    /// 同じ区間の後ろで範囲を決めた文節も、前の文節を区間の中で伸縮して残りを作り直したとき、その範囲のまま残る。
+    /// 縮めて余った読みを受け取るすぐ後ろの文節は、範囲を決めていても作り直す
+    @Test func keepsTheRangeTheUserSetLaterInTheSameSpan() throws {
+        var clauses = segmenter.clauses("kyouhaasitanoyoteiwokimetaikedo")
+        try #require(clauses.count >= 3 && clauses.allSatisfy { $0.span == clauses[0].span })
+        clauses = segmenter.resize(clauses, at: clauses.count - 1, by: -1)
+        let kept = Array(readings(clauses).suffix(2))
+        #expect(kept.last == "ど")
+        clauses = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(Array(readings(clauses).suffix(2)) == kept)
+    }
+
+    /// 前の英語の文節を伸縮して後ろの打鍵を日英判定からやり直しても、後ろで範囲を決めた文節は、新しい日本語区間に収まればその範囲のまま残る
+    @Test func keepsTheRangeTheUserSetWhenTheSpansAfterAreJudgedAgain() throws {
+        var clauses = segmenter.clauses("githubnipushsitakedodameda")
+        #expect(clauses[0].kind == .english)
+        let sita = try #require(clauses.firstIndex { $0.reading.hasPrefix("したけど") })
+        clauses = segmenter.resize(clauses, at: sita, by: -1)
+        let kept = Array(readings(clauses).dropFirst(sita))
+        #expect(kept.first?.hasSuffix("ど") == false)
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(Array(readings(clauses).suffix(kept.count)) == kept)
     }
 
     /// 句読点は前の文節にも取り込める。2 文字以下の読める綴りは日本語になり、1 かなは 1 文節になるので、前の文節は え に決まる

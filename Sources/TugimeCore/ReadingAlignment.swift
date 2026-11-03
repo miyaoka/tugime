@@ -77,6 +77,11 @@ public struct ReadingAlignment: Sendable, Equatable {
         self.fixed = fixed
     }
 
+    /// 読みの位置 position で出力を切れるか。出力の側の位置が確定していれば切れる
+    func canCut(atReading position: Int) -> Bool {
+        fixed.contains(position)
+    }
+
     /// 読みの位置 cuts（0 と読みの終わりを含まない昇順）で出力を文節に切る。出力の側で確定した位置に当たらない cut は捨て、
     /// その両側を 1 つの文節にする。返す文節は 1 つ以上で、どれも読みと表記が空でなく、読みを繋ぐと reading、表記を繋ぐと text になる
     public func clauses(cutAt cuts: [Int]) -> [JapaneseClause] {
