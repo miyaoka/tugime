@@ -359,16 +359,18 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(Array(readings(clauses).suffix(2)) == kept)
     }
 
-    /// 前の英語の文節を伸縮して後ろの打鍵を日英判定からやり直しても、後ろで範囲を決めた文節は、新しい日本語区間に収まればその範囲のまま残る
+    /// 前の英語の文節を伸縮して後ろの打鍵を日英判定からやり直しても、後ろで範囲を決めた文節は、新しい日本語区間に収まればその範囲のまま残る。
+    /// 範囲を決めていない後ろの文節の切り方は変換が決めるので、範囲の直後で切れることだけを確かめる
     @Test func keepsTheRangeTheUserSetWhenTheSpansAfterAreJudgedAgain() throws {
         var clauses = segmenter.clauses("githubnipushsitakedodameda")
-        #expect(clauses[0].kind == .english)
+        try #require(clauses[0].kind == .english)
         let sita = try #require(clauses.firstIndex { $0.reading.hasPrefix("したけど") })
         clauses = segmenter.resize(clauses, at: sita, by: -1)
-        let kept = Array(readings(clauses).dropFirst(sita))
-        #expect(kept.first?.hasSuffix("ど") == false)
+        let kept = clauses[sita].reading
+        try #require(!kept.hasSuffix("ど"))
         clauses = segmenter.resize(clauses, at: 0, by: 1)
-        #expect(Array(readings(clauses).suffix(kept.count)) == kept)
+        let index = try #require(clauses.firstIndex { $0.reading == kept && $0.fixedRange })
+        #expect(clauses.indices.contains(index + 1) && clauses[index + 1].reading.hasPrefix("ど"))
     }
 
     /// 句読点は前の文節にも取り込める。2 文字以下の読める綴りは日本語になり、1 かなは 1 文節になるので、前の文節は え に決まる
@@ -560,6 +562,26 @@ private final class FixedDisplayConverter: JapaneseConverting {
         let resized = segmenter.resize(clauses, at: 0, by: 1)
         #expect(Array(readings(resized).suffix(2)) == ["を", "つかった"])
         #expect(readings(resized) == readings(segmenter.resize(segmenter.clauses(input), at: 0, by: 1)))
+    }
+
+    /// 範囲を守っても、範囲の外の変換の区切りは、漢字と漢字の間（東京｜大学）でもそのまま残る。
+    /// e は 2 文字以下の読める綴りなので日本語になり、`,` の後ろの toukyoudaigakuheitta は 1 つの日本語区間になる
+    @Test func keepsTheConverterCutsOutsideTheRange() throws {
+        let segmenter = try Shared.make(FixedDisplayConverter([
+            "とうきょうだいがくへいった": [
+                JapaneseClause(reading: "とうきょう", text: "東京"),
+                JapaneseClause(reading: "だいがくへ", text: "大学へ"),
+                JapaneseClause(reading: "いった", text: "行った"),
+            ],
+        ]))
+        var clauses = segmenter.clauses("e,toukyoudaigakuheitta")
+        try #require(readings(clauses) == ["え", "、", "とうきょう", "だいがくへ", "いった"])
+        let last = clauses.count - 1
+        clauses = segmenter.resize(segmenter.resize(clauses, at: last, by: -1), at: last, by: 1)
+        try #require(clauses[last].reading == "いった" && clauses[last].fixedRange)
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(readings(clauses) == ["え、", "とうきょう", "だいがくへ", "いった"])
+        #expect(clauses.last?.fixedRange == true)
     }
 }
 

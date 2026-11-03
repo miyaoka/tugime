@@ -29,7 +29,7 @@ public struct Clause: Sendable, Equatable {
     public var selected: Int
     /// この文節を含む区間。同じ区間の文節は同じ値を持つ
     public var span: ClauseSpan
-    /// 利用者が伸縮で範囲を決めた文節か。この文節を含む区間を作り直すときも、この範囲の内側では切らず、両端で切る（`keepingFixedRanges`）
+    /// 利用者が伸縮で範囲を決め、その範囲がまだ保たれている文節か。作り直すときに範囲を守るかは `keepingFixedRanges` が決める
     public var fixedRange: Bool
 
     public init(kind: Kind, reading: String, candidates: [String], selected: Int, span: ClauseSpan, fixedRange: Bool = false) {
@@ -249,16 +249,16 @@ extension Segmenter {
 
     /// index の文節の終わりを打鍵列の end にして後ろの打鍵を作り直すとき、守る、利用者が範囲を決めた文節の打鍵の範囲（end からの位置）。
     /// 区間の中での伸縮（`fixedRanges`）と同じく、縮めた（shrunk）ときは手放した打鍵に続くすぐ後ろの文節を守らない。
-    /// 打鍵の範囲が決まらない文節は数えない
+    /// すぐ後ろの文節は、打鍵の範囲が決まらなくても位置で数える。打鍵の範囲が決まらない文節は守らない
     private func fixedKeyRanges(after index: Int, in clauses: [Clause], from end: Int, shrunk: Bool) -> [Range<Int>] {
         let spans = keySpans(of: clauses)
-        let later: [(range: Range<Int>, fixed: Bool)] = clauses.indices.dropFirst(index + 1).compactMap { i in
-            guard let own = spans.first(where: { $0.span == clauses[i].span }),
+        return clauses.indices.dropFirst(index + 1).compactMap { i in
+            guard clauses[i].fixedRange, !(shrunk && i == index + 1),
+                  let own = spans.first(where: { $0.span == clauses[i].span }),
                   let range = keyRange(of: clauses, at: i, from: own.start), range.lowerBound >= end
             else { return nil }
-            return (range, clauses[i].fixedRange)
+            return (range.lowerBound - end)..<(range.upperBound - end)
         }
-        return later.dropFirst(shrunk ? 1 : 0).filter(\.fixed).map { ($0.range.lowerBound - end)..<($0.range.upperBound - end) }
     }
 
     /// index の文節を打鍵列の range.lowerBound..<end にして、その打鍵を 1 区間として日英を判定する。
@@ -530,29 +530,69 @@ extension Segmenter {
     }
 
     /// 読み reading の表示 shown を文節に分ける。fixed は利用者が伸縮で範囲を決めた文節の、reading の中の範囲。
-    /// 範囲の両端を shown の表記の上で切れるなら（ReadingAlignment）、その範囲の内側では切らず、両端で切る。切れない範囲は守らない。
-    /// ほかの区切りは表示の変換が決めたものを使う。表記は shown を読みの位置で切るので、文節の表記をつなぐと shown の表記になる。
+    /// 範囲の両端を shown の表記の上で切れるなら（`ShownPieces`）、その範囲の内側では切らず、両端で切る。切れない範囲は守らない。
+    /// ほかの区切りは表示の変換の文節の境目をそのまま使う。表記は shown の文節を切るかつなぐだけなので、文節の表記をつなぐと shown の表記になる。
     /// context は先頭の文節を変換した文脈
     private func keepingFixedRanges(
         _ fixed: [Range<Int>], in shown: JapaneseDisplay, reading: String, context: JapaneseContext, span: ClauseSpan
     ) -> [Clause] {
-        let alignment = ReadingAlignment(text: shown.text, reading: reading)
+        let pieces = ShownPieces(shown.clauses)
         let inner = { (position: Int) in position > 0 && position < reading.count }
         let kept = fixed.filter { range in
-            [range.lowerBound, range.upperBound].filter(inner).allSatisfy { alignment?.canCut(atReading: $0) == true }
+            [range.lowerBound, range.upperBound].filter(inner).allSatisfy(pieces.canCut(atReading:))
         }
         guard !kept.isEmpty else { return japaneseClauses(shown.clauses, context: context, in: span) }
-        var shownCuts: [Int] = []
-        for clause in shown.clauses.dropLast() { shownCuts.append((shownCuts.last ?? 0) + clause.reading.count) }
         let edges = kept.flatMap { [$0.lowerBound, $0.upperBound] }.filter(inner)
-        let cuts = Set(shownCuts.filter { cut in !kept.contains { $0.lowerBound < cut && cut < $0.upperBound } } + edges).sorted()
-        let parts = alignment?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: reading, text: shown.text)]
+        let cuts = Set(pieces.bounds.filter { cut in inner(cut) && !kept.contains { $0.lowerBound < cut && cut < $0.upperBound } } + edges).sorted()
+        let parts = pieces.clauses(cutAt: cuts)
         var position = 0
         return japaneseClauses(parts, context: context, in: span).map { clause in
             defer { position += clause.reading.count }
             var marked = clause
             marked.fixedRange = kept.contains(position..<(position + clause.reading.count))
             return marked
+        }
+    }
+
+    /// 表示の変換の文節を、読みの位置で切り直す。変換の文節の境目では常に切れ、境目の表記の位置は変換が返したまま使う。
+    /// 文節の内側は、その文節の表記と読みの対応（ReadingAlignment）で表記の位置が決まるときだけ切れる
+    private struct ShownPieces {
+        let clauses: [JapaneseClause]
+        /// 変換の文節の境目の読みの位置。0 と読みの終わりを含む
+        let bounds: [Int]
+
+        init(_ clauses: [JapaneseClause]) {
+            self.clauses = clauses
+            var bounds = [0]
+            for clause in clauses { bounds.append(bounds.last! + clause.reading.count) }
+            self.bounds = bounds
+        }
+
+        func canCut(atReading position: Int) -> Bool {
+            if bounds.contains(position) { return true }
+            guard let i = bounds.lastIndex(where: { $0 < position }) else { return false }
+            return ReadingAlignment(text: clauses[i].text, reading: clauses[i].reading)?.canCut(atReading: position - bounds[i]) == true
+        }
+
+        /// 読みの位置 cuts（0 と読みの終わりを含まない昇順。どれも canCut で切れる位置）で切った文節。
+        /// cuts に無い変換の境目では切らず、両側の表記をつなぐ。表記をつなぐと、変換の文節の表記をつないだものになる
+        func clauses(cutAt cuts: [Int]) -> [JapaneseClause] {
+            let pieces = clauses.indices.flatMap { i -> [JapaneseClause] in
+                let inside = cuts.filter { bounds[i] < $0 && $0 < bounds[i + 1] }.map { $0 - bounds[i] }
+                guard !inside.isEmpty else { return [clauses[i]] }
+                return ReadingAlignment(text: clauses[i].text, reading: clauses[i].reading)!.clauses(cutAt: inside)
+            }
+            var merged: [JapaneseClause] = []
+            var position = 0
+            for piece in pieces {
+                if let last = merged.last, !cuts.contains(position) {
+                    merged[merged.count - 1] = JapaneseClause(reading: last.reading + piece.reading, text: last.text + piece.text)
+                } else {
+                    merged.append(piece)
+                }
+                position += piece.reading.count
+            }
+            return merged
         }
     }
 
