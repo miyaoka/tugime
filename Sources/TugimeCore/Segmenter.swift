@@ -175,31 +175,32 @@ public final class Segmenter {
         c.isASCII && c.isNumber
     }
 
-    /// 数字にはさまれたとき、入力を切らず数の一部として打ったまま残す句読点（3.14 1,000 10:30）
-    static let numberSeparators: Set<Character> = [".", ",", ":"]
+    /// 数字にはさまれたとき、入力を切らず数の一部として打ったまま残す記号（3.14 1,000 10:30 0120-345-678）
+    static let numberSeparators: Set<Character> = [".", ",", ":", "-"]
 
-    /// chars[i] が数の一部として打ったまま残す句読点か。前の文字は、i が 0 なら before（入力欄や前の文節の最後の文字）
+    /// chars[i] が数の一部として打ったまま残す記号か。前の文字は、i が 0 なら before（入力欄や前の文節の最後の文字）
     static func isNumberSeparator(at i: Int, in chars: [Character], before: Character?) -> Bool {
         guard numberSeparators.contains(chars[i]), i + 1 < chars.count, isDigit(chars[i + 1]) else { return false }
         return (i > 0 ? chars[i - 1] : before).map(isDigit) == true
     }
 
-    /// chars[i] が数の区切りの -（2026-11-03 03-1234-5678）か。長音ではないので、日本語の読みに入れない
+    /// chars[i] が数字の直後の - か。数字の後ろでは長音ではないので、綴りの表で ー と読まない。数字にはさまれていれば数の一部、
+    /// 後ろに数字がまだ無ければ（打っている途中の 3-）打ったまま
     static func isNumberDash(at i: Int, in chars: [Character], before: Character?) -> Bool {
         chars[i] == "-" && (i > 0 ? chars[i - 1] : before).map(isDigit) == true
     }
 
     /// start から日本語として読み切れる終端ごとのかな。綴りの表で読み、数字にはさまれた numberSeparators は打ったまま読みに入れる（3.14 は 3.14）。
-    /// 数の区切りの - をまたぐ読みは除く
+    /// 数字の直後の - を ー と読む読みは除く
     static func japaneseReadings(table: RomajiTable, from start: Int, in chars: [Character], before: Character?) -> [(end: Int, kana: String)] {
-        let limit = (start..<chars.count).first { isNumberDash(at: $0, in: chars, before: before) } ?? chars.count
         var found: [Int: String] = [:]
         var pending: [(position: Int, kana: String)] = [(start, "")]
         while let (position, prefix) = pending.popLast() {
+            let limit = (position..<chars.count).first { isNumberDash(at: $0, in: chars, before: before) } ?? chars.count
             for reading in table.readings(from: position, in: chars) where reading.end <= limit && found[reading.end] == nil {
                 let kana = prefix + reading.kana
                 found[reading.end] = kana
-                if reading.end < limit, isNumberSeparator(at: reading.end, in: chars, before: before) {
+                if reading.end < chars.count, isNumberSeparator(at: reading.end, in: chars, before: before) {
                     pending.append((reading.end + 1, kana + String(chars[reading.end])))
                 }
             }
