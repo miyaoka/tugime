@@ -123,8 +123,12 @@ jobs:
         run: TUGIME_BUILD_CHANNEL=stable bun scripts/build-app.ts
 
       # 利用者の Mac と同じく、組み立てたディレクトリが無い状態で辞書・表示の変換のモデル・llama.framework を読めるか。
-      # 実行ファイルと llama.framework が arm64 だけか
+      # 実行ファイルと llama.framework が arm64 だけか。
+      # ランナーの GPU は仮想なので、PR では Metal のデバイスを 0 にして CPU で変換する。Metal の経路はリリースの Check .app が通す
+      # ref: llama.cpp ggml/src/ggml-metal/ggml-metal.cpp の GGML_METAL_DEVICES
       - name: Check .app
+        env:
+          GGML_METAL_DEVICES: "0"
         run: bun scripts/check-app.ts dist/tugime.app
 
   # ==============================================================
