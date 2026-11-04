@@ -303,10 +303,12 @@ final class TugimeInputController: IMKInputController {
                 showMarkedText(client)
                 return true
             }
-            clauses = segmentedClauses()
+            // 打っている途中に変換はもう見せているので、↓ と同じく最初の文節を選んで候補の窓まで出す
+            let clauses = segmentedClauses()
+            self.clauses = clauses
             focus = 0
             showMarkedText(client)
-            return true
+            return handleConverted(event, clauses: clauses, client: client)
         case KeyCode.left, KeyCode.right, KeyCode.up, KeyCode.down:
             // 打っている途中も変換して見せているので、矢印キーで Shift+Space を押さずに文節の選択に入る
             guard !keys.isEmpty else { return false }
