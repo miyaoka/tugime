@@ -69,12 +69,8 @@ guard let connectionName = Bundle.main.infoDictionary?["InputMethodConnectionNam
 }
 // IMKServer はプロセスに 1 つだけ作る。2 つあると Chromium 系のアプリに入力が届かない
 let server = IMKServer(name: connectionName, bundleIdentifier: Bundle.main.bundleIdentifier)
-// 候補の窓もプロセスに 1 つ。窓を出している間も、キーはまず入力コントローラが受け取る
-let candidatePanel: IMKCandidates = {
-    let panel = IMKCandidates(server: server, panelType: kIMKSingleColumnScrollingCandidatePanel)!
-    panel.setAttributes([IMKCandidatesSendServerKeyEventFirst: true])
-    return panel
-}()
+// 候補の窓もプロセスに 1 つ
+let candidateWindow = CandidateWindow()
 // 表示が打った読みと合わないときの警告の窓もプロセスに 1 つ
 let rewriteWarning = RewriteWarning()
 // 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる。利用者の辞書も読んでおく

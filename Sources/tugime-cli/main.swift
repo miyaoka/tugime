@@ -18,7 +18,7 @@ let usage = """
       tugime-cli --lattice <打鍵列>...        区切りを決めた部分の採点で比べた区間の候補を出す。打鍵列ごとに == 打鍵列 の行の後、
                                               1 候補 1 行のタブ区切りで 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点
       tugime-cli --clauses <打鍵列>...        文節ごとの候補を出す
-      tugime-cli --resize <打鍵列> <操作>     文節を操作した結果を出す。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す、
+      tugime-cli --resize <打鍵列> <操作>     文節を操作した結果を出す。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す（端では反対の端へ回る）、
                                               1〜9 で選んでいる文節のその番号の候補（先頭は 0 番）を選ぶ
       tugime-cli --whole <打鍵列>...          F6〜F10 の全体の変換を出す
       tugime-cli --span <英字|かな>...        英字は英語として、かなは日本語として評価値を出す
@@ -114,6 +114,11 @@ do {
         }
         let segmenter = try makeSegmenter()
         var clauses = segmenter.clauses(args[1], leading: leading)
+        // 入力メソッドは打鍵列が空なら文節の選択に入らない。文節が無ければ操作できない
+        guard !clauses.isEmpty else {
+            print(usage)
+            exit(2)
+        }
         var focus = 0
         func show(_ label: String) {
             let marked = clauses.enumerated().map { $0.offset == focus ? "[\($0.element.output)]" : $0.element.output }
@@ -124,8 +129,8 @@ do {
             switch op {
             case "+": clauses = segmenter.resize(clauses, at: focus, by: 1, leading: leading)
             case "-": clauses = segmenter.resize(clauses, at: focus, by: -1, leading: leading)
-            case ">": focus = min(focus + 1, clauses.count - 1)
-            case "<": focus = max(focus - 1, 0)
+            case ">": focus = Clause.focus(focus, movedBy: 1, count: clauses.count)
+            case "<": focus = Clause.focus(focus, movedBy: -1, count: clauses.count)
             case "1"..."9":
                 let index = Int(String(op))!
                 guard index < clauses[focus].candidates.count else {

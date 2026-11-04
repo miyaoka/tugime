@@ -49,6 +49,11 @@ public struct Clause: Sendable, Equatable {
     /// 作り直すときに範囲を守る文節か
     var kept: Bool { fixedRange || fixedValue != nil }
 
+    /// 選ぶ文節を focus から step（-1 で左、1 で右）だけ移した位置。端から先へ移すと反対の端の文節になる
+    public static func focus(_ focus: Int, movedBy step: Int, count: Int) -> Int {
+        (focus + step + count) % count
+    }
+
     /// 候補 text の番号。候補に無ければ末尾に足す
     mutating func candidateIndex(adding text: String) -> Int {
         if let index = candidates.firstIndex(of: text) { return index }
