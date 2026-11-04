@@ -180,28 +180,42 @@ final class TugimeInputController: IMKInputController {
 
     // MARK: 候補の窓
 
-    private func showCandidateWindow(_ clauses: [Clause], client: IMKTextInput) {
+    /// 選んでいる文節の候補を選んでいる最中なら、見えている範囲と選んでいる候補。窓が画面に出ているか（アプリが位置を返したか）によらない
+    private var candidatePage: CandidatePage?
+
+    private func openCandidates(_ clauses: [Clause], client: IMKTextInput) {
+        candidatePage = CandidatePage(count: clauses[focus].candidates.count, selected: clauses[focus].selected)
+        drawCandidates(clauses, client: client)
+    }
+
+    private func drawCandidates(_ clauses: [Clause], client: IMKTextInput) {
+        guard let candidatePage else { return }
         candidateWindow.onClick = { [weak self] index in self?.clickCandidate(index) }
         // 選んでいる文節の最初の文字の、未確定の文字列の中での位置。showMarkedText と同じく UTF-16 で数える
         let start = clauses[..<focus].reduce(0) { $0 + ($1.output as NSString).length }
-        candidateWindow.show(clauses[focus].candidates, selected: clauses[focus].selected, below: client, characterIndex: start)
+        candidateWindow.show(clauses[focus].candidates, page: candidatePage, below: client, characterIndex: start)
+    }
+
+    private func closeCandidates() {
+        candidatePage = nil
+        candidateWindow.hide()
     }
 
     /// 窓の行をクリックしたとき。その候補を選んで窓を閉じる
     private func clickCandidate(_ index: Int) {
         guard let clauses, let client = client() else { return }
         self.clauses = Clause.selecting(index, at: focus, in: clauses)
-        candidateWindow.hide()
+        closeCandidates()
         showMarkedText(client)
     }
 
     /// 窓に出ている番号の数字キー。その候補を選んでから → を押したときと同じく、窓を閉じて次の文節を選ぶ。
     /// 窓に出ていない番号なら何もしない
     private func selectCandidate(numbered number: Int, clauses: [Clause], client: IMKTextInput) {
-        guard let index = candidateWindow.page?.index(forNumber: number) else { return }
+        guard let index = candidatePage?.index(forNumber: number) else { return }
         self.clauses = Clause.selecting(index, at: focus, in: clauses)
         focus = (focus + 1) % clauses.count
-        candidateWindow.hide()
+        closeCandidates()
         showMarkedText(client)
     }
 
@@ -305,7 +319,7 @@ final class TugimeInputController: IMKInputController {
 
     /// 文節の選択に入った後
     private func handleConverted(_ event: NSEvent, clauses: [Clause], client: IMKTextInput) -> Bool {
-        let panelVisible = candidateWindow.isVisible
+        let panelVisible = candidatePage != nil
         if panelVisible, let number = event.characters.flatMap(Int.init), (1...CandidatePage.rows).contains(number) {
             selectCandidate(numbered: number, clauses: clauses, client: client)
             return true
@@ -321,7 +335,7 @@ final class TugimeInputController: IMKInputController {
             if panelVisible {
                 moveCandidate(by: 1, clauses: clauses, client: client)
             } else {
-                showCandidateWindow(clauses, client: client)
+                openCandidates(clauses, client: client)
             }
         case KeyCode.up:
             if panelVisible {
@@ -335,12 +349,12 @@ final class TugimeInputController: IMKInputController {
             } else {
                 focus = (focus + step + clauses.count) % clauses.count
             }
-            candidateWindow.hide()
+            closeCandidates()
             showMarkedText(client)
         case KeyCode.escape, KeyCode.backspace:
             // 候補の窓を閉じる。窓が無ければ文節の選択をやめて、打っている途中の表示に戻る
             if panelVisible {
-                candidateWindow.hide()
+                closeCandidates()
             } else {
                 self.clauses = nil
                 showMarkedText(client)
@@ -355,8 +369,10 @@ final class TugimeInputController: IMKInputController {
     private func moveCandidate(by delta: Int, clauses: [Clause], client: IMKTextInput) {
         let count = clauses[focus].candidates.count
         let index = (clauses[focus].selected + delta + count) % count
-        self.clauses = Clause.selecting(index, at: focus, in: clauses)
-        candidateWindow.select(index)
+        let selected = Clause.selecting(index, at: focus, in: clauses)
+        self.clauses = selected
+        candidatePage?.select(index)
+        drawCandidates(selected, client: client)
         showMarkedText(client)
     }
 
@@ -365,7 +381,7 @@ final class TugimeInputController: IMKInputController {
         let (keys, leading) = (keys, leading)
         clauses = [conversion.sync { $0.wholeClause(keys, to: form, leading: leading) }]
         focus = 0
-        candidateWindow.hide()
+        closeCandidates()
         showMarkedText(client)
     }
 
@@ -375,7 +391,7 @@ final class TugimeInputController: IMKInputController {
         let focus = focus
         guard let text = conversion.sync({ $0.convertClause(clauses, at: focus, to: form) }) else { return }
         self.clauses = Clause.selecting(text: text, at: focus, in: clauses)
-        candidateWindow.hide()
+        closeCandidates()
         showMarkedText(client)
     }
 
@@ -502,7 +518,7 @@ final class TugimeInputController: IMKInputController {
             showMarkedText(client)
             return
         }
-        candidateWindow.hide()
+        closeCandidates()
         insert(result.text, client: client)
         keys = result.keys
         self.clauses = result.rest
@@ -515,7 +531,7 @@ final class TugimeInputController: IMKInputController {
 
     /// 未確定の文字列を、表示しているとおりに確定する
     private func commit(_ client: IMKTextInput) {
-        candidateWindow.hide()
+        closeCandidates()
         rewriteWarning.hide()
         guard !keys.isEmpty else { return }
         insert(clauses?.map(\.output).joined() ?? shownText, client: client)

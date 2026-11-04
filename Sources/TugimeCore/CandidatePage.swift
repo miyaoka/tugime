@@ -17,6 +17,11 @@ public struct CandidatePage: Equatable, Sendable {
 
     public var visible: Range<Int> { first..<min(first + Self.rows, count) }
 
+    /// 見えている行の番号（1 始まり）と、その行の候補の位置。窓はこの番号を描き、数字キーはこの番号で候補を選ぶ
+    public var numbered: [(number: Int, index: Int)] {
+        visible.enumerated().map { (number: $0.offset + 1, index: $0.element) }
+    }
+
     public mutating func select(_ index: Int) {
         precondition((0..<count).contains(index), "選ぶ候補 \(index) が候補の数 \(count) の外")
         selected = index
@@ -25,9 +30,7 @@ public struct CandidatePage: Equatable, Sendable {
 
     /// 見えている行に振った番号（1 始まり）の候補。見えている行に無い番号なら nil
     public func index(forNumber number: Int) -> Int? {
-        let index = first + number - 1
-        guard number >= 1, visible.contains(index) else { return nil }
-        return index
+        numbered.first { $0.number == number }?.index
     }
 
     private mutating func scrollToSelected() {

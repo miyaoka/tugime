@@ -2,14 +2,11 @@ import Cocoa
 import InputMethodKit
 import TugimeCore
 
-/// 選んでいる文節の候補を、未確定の文字列の下に出す窓。見えている行に 1〜9 の番号を振り、選んでいる候補を強調する。
-/// InputMethodKit が用意する候補の窓は、選択を動かす API と候補の ID が壊れたままなので使わない
+/// 選んでいる文節の候補を、未確定の文字列の下に出す窓。見えている行に番号を振り、選んでいる候補を強調する。
+/// どの候補を選んでいるかは呼び出し側が `CandidatePage` で持ち、窓はそれを描くだけ
 final class CandidateWindow {
     private var panel: NSPanel?
     private let list = CandidateListView()
-
-    /// 見えている範囲と選んでいる候補。窓を出していなければ nil
-    private(set) var page: CandidatePage?
 
     /// 行をクリックしたとき、その候補の位置で呼ぶ
     var onClick: ((Int) -> Void)? {
@@ -17,41 +14,20 @@ final class CandidateWindow {
         set { list.onClick = newValue }
     }
 
-    var isVisible: Bool { panel?.isVisible ?? false }
-
-    /// 未確定の文字列の characterIndex 文字目（選んでいる文節の最初の文字）の下に出す。アプリが位置を返さないときは出さない
-    func show(_ candidates: [String], selected: Int, below client: IMKTextInput, characterIndex: Int) {
-        let page = CandidatePage(count: candidates.count, selected: selected)
+    /// candidates を page のとおりに、未確定の文字列の characterIndex 文字目（選んでいる文節の最初の文字）の下に描く。
+    /// アプリが位置を返さないときは出さない
+    func show(_ candidates: [String], page: CandidatePage, below client: IMKTextInput, characterIndex: Int) {
         list.candidates = candidates
         list.page = page
-        let size = list.fittingSize
-        guard let origin = PanelPlacement.origin(below: client, characterIndex: characterIndex, size: size) else {
-            hide()
-            return
-        }
-        let panel = panel ?? PanelPlacement.makePanel(size: size)
-        panel.level = NSWindow.Level(rawValue: Int(client.windowLevel()) + 1)
+        list.needsDisplay = true
+        let panel = panel ?? PanelPlacement.makePanel()
         panel.contentView = list
-        panel.setContentSize(size)
-        panel.setFrameOrigin(origin)
-        list.needsDisplay = true
-        self.page = page
         self.panel = panel
-        panel.orderFrontRegardless()
-    }
-
-    /// 選んでいる候補を index にし、見えている範囲を送る
-    func select(_ index: Int) {
-        guard var page else { return }
-        page.select(index)
-        self.page = page
-        list.page = page
-        list.needsDisplay = true
+        PanelPlacement.show(panel, size: list.fittingSize, below: client, characterIndex: characterIndex)
     }
 
     func hide() {
         panel?.orderOut(nil)
-        page = nil
     }
 }
 
@@ -88,7 +64,7 @@ private final class CandidateListView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let page else { return }
-        for (row, index) in page.visible.enumerated() {
+        for (row, (number, index)) in page.numbered.enumerated() {
             let rect = NSRect(x: Self.padding, y: Self.padding + CGFloat(row) * Self.rowHeight, width: bounds.width - Self.padding * 2, height: Self.rowHeight)
             let selected = index == page.selected
             if selected {
@@ -97,7 +73,7 @@ private final class CandidateListView: NSView {
             }
             let primary: NSColor = selected ? .alternateSelectedControlTextColor : .labelColor
             let secondary: NSColor = selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
-            drawText("\(row + 1)", font: Self.numberFont, color: secondary, x: rect.minX + 6, in: rect)
+            drawText("\(number)", font: Self.numberFont, color: secondary, x: rect.minX + 6, in: rect)
             drawText(candidates[index], font: Self.font, color: primary, x: rect.minX + Self.numberWidth, in: rect)
         }
         guard showsPosition else { return }
@@ -118,7 +94,7 @@ private final class CandidateListView: NSView {
         guard let page else { return }
         let point = convert(event.locationInWindow, from: nil)
         let row = Int(floor((point.y - Self.padding) / Self.rowHeight))
-        guard (0..<page.visible.count).contains(row) else { return }
-        onClick?(page.visible.lowerBound + row)
+        guard page.numbered.indices.contains(row) else { return }
+        onClick?(page.numbered[row].index)
     }
 }

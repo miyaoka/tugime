@@ -15,20 +15,13 @@ final class RewriteWarning {
         label.font = .systemFont(ofSize: 13)
         label.sizeToFit()
         let size = NSSize(width: label.frame.width + Self.padding.width * 2, height: label.frame.height + Self.padding.height * 2)
-        guard let origin = PanelPlacement.origin(below: client, size: size) else {
-            hide()
-            return
-        }
-        let panel = panel ?? PanelPlacement.makePanel(size: size)
-        panel.level = NSWindow.Level(rawValue: Int(client.windowLevel()) + 1)
+        let panel = panel ?? PanelPlacement.makePanel()
         panel.ignoresMouseEvents = true
-        panel.setContentSize(size)
         panel.contentView?.subviews.forEach { $0.removeFromSuperview() }
         label.frame.origin = NSPoint(x: Self.padding.width, y: Self.padding.height)
         panel.contentView?.addSubview(label)
-        panel.setFrameOrigin(origin)
         self.panel = panel
-        panel.orderFrontRegardless()
+        PanelPlacement.show(panel, size: size, below: client)
     }
 
     func hide() {

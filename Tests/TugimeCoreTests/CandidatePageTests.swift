@@ -2,37 +2,27 @@ import Testing
 @testable import TugimeCore
 
 @Suite struct CandidatePageTests {
-    /// スクロールしていなければ、番号はそのまま候補の位置になる。見えている行より大きい番号は選ばない
-    @Test func numbersTheVisibleRowsFromTheTop() {
-        let page = CandidatePage(count: 5, selected: 0)
-        #expect(page.visible == 0..<5)
-        #expect(page.index(forNumber: 1) == 0)
-        #expect(page.index(forNumber: 5) == 4)
-        #expect(page.index(forNumber: 6) == nil)
-        #expect(page.index(forNumber: 0) == nil)
+    /// どの候補を選んでいても、選んでいる候補は見えている範囲にあり、番号は見えている行に 1 から振られ、
+    /// その番号で選ぶ候補は、その番号を描いた行の候補になる。見えている行に無い番号は選ばない
+    @Test(arguments: [(count: 5, moves: [0, 4, 2]), (count: 12, moves: [0, 9, 11, 0, 11, 2])])
+    func selectsTheCandidateDrawnWithTheNumber(count: Int, moves: [Int]) {
+        var page = CandidatePage(count: count, selected: moves[0])
+        for index in moves {
+            page.select(index)
+            #expect(page.visible.contains(page.selected))
+            #expect(page.visible.count == min(count, CandidatePage.rows))
+            #expect(page.numbered.map(\.number) == Array(1...page.visible.count))
+            for (number, drawn) in page.numbered {
+                #expect(page.index(forNumber: number) == drawn)
+            }
+            #expect(page.index(forNumber: 0) == nil)
+            #expect(page.index(forNumber: page.visible.count + 1) == nil)
+        }
     }
 
-    /// 見えている範囲の下へ選ぶ候補を進めると、その候補が最後の行に来るまで範囲を送り、番号も送った範囲に振る
-    @Test func scrollsSoTheSelectedCandidateStaysVisible() {
-        var page = CandidatePage(count: 12, selected: 0)
-        #expect(page.visible == 0..<9)
-        page.select(9)
-        #expect(page.visible == 1..<10)
-        #expect(page.index(forNumber: 1) == 1)
-        #expect(page.index(forNumber: 9) == 9)
-        page.select(11)
-        #expect(page.visible == 3..<12)
-        // 最後から最初へ回ったときは、最初の候補が最初の行に来る
-        page.select(0)
-        #expect(page.visible == 0..<9)
-    }
-
-    /// 見えている範囲の上へ戻ったときは、その候補が最初の行に来るまで戻す
-    @Test func scrollsBackWhenSelectingAboveTheVisibleRows() {
-        var page = CandidatePage(count: 12, selected: 11)
-        #expect(page.visible == 3..<12)
-        page.select(2)
-        #expect(page.visible == 2..<11)
-        #expect(page.index(forNumber: 1) == 2)
+    /// 窓を開いたときに選んでいる候補が最初の画面より後ろでも、その候補が見えている
+    @Test func showsTheSelectedCandidateWhenOpened() {
+        let page = CandidatePage(count: 15, selected: 12)
+        #expect(page.visible.contains(12))
     }
 }
