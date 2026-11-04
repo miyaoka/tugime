@@ -211,7 +211,7 @@ final class TugimeInputController: IMKInputController {
     private func selectCandidate(numbered number: Int, clauses: [Clause], client: IMKTextInput) {
         guard let index = candidatePage?.index(forNumber: number) else { return }
         self.clauses = Clause.selecting(index, at: focus, in: clauses)
-        focus = (focus + 1) % clauses.count
+        focus = Clause.focus(focus, movedBy: 1, count: clauses.count)
         closeCandidates()
         showMarkedText(client)
     }
@@ -344,7 +344,7 @@ final class TugimeInputController: IMKInputController {
                 let (focus, leading) = (focus, leading)
                 self.clauses = conversion.sync { $0.resize(clauses, at: focus, by: step, leading: leading) }
             } else {
-                focus = (focus + step + clauses.count) % clauses.count
+                focus = Clause.focus(focus, movedBy: step, count: clauses.count)
             }
             closeCandidates()
             showMarkedText(client)

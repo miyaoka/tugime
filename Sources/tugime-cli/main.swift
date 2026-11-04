@@ -114,6 +114,11 @@ do {
         }
         let segmenter = try makeSegmenter()
         var clauses = segmenter.clauses(args[1], leading: leading)
+        // 入力メソッドは打鍵列が空なら文節の選択に入らない。文節が無ければ操作できない
+        guard !clauses.isEmpty else {
+            print(usage)
+            exit(2)
+        }
         var focus = 0
         func show(_ label: String) {
             let marked = clauses.enumerated().map { $0.offset == focus ? "[\($0.element.output)]" : $0.element.output }
@@ -124,9 +129,8 @@ do {
             switch op {
             case "+": clauses = segmenter.resize(clauses, at: focus, by: 1, leading: leading)
             case "-": clauses = segmenter.resize(clauses, at: focus, by: -1, leading: leading)
-            // 入力メソッドと同じく、端から先へ移すと反対の端に回る
-            case ">": focus = (focus + 1) % clauses.count
-            case "<": focus = (focus - 1 + clauses.count) % clauses.count
+            case ">": focus = Clause.focus(focus, movedBy: 1, count: clauses.count)
+            case "<": focus = Clause.focus(focus, movedBy: -1, count: clauses.count)
             case "1"..."9":
                 let index = Int(String(op))!
                 guard index < clauses[focus].candidates.count else {

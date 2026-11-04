@@ -307,8 +307,8 @@ private final class DisplayRecorder: JapaneseConverting {
             switch operation {
             case "+": clauses = segmenter.resize(clauses, at: focus, by: 1)
             case "-": clauses = segmenter.resize(clauses, at: focus, by: -1)
-            case ">": focus = min(focus + 1, clauses.count - 1)
-            default: focus = max(focus - 1, 0)
+            case ">": focus = Clause.focus(focus, movedBy: 1, count: clauses.count)
+            default: focus = Clause.focus(focus, movedBy: -1, count: clauses.count)
             }
             var keys = ""
             var lastSpan: ClauseSpan?
