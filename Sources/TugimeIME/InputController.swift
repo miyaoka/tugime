@@ -275,7 +275,11 @@ final class TugimeInputController: IMKInputController {
         return handleComposing(event, client: client)
     }
 
-    /// 打っている途中（文節の選択に入る前）
+    /// 打っている途中（文節の選択に入る前）。
+    /// 打っている途中は、選んでいる文節が無い。文節に分けて選ぶ文節を決めるのは、文節の選択に入るときが初めて。
+    /// カーソルを末尾に置くのはターミナルへの対処で（`showMarkedText`）、選んでいる文節を表さない。
+    /// 向きを持つ ← → は、選んでいる文節が無いところから 1 つ進んだ文節を選ぶ。→ は 0 番目の最初の文節、← は -1 番目で、端から回って最後の文節。
+    /// Shift+← → は、同じ向きで選んだ文節を伸縮する。向きを持たないキー（Shift+Space・↑ ↓・Shift+Enter）は、最初の文節を選ぶ
     private func handleComposing(_ event: NSEvent, client: IMKTextInput) -> Bool {
         switch event.keyCode {
         case KeyCode.returnKey, KeyCode.enter:
@@ -304,14 +308,16 @@ final class TugimeInputController: IMKInputController {
             showMarkedText(client)
             return true
         case KeyCode.left, KeyCode.right, KeyCode.up, KeyCode.down:
-            // 打っている途中も変換して見せているので、矢印キーで Shift+Space を押さずに文節の選択に入る。
-            // Shift+Space と同じく最初の文節を選び、選んだ後の操作としてそのキーを扱う
+            // 打っている途中も変換して見せているので、矢印キーで Shift+Space を押さずに文節の選択に入る
             guard !keys.isEmpty else { return false }
             let clauses = segmentedClauses()
             self.clauses = clauses
-            focus = 0
+            focus = event.keyCode == KeyCode.left ? clauses.count - 1 : 0
             // ↑ ↓ は文節の表示を描き直さないので、先に文節の選択の表示にしておく
             showMarkedText(client)
+            // Shift 無しの ← → は、文節を選ぶところまでがそのキーの動き
+            let selectsOnly = [KeyCode.left, KeyCode.right].contains(event.keyCode) && !event.modifierFlags.contains(.shift)
+            if selectsOnly { return true }
             return handleConverted(event, clauses: clauses, client: client)
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
