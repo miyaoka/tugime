@@ -91,16 +91,16 @@ const expected = "昨日はyoutubeを見ていた";
 const stepEnds = [5, 7, 12, 14, 15, 16, 20, 23];
 /// 日本語としても読める英語の語。最後まで打ったときに、英語として読む並びと全部を日本語として読む並びの点を比べる
 const englishWord = "youtube";
-/// 図の筋書き。この時点（打鍵の数）で englishWord を含む区間がこの種類になる
-const wordKinds: [number, Kind][] = [
-  [14, "E"],
-  [15, "J"],
-  [16, "E"],
-  [23, "E"],
-];
-/// englishWord が日本語として読まれる時点（打鍵の数）と、そのときの表示に含まれる englishWord の日本語の表記
+/// englishWord が日本語として読まれる時点（打鍵の数）と、そのときの表示に含まれる englishWord の日本語の表記。次の打鍵で英語に戻る
 const japaneseWordAt = 15;
 const japaneseWord = "ようつべ";
+/// 図の筋書き。この時点（打鍵の数）で englishWord を含む区間がこの種類になる
+const wordKinds: [number, Kind][] = [
+  [japaneseWordAt - 1, "E"],
+  [japaneseWordAt, "J"],
+  [japaneseWordAt + 1, "E"],
+  [input.length, "E"],
+];
 
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）
 async function readSteps(prefixes: string[], model: string) {
@@ -566,10 +566,7 @@ for (const [end, kind] of wordKinds) {
   }
   const height = y + 36;
   const label = `${expected} を打ち進めるごとの表示と、その裏で比べた読み方の候補。打鍵列の範囲を日本語や英語として読む候補を挙げ、点の合計が最も高い並びを採る。${englishWord} は、${input[japaneseWordAt - 1]} を打った時点では日本語の ${japaneseWord} に読まれ、${input.slice(japaneseWordAt - 1, japaneseWordAt + 1)} まで打つと英語に戻る`;
-  await assertAlt("docs/how-it-works.md", "conversion.svg", [
-    expected,
-    englishWord,
-  ]);
+  await assertAlt("docs/how-it-works.md", "conversion.svg", [label]);
   await writeImage(
     "conversion.svg",
     svgDocument(
