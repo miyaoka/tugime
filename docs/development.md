@@ -2,6 +2,17 @@
 
 scripts は bun で動かす。bun は `mise.toml` の版を `mise install --locked` で入れる。シェルで mise を有効にしていなければ、bun を使うコマンドの前に `mise exec --` を付ける。scripts の下を変えたら、CI と同じく `bun run --cwd scripts typecheck` と `bun run --cwd scripts format:check` で確かめる。
 
+## ソースから組み立てて入れる
+
+Xcode（Swift 6.2 以降）が要る。組み立てのときに genmai-310M の GGUF（約 340MB）を Hugging Face から `.zenz/` に取得する。
+
+```bash
+bun scripts/build-app.ts            # dist/tugime Dev.app を組み立てて ad-hoc 署名する
+./install.sh "dist/tugime Dev.app"  # 配置して登録する
+```
+
+組み立てたものは `tugime Dev` という別の入力ソースになり、配布版の tugime と並べて入れられる。初めて入れたときは [入力ソースを追加する](../README.md#入力ソースを追加する) と同じ手順で、`tugime Dev (日本語)` を追加する。
+
 ## 変換を確かめる
 
 ```bash

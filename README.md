@@ -72,47 +72,27 @@ Apple Silicon の macOS です。動作は macOS 27 でだけ確かめていま�
 
 ## インストール
 
-改竄されていない tugime を安全に入れるために、配布物が tugime の release workflow で組み立てられたものかを確かめてから入れる方法を案内します。tugime は Apple の有料の公証を受けていないので、代わりに GitHub 上での署名と[出自の証明](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)を使います。
+改竄されていない tugime を安全に入れるために、配布物が tugime の release workflow で組み立てられたものかを確かめてから入れます。tugime は Apple の有料の公証を受けていないので、代わりに GitHub 上での署名と[出自の証明](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)を使います。
 
-入れ方は次の A〜C のどれか 1 つを選んでください。どれで入れても、初めて入れたときだけ、最後に入力ソースを追加します。
-
-### A. mise で入れる
-
-[mise](https://mise.jdx.dev/) を使うと、mise が配布物を確かめてから入れます。tugime の release workflow が署名していない配布物や、署名のあとで書き換えられた配布物は、mise が入れずに止めます。確かめには [packslip](https://packslip.dev/) という仕組みを使います。更新は `mise up` だけです。
-
-mise は 2026.10.5 以降を使ってください。それより前の版は、下のコマンドの `workflow` の指定に対応していません。
+[Homebrew](https://brew.sh/) で [packslip](https://packslip.dev/) を入れます。
 
 ```bash
-mise use -g 'packslip:github.com/miyaoka/tugime[workflow="release.yml@refs/heads/main",postinstall="\"$MISE_TOOL_INSTALL_PATH/install.sh\" \"$MISE_TOOL_INSTALL_PATH/tugime.app\""]'
+brew install packslip
 ```
 
-### B. GitHub CLI で入れる
-
-mise を使わないときは、[GitHub CLI](https://cli.github.com/) で同じく確かめてから入れます。次のコマンドは、一時ディレクトリに最新版を取得し、tugime の release workflow が組み立てたものかを確かめ、確かめられたときだけ展開して入れます。更新するときも同じコマンドです。
+packslip で tugime を入れます。packslip は確かめられた配布物だけを展開し、`tugime-install` がそれを配置して登録します。更新するときも、このコマンドを実行します。
 
 ```bash
-dir=$(mktemp -d) &&
-gh release download --repo miyaoka/tugime --pattern tugime-macos-arm64.tar.gz --dir "$dir" &&
-gh attestation verify "$dir/tugime-macos-arm64.tar.gz" --repo miyaoka/tugime --cert-identity https://github.com/miyaoka/tugime/.github/workflows/release.yml@refs/heads/main &&
-tar -xzf "$dir/tugime-macos-arm64.tar.gz" -C "$dir" &&
-bash "$dir/install.sh"
+packslip install github.com/miyaoka/tugime \
+  --identity https://github.com/miyaoka/tugime/.github/workflows/release.yml@refs/heads/main
+~/.local/bin/tugime-install
 ```
 
-### C. ソースから組み立てて入れる
-
-Xcode（Swift 6.2 以降）と、[mise](https://mise.jdx.dev/) で入れる bun が要ります。組み立てのときに genmai-310M の GGUF（約 340MB）を Hugging Face から `.zenz/` に取得します。自分で組み立てるので、出自の確かめは要りません。
-
-```bash
-mise install --locked                   # mise.toml の版の bun を入れる
-mise exec -- bun scripts/build-app.ts   # dist/tugime Dev.app を組み立てて ad-hoc 署名する
-./install.sh "dist/tugime Dev.app"      # 配置して登録する
-```
-
-組み立てたものは `tugime Dev` という別の入力ソースになり、配布版の tugime と並べて入れられます。
+[Homebrew 以外のインストール方法（mise、GitHub CLI）](docs/install.md)
 
 ### 入力ソースを追加する
 
-初めて入れたときだけ、一度ログアウトしてログインし直してください。システム設定は、ログインし直すまで新しい入力ソースを一覧に出しません。その後、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から、配布版なら `tugime (日本語)`、ソースから組み立てたものなら `tugime Dev (日本語)` を追加します。tugime は自分では入力ソースを有効にしません。
+初めて入れたときだけ、一度ログアウトしてログインし直してください。システム設定は、ログインし直すまで新しい入力ソースを一覧に出しません。その後、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 から `tugime (日本語)` を追加します。tugime は自分では入力ソースを有効にしません。
 
 ## 使い方
 
@@ -135,10 +115,11 @@ mise exec -- bun scripts/build-app.ts   # dist/tugime Dev.app を組み立てて
 
 ## ドキュメント
 
+- [インストール方法](docs/install.md): mise と GitHub CLI でのインストール
 - [使い方](docs/usage.md): キー操作、句読点と記号、日本語と英語の見分け方、tugime の辞書
 - [変換の仕組み](docs/how-it-works.md): 区切りの決め方と、変換の仕方
 - [現状の制限](docs/limitations.md): 誤った変換になる既知の例と対処
-- [開発](docs/development.md): 変換の確かめ方、精度の測り方、図の作り直し
+- [開発](docs/development.md): ソースからの組み立て、変換の確かめ方、精度の測り方、図の作り直し
 
 ## 使っているもの
 
