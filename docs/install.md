@@ -24,4 +24,4 @@ bash "$dir/install.sh"
 
 ## ソースから組み立てて入れる
 
-[開発](development.md#ソースから組み立てて入れる) にある。組み立てたものは、配布版とは別の `tugime Dev` という入力ソースになる。
+[開発](development.md#ソースから組み立てて入れる) にある。
