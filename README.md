@@ -48,7 +48,7 @@ tugime は、打った読みをまとめて読む変換モデルで変換しま�
 
 ## 変換の仕組み
 
-![zipwokaitousita. と打つと、tugime は 1 受け取る、2 読み分ける（zip は p が読めないので英語）、3 区切りを決める（zip｜を回答した｜。）、4 漢字を仕上げる（zipを解凍した。）の工程で変換する。各工程では InputMethodKit、ローマ字の綴りの表、システム辞書、wordfreq と Webster's、tugime の検査係、genmai-310M、llama.cpp が働く](docs/images/pipeline.svg)
+![zipwokaitousita. と打つと、tugime は 1 受け取る、2 読み分ける（zip は p が読めないので英語）、3 区切りを決める（zip｜を回答した｜。）、4 変換を仕上げる（zipを解凍した。）の工程で変換する。各工程では InputMethodKit、ローマ字の綴りの表、システム辞書、wordfreq と Webster's、tugime の検査係、genmai-310M、llama.cpp が働く](docs/images/pipeline.svg)
 
 tugime は 1 キー打つたびに、打鍵列の全部をこの 4 つの工程に流し直します。ほかの日本語入力で崩れるのは、この工程の一部が無いためです。
 
@@ -135,7 +135,7 @@ mise exec -- bun scripts/build-app.ts   # dist/tugime Dev.app を組み立てて
 ## ドキュメント
 
 - [使い方](docs/usage.md): キー操作、句読点と記号、日本語と英語の見分け方、tugime の辞書
-- [変換の仕組み](docs/how-it-works.md): 区切りの決め方と、漢字の選び方
+- [変換の仕組み](docs/how-it-works.md): 区切りの決め方と、変換の仕方
 - [現状の制限](docs/limitations.md): 誤った変換になる既知の例と対処
 - [開発](docs/development.md): 変換の確かめ方、精度の測り方、図の作り直し
 
