@@ -351,7 +351,6 @@ final class TugimeInputController: IMKInputController {
                 moveCandidate(by: -1, clauses: clauses, client: client)
             }
         case KeyCode.left, KeyCode.right:
-            // Shift 無しで選ぶ文節を移し、Shift 付きで選んでいる文節を伸縮する
             let step = event.keyCode == KeyCode.left ? -1 : 1
             if event.modifierFlags.contains(.shift) {
                 let (focus, leading) = (focus, leading)
