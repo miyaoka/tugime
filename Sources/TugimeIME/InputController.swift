@@ -398,9 +398,7 @@ final class TugimeInputController: IMKInputController {
     private func convertFocusedClause(to form: CharacterForm, clauses: [Clause], client: IMKTextInput) {
         let focus = focus
         guard let text = conversion.sync({ $0.convertClause(clauses, at: focus, to: form) }) else { return }
-        var clauses = clauses
-        if !clauses[focus].candidates.contains(text) { clauses[focus].candidates.append(text) }
-        self.clauses = Clause.selecting(clauses[focus].candidates.firstIndex(of: text)!, at: focus, in: clauses)
+        self.clauses = Clause.selecting(text: text, at: focus, in: clauses)
         candidatePanel.hide()
         showMarkedText(client)
     }

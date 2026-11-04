@@ -297,6 +297,8 @@ private final class DisplayRecorder: JapaneseConverting {
         ("main,dev", ">+-<-+>+--"),
         ("kyouhatokyo", "+++++----->+-"),
         ("watasihagooglewotukau", ">>+-<+++---->>-+"),
+        ("kyouha(cafe)desu", ">+++++-----<++>+-"),
+        ("kore,are,sore", "+++>-<--->+"),
     ])
     func resizingKeepsEveryKeystroke(input: String, operations: String) {
         var clauses = segmenter.clauses(input)
@@ -316,6 +318,207 @@ private final class DisplayRecorder: JapaneseConverting {
             }
             #expect(keys == input, "\(operation) \(clauses.map(\.output))")
         }
+    }
+
+    /// 括弧の文節を伸ばすと、括弧と中の語を 1 つの日本語の文節にして変換する。縮めると元の区切りに戻る
+    @Test func resizingAcrossBracketsConvertsThemAsOneClause() {
+        let original = segmenter.clauses("(cafe)")
+        #expect(original.map(\.kind) == [.punctuation, .english, .punctuation])
+        #expect(readings(original) == ["（", "cafe", "）"])
+        var clauses = original
+        for _ in 0..<6 { clauses = segmenter.resize(clauses, at: 0, by: 1) }
+        #expect(clauses.count == 1)
+        #expect(clauses[0].kind == .japanese)
+        #expect(clauses[0].reading == "（かふぇ）")
+        // かなと打ったままの形は規則で決まる。変換した表記は点で決まるので書かない
+        #expect(Set(["（かふぇ）", "(cafe)"]).isSubset(of: clauses[0].candidates))
+        for _ in 0..<6 { clauses = segmenter.resize(clauses, at: 0, by: -1) }
+        #expect(clauses.map(\.kind) == original.map(\.kind))
+        #expect(readings(clauses) == readings(original))
+    }
+
+    /// 括弧をまたいでまとめた文節は、前の文節を伸縮して後ろを変換し直しても 1 文節のまま残る
+    @Test func keepsAJoinedClauseWholeWhenAnEarlierClauseIsResized() throws {
+        var clauses = segmenter.clauses("kyouhanihon(cafe)desu")
+        let bracket = try #require(clauses.firstIndex { $0.reading == "（" })
+        for _ in 0..<4 { clauses = segmenter.resize(clauses, at: bracket, by: 1) }
+        #expect(readings(clauses).contains("（かふぇ）"))
+        clauses = segmenter.resize(segmenter.resize(clauses, at: 0, by: 1), at: 0, by: -1)
+        #expect(readings(clauses).contains("（かふぇ）"))
+    }
+
+    /// 同じ区間の後ろで範囲を決めた文節も、前の文節を区間の中で縮めても伸ばしても、残りを作り直したときにその範囲のまま残る
+    @Test(arguments: [-1, 1])
+    func keepsTheRangeTheUserSetLaterInTheSameSpan(delta: Int) throws {
+        var clauses = segmenter.clauses("kyouhaasitanoyoteiwokimetaikedo")
+        try #require(clauses.count >= 3 && clauses.allSatisfy { $0.span == clauses[0].span })
+        clauses = segmenter.resize(clauses, at: clauses.count - 1, by: -1)
+        let kept = Array(readings(clauses).suffix(2))
+        #expect(kept.last == "ど")
+        clauses = segmenter.resize(clauses, at: 0, by: delta)
+        #expect(Array(readings(clauses).suffix(2)) == kept)
+    }
+
+    /// 前の英語の文節を伸縮して後ろの打鍵を日英判定からやり直しても、後ろで範囲を決めた文節は、新しい日本語区間に収まればその範囲のまま残る。
+    /// 範囲を決めていない後ろの文節の切り方は変換が決めるので、範囲の直後で切れることだけを確かめる
+    @Test func keepsTheRangeTheUserSetWhenTheSpansAfterAreJudgedAgain() throws {
+        var clauses = segmenter.clauses("githubnipushsitakedodameda")
+        try #require(clauses[0].kind == .english)
+        let sita = try #require(clauses.firstIndex { $0.reading.hasPrefix("したけど") })
+        clauses = segmenter.resize(clauses, at: sita, by: -1)
+        let kept = clauses[sita].reading
+        try #require(!kept.hasSuffix("ど"))
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        let index = try #require(clauses.firstIndex { $0.reading == kept && $0.fixedRange })
+        #expect(clauses.indices.contains(index + 1) && clauses[index + 1].reading.hasPrefix("ど"))
+    }
+
+    /// 後ろの文節で選んだ候補は、前の文節を区間の中で伸縮しても、日英判定をやり直す伸縮をしても残る
+    @Test(arguments: [("kyouhaasitanoyoteiwokimetaikedo", -1), ("githubnipushsitakedodameda", 1)])
+    func keepsTheChosenCandidateWhenAnEarlierClauseIsResized(input: String, delta: Int) throws {
+        var clauses = segmenter.clauses(input)
+        let last = clauses.count - 1
+        try #require(last >= 2 && clauses[last].candidates.count > 1)
+        clauses = Clause.selecting(1, at: last, in: clauses)
+        let chosen = clauses[last].output
+        clauses = segmenter.resize(clauses, at: 0, by: delta)
+        #expect(clauses.last?.output == chosen)
+    }
+
+    /// F6〜F10 で文字種を変えた文節も、候補を選んだ文節と同じく、前の文節を伸縮しても残る
+    @Test func keepsTheCharacterFormChosenWithAFunctionKey() throws {
+        var clauses = segmenter.clauses("kyouhaasitanoyoteiwokimetaikedo")
+        let last = clauses.count - 1
+        try #require(last >= 2)
+        let katakana = try #require(segmenter.convertClause(clauses, at: last, to: .katakana))
+        clauses = Clause.selecting(text: katakana, at: last, in: clauses)
+        clauses = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(clauses.last?.output == katakana)
+    }
+
+    /// 英語の文節で選んだ表記（全角の英字）も、前の文節を伸縮して後ろの打鍵を日英判定からやり直したとき、打鍵の範囲が同じ文節になれば残る。
+    /// github と cwd は綴りの表で読めないので英語、ni と de は 2 文字以下なので日本語になる
+    @Test func keepsTheTextChosenOnAnEnglishClauseWhenTheSpansAfterAreJudgedAgain() throws {
+        var clauses = segmenter.clauses("githubnicwdde")
+        try #require(readings(clauses) == ["github", "に", "cwd", "で"])
+        clauses = Clause.selecting(text: "ｃｗｄ", at: 2, in: clauses)
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        let cwd = try #require(clauses.first { $0.reading == "cwd" })
+        #expect(cwd.output == "ｃｗｄ")
+    }
+
+    /// 先頭の候補に選び直した文節は、何も選ばなかった文節と同じく、前の文節を伸縮すると作り直す
+    @Test func selectingTheFirstCandidateAgainLetsTheClauseBeRebuilt() throws {
+        let original = segmenter.clauses("githubnicwdde")
+        try #require(readings(original) == ["github", "に", "cwd", "で"])
+        var clauses = Clause.selecting(text: "ｃｗｄ", at: 2, in: original)
+        clauses = Clause.selecting(0, at: 2, in: clauses)
+        let resized = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(resized.map(\.output) == segmenter.resize(original, at: 0, by: 1).map(\.output))
+    }
+
+    /// 丸括弧の形を選び直すと組の括弧も同じ形になり、前の文節を伸縮して後ろを日英判定からやり直しても、両方その形のまま残る。
+    /// ( は直前が日本語なら （ になり、候補で打ったままの ( を選べる。github は綴りの表で読めないので英語、ni は 2 文字以下なので日本語になり、
+    /// github を伸ばすと に を取り込み、後ろの toka(cafe)desu を日英判定からやり直す
+    @Test func keepsBothBracketsOfAChosenFormWhenAnEarlierClauseIsResized() throws {
+        var clauses = segmenter.clauses("githubnitoka(cafe)desu")
+        let open = try #require(clauses.firstIndex { $0.output == "（" })
+        let close = try #require(clauses.firstIndex { $0.output == "）" })
+        try #require(clauses[0].reading == "github" && clauses[open - 1].kind == .japanese)
+        clauses = Clause.selecting(text: "(", at: open, in: clauses)
+        try #require(clauses[close].output == ")")
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        try #require(clauses[0].reading == "githubni")
+        let text = clauses.map(\.output).joined()
+        #expect(text.contains("(") && text.contains(")"))
+        #expect(!text.contains("（") && !text.contains("）"))
+    }
+
+    /// 後ろにある、利用者が伸縮で作った区間は、前の文節を伸縮して後ろを日英判定からやり直しても、日英も打鍵の範囲もそのまま残る。
+    /// その区間から後ろの文節も、区切りを変えずに残る。github は綴りの表で読めないので英語、e と ni は 2 文字以下なので日本語になる。
+    /// githubnipushsita は先頭を伸ばすと に まで取り込むのでやり直す打鍵が無く、e,nipushsita は 、 だけを取り込むので に をやり直す
+    @Test(arguments: ["githubnipushsita", "e,nipushsita"])
+    func keepsALaterSpanTheUserMadeWhenTheSpansAfterAreJudgedAgain(input: String) throws {
+        var clauses = segmenter.clauses(input)
+        let push = try #require(clauses.firstIndex { $0.reading == "push" })
+        clauses = segmenter.resize(clauses, at: push, by: -1)
+        let made = try #require(clauses.first { $0.reading == "pus" })
+        #expect(made.kind == .english && made.span.resized)
+        let after = spansFrom(made.span.source, in: clauses)
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(clauses.contains { $0.reading == "pus" && $0.kind == .english && $0.span.resized })
+        #expect(spansFrom(made.span.source, in: clauses) == after)
+    }
+
+    /// 打鍵 source の区間から後ろの区間の、打鍵・種類・伸縮で作った区間か。区間の中の文節の切り方は変換が決めるので含めない
+    private func spansFrom(_ source: String, in clauses: [Clause]) -> [String] {
+        var shapes: [String] = []
+        var last: ClauseSpan?
+        for clause in clauses where clause.span != last {
+            last = clause.span
+            if shapes.isEmpty, clause.span.source != source { continue }
+            shapes.append("\(clause.span.source) \(clause.kind) \(clause.span.resized)")
+        }
+        return shapes
+    }
+
+    /// 作った区間の手前で開き丸括弧の形が変わったら、その区間を残さず後ろを日英判定からやり直すので、閉じ丸括弧は開き丸括弧と同じ形になる。
+    /// ( は直前が日本語の に なら （、先頭を伸ばして英語の githubni に取り込ませると打ったままの ( になる
+    @Test func rejudgesAMadeSpanWhenTheOpenBracketBeforeItChangesForm() throws {
+        var clauses = segmenter.clauses("githubni(pushsita)")
+        let push = try #require(clauses.firstIndex { $0.reading == "push" })
+        clauses = segmenter.resize(clauses, at: push, by: -1)
+        try #require(clauses.contains { $0.reading == "pus" && $0.span.resized } && clauses.contains { $0.output == "（" })
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        try #require(clauses[0].reading == "githubni")
+        let text = clauses.map(\.output).joined()
+        #expect(text.filter { $0 == "(" }.count == text.filter { $0 == ")" }.count)
+        #expect(text.filter { $0 == "（" }.count == text.filter { $0 == "）" }.count)
+    }
+
+    /// 作った区間は、伸ばした文節に取り込まれたときと、縮めて手放した打鍵のすぐ後ろにあるときは残さず、日英判定をやり直す。
+    /// e,pushsita の push を pus に縮め、残った h を hsi に伸ばしてから、pus を伸縮する
+    @Test(arguments: [1, -1])
+    func rejudgesAMadeSpanTakenInOrRightAfterTheReleasedKeys(delta: Int) throws {
+        var clauses = segmenter.clauses("e,pushsita")
+        let push = try #require(clauses.firstIndex { $0.reading == "push" })
+        clauses = segmenter.resize(clauses, at: push, by: -1)
+        clauses = segmenter.resize(clauses, at: push + 1, by: 1)
+        try #require(readings(clauses).contains("hsi") && clauses[push].reading == "pus")
+        clauses = segmenter.resize(clauses, at: push, by: delta)
+        #expect(!clauses.contains { $0.reading == "hsi" })
+    }
+
+    /// 句読点は前の文節にも取り込める。2 文字以下の読める綴りは日本語になり、1 かなは 1 文節になるので、前の文節は え に決まる
+    @Test func resizingTakesPunctuationIntoTheClauseBefore() {
+        let original = segmenter.clauses("e,ki")
+        #expect(readings(original) == ["え", "、", "き"])
+        let clauses = segmenter.resize(original, at: 0, by: 1)
+        #expect(clauses[0].reading == "え、")
+        #expect(clauses[0].kind == .japanese)
+    }
+
+    /// 句読点で終わる文節の後ろは、区切りの選択と同じく句読点の後の文の頭として表示する（文の頭の 1 かなは変換しない）
+    @Test func showsTheRestAfterATakenPunctuationLikeAfterThePunctuation() throws {
+        let original = segmenter.clauses("e,ki")
+        let taken = segmenter.resize(original, at: 0, by: 1)
+        #expect(readings(taken) == ["え、", "き"])
+        let last = try #require(taken.last)
+        #expect(last.output == last.reading)
+        let shrunk = segmenter.resize(segmenter.resize(original, at: 1, by: 1), at: 1, by: -1)
+        #expect(readings(shrunk) == readings(original))
+        #expect(shrunk.last?.output == shrunk.last?.reading)
+    }
+
+    /// 記号で終わるまとめた文節の後ろは、前の文節を伸縮して変換し直しても、記号の後の文の頭として表示する
+    @Test func keepsTheRestAfterAJoinedClauseAtTheSentenceHeadWhenRedisplayed() throws {
+        var clauses = segmenter.clauses("kyouhanihon(cafe)ki")
+        let bracket = try #require(clauses.firstIndex { $0.reading == "（" })
+        for _ in 0..<4 { clauses = segmenter.resize(clauses, at: bracket, by: 1) }
+        #expect(Array(readings(clauses).suffix(2)) == ["（かふぇ）", "き"])
+        clauses = segmenter.resize(segmenter.resize(clauses, at: 0, by: 1), at: 0, by: -1)
+        let last = try #require(clauses.last)
+        #expect(last.reading == "き" && last.output == "き")
     }
 
     // MARK: 途中の確定
@@ -351,6 +554,44 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(segmenter.convertClause(clauses, at: 1, to: .fullwidthRoman) == nil)
         #expect(segmenter.commit(clauses, through: 0) == nil)
     }
+
+    // MARK: 英語の区間の文字種
+
+    /// 英語の区間のかなは、打鍵を前から順にかなにし、読めない文字は打ったまま残す。c の綴りも読み、後ろに綴りが続かない単独の n は ん と読む
+    @Test(arguments: [
+        ("cafe", "かふぇ", "カフェ"), ("github", "ぎてゅb", "ギテュb"), ("conb", "こんb", "コンb"), ("kotlin.", "こtぃん.", "コtィン."),
+    ])
+    func turnsAnEnglishSpanIntoKanaAsTyped(input: String, hiragana: String, katakana: String) {
+        #expect(segmenter.segment(input).map(\.kind) == [.english])
+        #expect(segmenter.convertWhole(input, to: .hiragana) == hiragana)
+        #expect(segmenter.convertWhole(input, to: .katakana) == katakana)
+        let clauses = segmenter.clauses(input)
+        #expect(segmenter.convertClause(clauses, at: 0, to: .hiragana) == hiragana)
+        #expect(segmenter.convertClause(clauses, at: 0, to: .katakana) == katakana)
+    }
+
+    /// c の綴りはかなにするときだけ読み、日英判定の綴りの表では読まない
+    @Test func readsCSpellingsOnlyWhenTurningKeysIntoKana() throws {
+        let table = try Shared.table.get()
+        #expect(table.reading(of: "cafe") == nil)
+        #expect(table.typedKana(of: "cafe") == ("かふぇ", true))
+        #expect(table.typedKana(of: "github") == ("ぎてゅb", false))
+    }
+
+    /// かなにするときだけ読む綴りの表は綴りの行だけを持ち、@ の指定はその表の名前と行を示してエラーにする
+    @Test func rejectsDirectivesInTheTypedKanaTable() {
+        let error = #expect(throws: RomajiTable.ParseError.self) { try RomajiTable(contents: "a\tあ", typedKana: "ca\tか\n@sokuon\tc") }
+        #expect(error == .directiveNotAllowed(file: "romaji-typed-kana.tsv", 2, "@sokuon\tc"))
+    }
+
+    /// 英語の区間の候補は、打ったままの綴りの次に全角の英字を並べる。語を読み切れればかなも並べ、読み切れなければ並べない
+    @Test func listsFullwidthLettersAfterTheTypedSpelling() {
+        let cafe = segmenter.clauses("cafe")[0].candidates
+        #expect(Array(cafe.prefix(2)) == ["cafe", "ｃａｆｅ"])
+        #expect(cafe.contains("かふぇ"))
+        #expect(cafe.contains("カフェ"))
+        #expect(segmenter.clauses("github")[0].candidates == ["github", "ｇｉｔｈｕｂ"])
+    }
 }
 
 /// 本物の変換器に処理を任せ、表示の変換の末尾に読みに無いかなを足して、読みと合わない表示にする
@@ -372,11 +613,142 @@ private final class RewritingConverter: JapaneseConverting {
     func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
 }
 
+/// 本物の変換器に処理を任せ、決めた読みの表示の変換だけを、決めた文節と表記にする
+private final class FixedDisplayConverter: JapaneseConverting {
+    private let base: JapaneseConverting = Shared.converter
+    private let fixed: [String: [JapaneseClause]]
+
+    init(_ fixed: [String: [JapaneseClause]]) {
+        self.fixed = fixed
+    }
+
+    func convert(kana: String, context: JapaneseContext) -> JapaneseReading { base.convert(kana: kana, context: context) }
+
+    func alternatives(kana: String, context: JapaneseContext) -> [String] { base.alternatives(kana: kana, context: context) }
+
+    func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay {
+        guard let clauses = fixed[kana] else { return base.display(kana: kana, context: context, left: left) }
+        return JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses)
+    }
+
+    func endComposition() { base.endComposition() }
+    func replaceUserWords(_ words: [UserWord]) { base.replaceUserWords(words) }
+}
+
+/// 利用者が伸縮で範囲を決めた文節を、後ろを変換し直すときに守るかは、範囲の端を表示の変換の表記の上で切れるかで決まる。
+/// 表記は変換器が決めるので、をつかった の表示を を｜使った に決めて確かめる。google は綴りの表で読めないので英語の区間になり、
+/// 前後の日本語区間を分ける
+@Suite struct FixedRangeCutTests {
+    let segmenter: Segmenter
+    let input = "kinouwatasihagooglewotukatta"
+
+    init() throws {
+        segmenter = try Shared.make(FixedDisplayConverter([
+            "をつかった": [JapaneseClause(reading: "を", text: "を"), JapaneseClause(reading: "つかった", text: "使った")],
+        ]))
+    }
+
+    private func readings(_ clauses: [Clause]) -> [String] {
+        clauses.map(\.reading)
+    }
+
+    /// 範囲の端（をつか の後ろ）を 使った の後ろで切れるので、前の文節を伸縮して後ろを変換し直しても、その範囲のまま残る。
+    /// 表記は区間の全体を変換したものを切るので、つなぐと範囲を決めずに同じ伸縮をしたときと同じ文字列になる
+    @Test func keepsTheRangeTheUserSetWhenAnEarlierClauseIsResized() throws {
+        var clauses = segmenter.clauses(input)
+        #expect(Array(readings(clauses).suffix(2)) == ["を", "つかった"])
+        let wo = clauses.count - 2
+        clauses = segmenter.resize(segmenter.resize(clauses, at: wo, by: 1), at: wo, by: 1)
+        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
+        let unset = segmenter.resize(segmenter.clauses(input), at: 0, by: 1)
+        #expect(clauses.map(\.output).joined() == unset.map(\.output).joined())
+        // 変換し直した後も、範囲を決めた印は残る
+        clauses = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(Array(readings(clauses).suffix(2)) == ["をつか", "った"])
+    }
+
+    /// 表記を選んだ文節は、範囲の端が 使 の中に当たって切れなくても、前後の読みを分けて変換し、その範囲と表記のまま残す
+    @Test func keepsAChosenClauseWhoseEndCannotBeCut() {
+        var clauses = segmenter.clauses(input)
+        let wo = clauses.count - 2
+        clauses = segmenter.resize(clauses, at: wo, by: 1)
+        clauses = Clause.selecting(text: "をツ", at: wo, in: clauses)
+        let resized = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(Array(readings(resized).suffix(2)) == ["をつ", "かった"])
+        #expect(resized[resized.count - 2].output == "をツ")
+    }
+
+    /// 範囲の端（をつ の後ろ）が 使 の中に当たって切れないときは、その範囲を守らず、表示の変換の区切りにする
+    @Test func fallsBackToTheConverterCutsWhenAnEndCannotBeCut() {
+        var clauses = segmenter.clauses(input)
+        let wo = clauses.count - 2
+        clauses = segmenter.resize(clauses, at: wo, by: 1)
+        #expect(clauses[wo].reading == "をつ")
+        let resized = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(Array(readings(resized).suffix(2)) == ["を", "つかった"])
+        #expect(readings(resized) == readings(segmenter.resize(segmenter.clauses(input), at: 0, by: 1)))
+    }
+
+    /// 範囲を守っても、範囲の外の変換の区切りは、漢字と漢字の間（東京｜大学）でもそのまま残る。
+    /// e は 2 文字以下の読める綴りなので日本語になり、`,` の後ろの toukyoudaigakuheitta は 1 つの日本語区間になる
+    @Test func keepsTheConverterCutsOutsideTheRange() throws {
+        let segmenter = try Shared.make(FixedDisplayConverter([
+            "とうきょうだいがくへいった": [
+                JapaneseClause(reading: "とうきょう", text: "東京"),
+                JapaneseClause(reading: "だいがくへ", text: "大学へ"),
+                JapaneseClause(reading: "いった", text: "行った"),
+            ],
+        ]))
+        var clauses = segmenter.clauses("e,toukyoudaigakuheitta")
+        try #require(readings(clauses) == ["え", "、", "とうきょう", "だいがくへ", "いった"])
+        let last = clauses.count - 1
+        clauses = segmenter.resize(segmenter.resize(clauses, at: last, by: -1), at: last, by: 1)
+        try #require(clauses[last].reading == "いった" && clauses[last].fixedRange)
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        #expect(readings(clauses) == ["え、", "とうきょう", "だいがくへ", "いった"])
+        #expect(clauses.last?.fixedRange == true)
+    }
+}
+
 /// 打っている途中の表示が、変換して見せた区間で読みと合わないかを返す
 @Suite struct LiveDisplayTests {
     @Test func flagsAConvertedSpanThatDoesNotFollowTheReading() throws {
         let segmenter = try Shared.make(RewritingConverter())
         #expect(segmenter.liveDisplay("kawacwdkyouhaii").differsFromInput)
+    }
+}
+
+/// 文の頭の 1 かなを変換せずに見せるのは、それが入力の最後の区間のときだけ。後ろに区間が続くなら変換に渡す
+@Suite struct LastKanaDisplayTests {
+    fileprivate let recorder = DisplayRecorder()
+    let segmenter: Segmenter
+
+    init() throws {
+        segmenter = try Shared.make(recorder)
+    }
+
+    @Test(arguments: [(true, [String]()), (false, ["き"])])
+    func convertsTheLastKanaOnlyWhenTheInputContinues(endsInput: Bool, converted: [String]) {
+        _ = segmenter.displays(
+            of: [.japanese(kana: "き", context: .start, startsSentence: false)], left: "", startsAtHead: true, endsInput: endsInput, endsWithPendingN: false
+        ) { _, display, _ in (result: (), shown: display?.text ?? "") }
+        #expect(recorder.kanas == converted)
+    }
+
+    /// 前の文節を伸縮して後ろを日英判定からやり直すとき、作った区間の手前の最後が文の頭の 1 かなでも、入力の終わりではないので変換に渡す。
+    /// e,kiwapushsita の きわ を き と わ に分け、わ を p まで伸ばして読めない英字を含む作った区間 wap にしてから、e を `,` まで伸ばす
+    @Test func convertsTheLastKanaBeforeAKeptSpan() throws {
+        var clauses = segmenter.clauses("e,kiwapushsita")
+        try #require(clauses.prefix(3).map(\.reading) == ["え", "、", "きわ"])
+        clauses = segmenter.resize(clauses, at: 2, by: -1)
+        clauses = segmenter.resize(clauses, at: 3, by: 1)
+        try #require(clauses[2].reading == "き" && clauses.contains { $0.reading == "wap" && $0.span.resized })
+        let before = recorder.kanas.count
+        clauses = segmenter.resize(clauses, at: 0, by: 1)
+        try #require(clauses[0].reading == "え、" && clauses.contains { $0.reading == "wap" && $0.span.resized })
+        #expect(recorder.kanas.dropFirst(before).contains("き"))
     }
 }
 
@@ -426,6 +798,18 @@ private final class RewritingConverter: JapaneseConverting {
         let resized = segmenter.resize(clauses, at: 0, by: 1)
         #expect(readings(resized) == ["きょうはい", "い", "cwd", "で"])
         #expect(recorder.lefts.last == resized.dropLast().map(\.output).joined())
+    }
+
+    /// 前の文節を伸縮して後ろの区間を変換し直すとき、表記を選んだ文節の後ろの区間は、選んだ表記を左の文脈にして変換する
+    @Test func resizingPassesTheChosenTextToTheLaterSpans() throws {
+        var clauses = segmenter.clauses("kawacwdkyouhacwdde")
+        try #require(clauses.first?.reading == "かわ" && clauses.last?.reading == "で")
+        let chosen = try #require(clauses.lastIndex { $0.kind == .japanese && $0.reading != "で" })
+        let text = try #require(segmenter.convertClause(clauses, at: chosen, to: .katakana))
+        clauses = Clause.selecting(text: text, at: chosen, in: clauses)
+        _ = segmenter.resize(clauses, at: 0, by: -1)
+        #expect(recorder.kanas.last == "で")
+        #expect(recorder.lefts.last?.hasSuffix(text + "cwd") == true)
     }
 
     /// 伸縮した後の表示も、入力欄のカーソルより前の文字列に続けて変換する

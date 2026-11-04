@@ -1,22 +1,29 @@
 import Foundation
 
 /// 利用者の綴りの表。打鍵列の区間をかなとして最後まで読めるかを判定する。
+/// 打鍵をそのままかなにする（typedKana）ための、かなにするときだけ足して読む綴りも持つ
 public struct RomajiTable: Sendable {
-    public enum ParseError: Error, CustomStringConvertible {
-        case malformedLine(Int, String)
-        case unknownDirective(Int, String)
-        case duplicateSpelling(Int, String)
-        case missingResource
+    /// file は読んだ表の名前（romaji.tsv など）
+    public enum ParseError: Error, CustomStringConvertible, Equatable {
+        case malformedLine(file: String, Int, String)
+        case unknownDirective(file: String, Int, String)
+        case duplicateSpelling(file: String, Int, String)
+        case directiveNotAllowed(file: String, Int, String)
+        case missingResource(String)
 
         public var description: String {
             switch self {
-            case .malformedLine(let n, let line): "綴りの表 \(n) 行目を読めない: \(line)"
-            case .unknownDirective(let n, let line): "綴りの表 \(n) 行目の指定が分からない: \(line)"
-            case .duplicateSpelling(let n, let key): "綴りの表 \(n) 行目の綴り \(key) は前の行にもある"
-            case .missingResource: "既定の綴りの表がバンドルに無い"
+            case .malformedLine(let file, let n, let line): "\(file) \(n) 行目を読めない: \(line)"
+            case .unknownDirective(let file, let n, let line): "\(file) \(n) 行目の指定が分からない: \(line)"
+            case .duplicateSpelling(let file, let n, let key): "\(file) \(n) 行目の綴り \(key) は前の行にもある"
+            case .directiveNotAllowed(let file, let n, let line): "\(file) \(n) 行目に @ の指定は書けない: \(line)"
+            case .missingResource(let file): "既定の \(file) がバンドルに無い"
             }
         }
     }
+
+    static let tableFile = "romaji.tsv"
+    static let typedKanaFile = "romaji-typed-kana.tsv"
 
     let entries: [String: String]
     /// 綴りごとの、表の中で何番目の行か。同じかなの綴りは上の行が既定の打ち方
@@ -24,8 +31,27 @@ public struct RomajiTable: Sendable {
     let maxKeyLength: Int
     let sokuonLetters: Set<Character>
     let nBeforeLetters: Set<Character>
+    /// 打鍵をかなにする（typedKana）ときに読む綴り。綴りの表に、かなにするときだけ読む綴りを足したもの
+    let typedKanaEntries: [String: String]
+    let typedKanaMaxKeyLength: Int
 
-    public init(contents: String) throws {
+    /// contents は綴りの表、typedKana は打鍵をかなにするときだけ足して読む綴り。typedKana は綴りの行だけを持ち、同じ綴りは contents を使う
+    public init(contents: String, typedKana: String) throws {
+        let table = try Self.parse(contents, file: Self.tableFile, allowsDirectives: true)
+        let extra = try Self.parse(typedKana, file: Self.typedKanaFile, allowsDirectives: false)
+        self.entries = table.entries
+        self.rank = table.rank
+        self.maxKeyLength = table.entries.keys.map(\.count).max() ?? 0
+        self.sokuonLetters = table.sokuon
+        self.nBeforeLetters = table.nBefore
+        self.typedKanaEntries = table.entries.merging(extra.entries) { own, _ in own }
+        self.typedKanaMaxKeyLength = typedKanaEntries.keys.map(\.count).max() ?? 0
+    }
+
+    /// allowsDirectives が偽なら、@ で始まる行をエラーにする
+    private static func parse(
+        _ contents: String, file: String, allowsDirectives: Bool
+    ) throws -> (entries: [String: String], rank: [String: Int], sokuon: Set<Character>, nBefore: Set<Character>) {
         var entries: [String: String] = [:]
         var rank: [String: Int] = [:]
         var sokuon: Set<Character> = []
@@ -34,32 +60,66 @@ public struct RomajiTable: Sendable {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
             let fields = line.split(separator: "\t", omittingEmptySubsequences: true)
-            guard fields.count == 2 else { throw ParseError.malformedLine(index + 1, line) }
+            guard fields.count == 2 else { throw ParseError.malformedLine(file: file, index + 1, line) }
             let key = String(fields[0])
             let value = String(fields[1])
             guard key.hasPrefix("@") else {
-                guard entries.updateValue(value, forKey: key) == nil else { throw ParseError.duplicateSpelling(index + 1, key) }
+                guard entries.updateValue(value, forKey: key) == nil else { throw ParseError.duplicateSpelling(file: file, index + 1, key) }
                 rank[key] = rank.count
                 continue
             }
+            guard allowsDirectives else { throw ParseError.directiveNotAllowed(file: file, index + 1, line) }
             switch key {
             case "@sokuon": sokuon = Set(value)
             case "@n": nBefore = Set(value)
-            default: throw ParseError.unknownDirective(index + 1, line)
+            default: throw ParseError.unknownDirective(file: file, index + 1, line)
             }
         }
-        self.entries = entries
-        self.rank = rank
-        self.maxKeyLength = entries.keys.map(\.count).max() ?? 0
-        self.sokuonLetters = sokuon
-        self.nBeforeLetters = nBefore
+        return (entries, rank, sokuon, nBefore)
     }
 
     public static func bundled() throws -> RomajiTable {
-        guard let url = Bundle.module.url(forResource: "romaji", withExtension: "tsv", subdirectory: "Resources") else {
-            throw ParseError.missingResource
+        try RomajiTable(contents: resource(tableFile), typedKana: resource(typedKanaFile))
+    }
+
+    private static func resource(_ file: String) throws -> String {
+        let name = file as NSString
+        guard let found = Bundle.module.url(forResource: name.deletingPathExtension, withExtension: name.pathExtension, subdirectory: "Resources") else {
+            throw ParseError.missingResource(file)
         }
-        return try RomajiTable(contents: String(contentsOf: url, encoding: .utf8))
+        return try String(contentsOf: found, encoding: .utf8)
+    }
+
+    /// 打鍵を、Mozc が打鍵をかなにするのと同じく、前から順にかなにする。各位置で読める最も長い綴りを読み、綴りが無ければ、
+    /// 同じ文字の重なり（@sokuon）の前の文字を っ と読む。どれでもない文字は打ったまま残す（github は ぎてゅb）。
+    /// 綴りの表に加えて、かなにするときだけ読む綴り（単独の n を ん と読む行を含む）も読む。complete は打ったまま残した文字が無いか
+    public func typedKana(of text: some StringProtocol) -> (kana: String, complete: Bool) {
+        let chars = Array(text)
+        var kana = ""
+        var complete = true
+        var pos = 0
+        while pos < chars.count {
+            if let (length, value) = longestTypedKana(at: pos, in: chars) {
+                kana += value
+                pos += length
+                continue
+            }
+            if pos + 1 < chars.count, chars[pos] == chars[pos + 1], sokuonLetters.contains(chars[pos]) {
+                kana += "っ"
+            } else {
+                kana.append(chars[pos])
+                complete = false
+            }
+            pos += 1
+        }
+        return (kana, complete)
+    }
+
+    private func longestTypedKana(at pos: Int, in chars: [Character]) -> (length: Int, kana: String)? {
+        for length in stride(from: min(typedKanaMaxKeyLength, chars.count - pos), through: 1, by: -1) {
+            if let kana = typedKanaEntries[String(chars[pos..<(pos + length)])] { return (length, kana) }
+        }
+        return nil
     }
 
     /// start から読み始めて、読み切れる終端ごとのかなを返す。

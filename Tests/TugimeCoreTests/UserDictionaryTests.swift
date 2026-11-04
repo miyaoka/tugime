@@ -192,7 +192,10 @@ import Testing
         #expect(segments.map(\.reading) == ["cafe", "でやすむ"])
         #expect(segmenter.liveText("cafe,") == "Café、")
         let first = try #require(segmenter.clauses("cafedeyasumu").first)
-        #expect(first.candidates.prefix(2) == ["Café", "cafe"])
+        #expect(first.candidates.prefix(3) == ["Café", "cafe", "ｃａｆｅ"])
+        // 英語の文節と同じく、打鍵をかなにできればかなとカタカナも選べる
+        #expect(first.candidates.contains("かふぇ"))
+        #expect(first.candidates.contains("カフェ"))
     }
 
     /// 文節の伸縮で打鍵を 1 区間として判定し直すときも、読めない日本語の打鍵はその語の区間にする

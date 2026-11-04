@@ -233,55 +233,62 @@ public final class Segmenter {
     /// 前の文字列は、区切りの評価と、表示の変換の左の文脈に使う
     public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
         let (segments, pendingN) = keepingPendingN(segment(input, leading: leading))
-        var differs = false
-        let shown = displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true, endsWithPendingN: pendingN)
-        let text = zip(segments, shown).map { segment, display in
-            guard let display else { return segment.output }
-            if !display.matchesReading { differs = true }
-            return display.text
-        }.joined()
-        return LiveDisplay(text: text, differsFromInput: differs)
+        let shown = displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true, endsInput: true, endsWithPendingN: pendingN) { index, display, _ in
+            let text = display?.text ?? segments[index].output
+            return (result: (display: display, text: text), shown: text)
+        }
+        return LiveDisplay(text: shown.map(\.text).joined(), differsFromInput: shown.contains { $0.display?.matchesReading == false })
     }
 
-    /// 表示する 1 区間。日本語区間は表示の変換で表記を決め、それ以外は決まった文字列を表示する。
-    /// 句読点と記号の打鍵（mark）は、後ろが文の頭か（startsSentence）を持つ。組に合わせて半角にした閉じ括弧の後ろは英語の後で、文の頭ではない
+    /// 表示の変換にかける 1 区間。日本語区間は表示の変換で表記を決める。それ以外の区間に表示する文字列は、displays の make が決める。
+    /// どの区間も、後ろが文の頭か（startsSentence）を持つ。句読点と記号の打鍵は、日本語の記号にしたなら後ろが文の頭になる。
+    /// 組に合わせて半角にした閉じ括弧の後ろは英語の後で、文の頭ではない。日本語区間も、文節の伸縮で句読点か記号をまたいでまとめ、
+    /// 記号で終わるなら後ろが文の頭になる
     enum ShownSpan {
-        case japanese(kana: String, context: JapaneseContext)
-        case fixed(String)
-        case mark(String, startsSentence: Bool)
+        case japanese(kana: String, context: JapaneseContext, startsSentence: Bool)
+        case other(startsSentence: Bool)
 
         init(_ segment: Segment) {
             switch segment.kind {
-            case .japanese: self = .japanese(kana: segment.reading, context: segment.context)
-            case .punctuation: self = .mark(segment.output, startsSentence: Segmenter.continuation(after: segment.source, mark: segment.output) != .afterEnglish)
-            case .english, .word: self = .fixed(segment.output)
+            case .japanese: self = .japanese(kana: segment.reading, context: segment.context, startsSentence: false)
+            case .punctuation: self = .other(startsSentence: Segmenter.continuation(after: segment.source, mark: segment.output) != .afterEnglish)
+            case .english, .word: self = .other(startsSentence: false)
+            }
+        }
+
+        /// この区間の後ろが文の頭か
+        var startsSentence: Bool {
+            switch self {
+            case .japanese(_, _, let startsSentence), .other(let startsSentence): startsSentence
             }
         }
     }
 
-    /// 区間を前から順に表示の変換にする。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
-    /// 返す配列は spans と同じ順で、日本語区間の要素だけが表示の変換を持つ。
+    /// 区間を前から順に表示の変換にし、区間ごとに make で結果を作る。日本語区間は、left にそれより前の区間の表示をつないだものを左の文脈にする。
+    /// make は、区間の番号・その表示の変換（日本語区間でなければ nil）・それより前に表示している文字列から、区間の結果と、その区間に実際に表示する
+    /// 文字列を返す。表示する文字列は後ろの区間の左の文脈になるので、利用者が選んだ表記があればそれを含める。返す配列は spans と同じ順。
     /// 末尾の区間（endsWithPendingN なら、最後の打ったままの n の手前）が文の頭（入力の最初の区間か、日本語の記号にした句読点・記号の直後）の
     /// 1 かなだけなら、続けて打つ語の先頭なので、変換せずにかなのまま見せる（ki は 気 ではなく き、kon は こn）。
-    /// startsAtHead は spans の最初が入力の最初の区間か（文節の伸縮で後ろだけを渡すときは偽）
-    func displays(of spans: [ShownSpan], left: String, startsAtHead: Bool, endsWithPendingN: Bool) -> [JapaneseDisplay?] {
+    /// startsAtHead は spans の最初が文の頭（入力の最初か、日本語の記号にした句読点・記号の直後）か。endsInput は spans の最後が入力の終わりか
+    /// （文節の伸縮で、後ろに残す区間の手前までを渡すときは偽）。偽なら、末尾の 1 かなも続けて打つ語の先頭ではないので変換する
+    func displays<Result>(
+        of spans: [ShownSpan], left: String, startsAtHead: Bool, endsInput: Bool, endsWithPendingN: Bool,
+        make: (Int, JapaneseDisplay?, String) -> (result: Result, shown: String)
+    ) -> [Result] {
         var shown = left
-        let lastSpan = spans.count - (endsWithPendingN ? 2 : 1)
+        let lastSpan = endsInput ? spans.count - (endsWithPendingN ? 2 : 1) : nil
         return spans.enumerated().map { index, span in
-            switch span {
-            case .fixed(let text), .mark(let text, _):
-                shown += text
-                return nil
-            case .japanese(let kana, let context):
-                let atHead = index == 0 ? startsAtHead : { if case .mark(_, true) = spans[index - 1] { true } else { false } }()
-                if index == lastSpan, atHead, kana.count == 1 {
-                    shown += kana
-                    return JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])
-                }
-                let display = japaneseConverter.display(kana: kana, context: context, left: shown)
-                shown += display.text
-                return display
+            let display: JapaneseDisplay? = switch span {
+            case .other:
+                nil
+            case .japanese(let kana, let context, _):
+                index == lastSpan && (index == 0 ? startsAtHead : spans[index - 1].startsSentence) && kana.count == 1
+                    ? JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])
+                    : japaneseConverter.display(kana: kana, context: context, left: shown)
             }
+            let made = make(index, display, shown)
+            shown += made.shown
+            return made.result
         }
     }
 
@@ -293,13 +300,15 @@ public final class Segmenter {
         !kana.allSatisfy { $0 == "ー" }
     }
 
-    /// 英語区間を、空白で区切った語ごとに綴りの表で読んだもの。読めない語は打ったまま、空白はそのまま残す。1 語も読めなければ nil
+    /// 英語区間を、空白で区切った語ごとにかなにしたもの（RomajiTable.typedKana）。打ったまま残る文字がある語は打ったまま、空白はそのまま残す。
+    /// 1 語も読めなければ nil
     func englishReading(of source: String) -> String? {
         var readAny = false
         let words = source.split(separator: " ", omittingEmptySubsequences: false).map { word in
-            guard let kana = table.reading(of: word) else { return String(word) }
+            let typed = table.typedKana(of: word)
+            guard !word.isEmpty, typed.complete else { return String(word) }
             readAny = true
-            return kana
+            return typed.kana
         }
         return readAny ? words.joined(separator: " ") : nil
     }
