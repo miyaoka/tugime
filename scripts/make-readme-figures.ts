@@ -1,6 +1,6 @@
 // README と docs の図を tugime-cli の出力から作る。
 //   docs/images/intro.svg      … 同じ文を打つとき、ふつうの日本語入力と tugime で文字のほかに押すキーを比べる
-//   docs/images/conversion.svg … 打鍵列を区切って変換するまで（比べた読み方の候補、打鍵ごとの区切り、最後に入れ替わる理由）
+//   docs/images/conversion.svg … 打鍵列を区切って変換するまで（比べた読み方の候補、打鍵ごとの区切り、英語の語を英語として読む理由）
 // 使い方: bun install --cwd scripts && bun scripts/make-readme-figures.ts
 import assert from "node:assert";
 import {
@@ -98,6 +98,9 @@ const wordKinds: [number, Kind][] = [
   [16, "E"],
   [23, "E"],
 ];
+/// englishWord が日本語として読まれる時点（打鍵の数）と、そのときの表示に含まれる englishWord の日本語の表記
+const japaneseWordAt = 15;
+const japaneseWord = "ようつべ";
 
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）
 async function readSteps(prefixes: string[], model: string) {
@@ -203,6 +206,15 @@ if (!japanese || !english)
 if (!(english.total > japanese.total))
   throw new Error(
     `${input} で ${englishWord} を英語として読む並びが勝っていない`,
+  );
+if (!chosen.spans.some(isEnglishWord))
+  throw new Error(
+    `${input} の採った並びに ${englishWord} だけの英語の区間が無い`,
+  );
+const japaneseWordStep = steps.find((s) => s.prefix.length === japaneseWordAt);
+if (!japaneseWordStep?.shown.includes(japaneseWord))
+  throw new Error(
+    `${japaneseWordAt} 打鍵の時点の表示 ${japaneseWordStep?.shown} に ${japaneseWord} が無い`,
   );
 for (const [end, kind] of wordKinds) {
   const s = steps.find((s) => s.prefix.length === end);
@@ -553,7 +565,7 @@ for (const [end, kind] of wordKinds) {
     );
   }
   const height = y + 36;
-  const label = `${expected} を打ち進めるごとの表示と、その裏で比べた読み方の候補。打鍵列の範囲を日本語や英語として読む候補を挙げ、点の合計が最も高い並びを採る。${englishWord} は、w を打った時点では日本語の ようつべ に読まれ、wo まで打つと英語に戻る`;
+  const label = `${expected} を打ち進めるごとの表示と、その裏で比べた読み方の候補。打鍵列の範囲を日本語や英語として読む候補を挙げ、点の合計が最も高い並びを採る。${englishWord} は、${input[japaneseWordAt - 1]} を打った時点では日本語の ${japaneseWord} に読まれ、${input.slice(japaneseWordAt - 1, japaneseWordAt + 1)} まで打つと英語に戻る`;
   await assertAlt("docs/how-it-works.md", "conversion.svg", [
     expected,
     englishWord,
