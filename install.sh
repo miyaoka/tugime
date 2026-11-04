@@ -17,7 +17,8 @@ fi
 
 # 標準入力から実行すると隣の場所が決まらない。コマンド置換の中で失敗しても外は止まらないので、ここで止める
 script="${BASH_SOURCE[0]:?install.sh はファイルとして実行する（bash install.sh）}"
-src="${1:-$(cd "$(dirname "$script")" && pwd)/tugime.app}"
+# packslip install が書き出す tugime-install はこのファイルへのシンボリックリンクなので、リンクの置き場ではなく実体の隣を見る
+src="${1:-$(dirname "$(realpath "$script")")/tugime.app}"
 [[ -d "$src/Contents" ]] || { echo "$src は .app ではない" >&2; exit 1; }
 # 置く名前は .app のディレクトリ名にする。渡し方（相対パス・末尾の /.）で変わらないよう、実体の絶対パスに直してから取る
 src=$(CDPATH='' cd -- "$src" && pwd -P)
