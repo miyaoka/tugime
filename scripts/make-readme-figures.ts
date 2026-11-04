@@ -83,21 +83,20 @@ const keyCount = (runs: Run[]) =>
 
 // ── conversion ────────────────────────────────────
 
-/// 変換の図に載せる例文。make が英語、日本語、英語と入れ替わる
-const input = "makewojikkousuru";
+/// 変換の図に載せる例文。youtube が英語、日本語（ようつべ）、英語と入れ替わる
+const input = "kinouhayoutubewomiteita";
 /// 最後まで打ったときに表示されるはずの文
-const expected = "makeを実行する";
+const expected = "昨日はyoutubeを見ていた";
 /// 「採った読み方」に並べる時点（打鍵の数）
-const stepEnds = [4, 6, 8, 10, 12, 14, 15, 16];
-/// 最後に入れ替わる語と、入れ替わりの前後で比べる時点（打鍵の数）
-const flippedWord = "make";
-const versusEnds = [14, 16];
-/// 図の筋書き。この時点（打鍵の数）で flippedWord を含む区間がこの種類になる
-const flippedKinds: [number, Kind][] = [
-  [4, "E"],
-  [8, "J"],
+const stepEnds = [5, 7, 12, 14, 15, 16, 20, 23];
+/// 日本語としても読める英語の語。最後まで打ったときに、英語として読む並びと全部を日本語として読む並びの点を比べる
+const englishWord = "youtube";
+/// 図の筋書き。この時点（打鍵の数）で englishWord を含む区間がこの種類になる
+const wordKinds: [number, Kind][] = [
+  [14, "E"],
   [15, "J"],
   [16, "E"],
+  [23, "E"],
 ];
 
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）
@@ -169,10 +168,7 @@ const stepPrefixes = stepEnds.map((end) => input.slice(0, end));
 const steps = await step("各時点の区切りと表示", () =>
   readSteps(stepPrefixes, model),
 );
-const versusPrefixes = versusEnds.map((end) => input.slice(0, end));
-const lattices = await step("区間の候補", () =>
-  readLattices([...new Set([input, ...versusPrefixes])]),
-);
+const lattices = await step("区間の候補", () => readLattices([input]));
 
 const lattice = lattices.get(input);
 assert(lattice !== undefined, `${input} の区間の候補が無い`);
@@ -194,45 +190,29 @@ if (mergedBounds(chosen.spans) !== mergedBounds(finalSegments)) {
 }
 const chosenKeys = new Set(chosen.spans.map((s) => `${s.s}-${s.e}-${s.kind}`));
 
-const flippedStart = input.indexOf(flippedWord);
-if (flippedStart < 0) throw new Error(`${flippedWord} が ${input} に無い`);
-const isFlipped = (s: Span) =>
-  s.kind === "E" &&
-  s.s === flippedStart &&
-  s.e === flippedStart + flippedWord.length;
-const versus = versusPrefixes.map((prefix) => {
-  const spans = lattices.get(prefix);
-  assert(spans !== undefined, `${prefix} の区間の候補が無い`);
-  const japanese = bestPath(spans, prefix.length, (s) => s.kind === "J");
-  const english = bestPath(spans, prefix.length, () => true, isFlipped);
-  if (!japanese || !english)
-    throw new Error(`比べる並びが見つからない: ${prefix}`);
-  return { prefix, japanese, english };
-});
+const wordStart = input.indexOf(englishWord);
+if (wordStart < 0) throw new Error(`${englishWord} が ${input} に無い`);
+const isEnglishWord = (s: Span) =>
+  s.kind === "E" && s.s === wordStart && s.e === wordStart + englishWord.length;
+const japanese = bestPath(lattice, input.length, (s) => s.kind === "J");
+const english = bestPath(lattice, input.length, () => true, isEnglishWord);
+if (!japanese || !english)
+  throw new Error(`比べる並びが見つからない: ${input}`);
 
 // 図の筋書きが出力と合うかを確かめる。合わなければ見出しと説明が偽になる
-const [before, after, ...moreVersus] = versus;
-assert(
-  before !== undefined && after !== undefined && moreVersus.length === 0,
-  "versusEnds が 2 つの時点でない",
-);
-if (!(before.japanese.total > before.english.total))
+if (!(english.total > japanese.total))
   throw new Error(
-    `${before.prefix} で全部を日本語として読む並びが勝っていない`,
+    `${input} で ${englishWord} を英語として読む並びが勝っていない`,
   );
-if (!(after.english.total > after.japanese.total))
-  throw new Error(
-    `${after.prefix} で ${flippedWord} を英語として読む並びが勝っていない`,
-  );
-for (const [end, kind] of flippedKinds) {
+for (const [end, kind] of wordKinds) {
   const s = steps.find((s) => s.prefix.length === end);
   if (!s) throw new Error(`${end} 打鍵の時点が stepEnds に無い`);
   const covering = s.segments.find(
-    (seg) => seg.s <= flippedStart && flippedStart < seg.e,
+    (seg) => seg.s <= wordStart && wordStart < seg.e,
   );
   if (covering?.kind !== kind)
     throw new Error(
-      `${s.prefix} で ${flippedWord} が ${kind} でなく ${covering?.kind} になっている`,
+      `${s.prefix} で ${englishWord} が ${kind} でなく ${covering?.kind} になっている`,
     );
 }
 
@@ -531,9 +511,9 @@ for (const [end, kind] of flippedKinds) {
   y += steps.length * (BAR + ROW_GAP) - ROW_GAP;
   separator();
 
-  // 最後に入れ替わる理由
+  // 英語として読む理由
   head(
-    "最後に入れ替わる理由",
+    `${englishWord} を英語として読む理由`,
     "それぞれの読み方で、最も高い並びの点の合計（高いほうを採る）。表記は点を付けるときの変換",
   );
   const japaneseX = AXIS_LEFT + 130;
@@ -544,7 +524,7 @@ for (const [end, kind] of flippedKinds) {
   );
   parts.push(
     g.draw(
-      `${flippedWord} を英語として読む`,
+      `${englishWord} を英語として読む`,
       "regular",
       englishX,
       y,
@@ -552,35 +532,31 @@ for (const [end, kind] of flippedKinds) {
       "sub",
     ),
   );
-  for (const v of versus) {
-    y += 32;
+  y += 32;
+  parts.push(g.draw("最後まで", "regular", AXIS_LEFT, y, 13, "sub"));
+  for (const [path, other, column] of [
+    [japanese, english, japaneseX],
+    [english, japanese, englishX],
+  ] as const) {
+    const win = path.total > other.total;
+    const score = path.total.toFixed(1);
+    parts.push(g.draw(score, "regular", column, y, 14, win ? "good" : "sub"));
     parts.push(
-      g.draw(`…${v.prefix.slice(-6)} まで`, "regular", AXIS_LEFT, y, 13, "sub"),
+      g.draw(
+        path.spans.map((s) => s.output).join(" + "),
+        "regular",
+        column + g.width(score, "regular", 14) + 12,
+        y,
+        14,
+        win ? "good" : "ink",
+      ),
     );
-    for (const [path, other, column] of [
-      [v.japanese, v.english, japaneseX],
-      [v.english, v.japanese, englishX],
-    ] as const) {
-      const win = path.total > other.total;
-      const score = path.total.toFixed(1);
-      parts.push(g.draw(score, "regular", column, y, 14, win ? "good" : "sub"));
-      parts.push(
-        g.draw(
-          path.spans.map((s) => s.output).join(" + "),
-          "regular",
-          column + g.width(score, "regular", 14) + 12,
-          y,
-          14,
-          win ? "good" : "ink",
-        ),
-      );
-    }
   }
   const height = y + 36;
-  const label = `${input} を打ち進めるごとの表示と、その裏で比べた読み方の候補。打鍵列の範囲を日本語や英語として読む候補を挙げ、点の合計が最も高い並びを採る。${flippedWord} は、打った直後は英語、続けて打つと日本語、最後の打鍵で英語に戻る`;
+  const label = `${expected} を打ち進めるごとの表示と、その裏で比べた読み方の候補。打鍵列の範囲を日本語や英語として読む候補を挙げ、点の合計が最も高い並びを採る。${englishWord} は、w を打った時点では日本語の ようつべ に読まれ、wo まで打つと英語に戻る`;
   await assertAlt("docs/how-it-works.md", "conversion.svg", [
     expected,
-    flippedWord,
+    englishWord,
   ]);
   await writeImage(
     "conversion.svg",
