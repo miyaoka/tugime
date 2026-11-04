@@ -4,18 +4,6 @@ import InputMethodKit
 import TugimeCore
 import TugimeEngine
 
-/// 日本語モードと英数モードの入力源 ID は、バンドル ID に接尾辞を付けたもの
-enum InputMode: String {
-    case japanese = "Japanese"
-    case roman = "Roman"
-
-    var sourceID: String { "\(Bundle.main.bundleIdentifier!).\(rawValue)" }
-
-    init(sourceID: String) {
-        self = sourceID.hasSuffix(".\(InputMode.roman.rawValue)") ? .roman : .japanese
-    }
-}
-
 /// Carbon の仮想キーコード。NSEvent.keyCode と同じ UInt16 にそろえる
 private enum KeyCode {
     static let returnKey = UInt16(kVK_Return)
@@ -46,7 +34,7 @@ private enum KeyCode {
     ]
 }
 
-/// 区切りと変換はプロセスに 1 つだけ持つ。辞書・語表・モデルの読み込みが重いので、入力源ごとに作らない
+/// 区切りと変換はプロセスに 1 つだけ持つ。辞書・語表・モデルの読み込みが重いので、入力欄のコントローラごとに作らない
 let conversion: ConversionQueue = {
     // 表示の変換のモデルはバンドルの Contents/Resources/model に、システム辞書は Contents/Resources/dictionary に同梱する
     guard let resources = Bundle.main.resourceURL else { fatalError("tugime を初期化できない: バンドルの Contents/Resources が無い") }
@@ -73,7 +61,6 @@ final class TugimeInputController: IMKInputController {
     private var clauses: [Clause]?
     /// 候補を選ぶ対象の文節
     private var focus = 0
-    private var mode: InputMode = .japanese
     /// 打ち始めたときにカーソルの前にあったもの
     private var leading: Segmenter.Leading = .start
     /// 入力欄が前の文字列を返さないときの代わりに、tugime が確定した文字列を持つ
@@ -120,12 +107,6 @@ final class TugimeInputController: IMKInputController {
 
     nonisolated override func recognizedEvents(_ sender: Any!) -> Int {
         Int(NSEvent.EventTypeMask.keyDown.rawValue)
-    }
-
-    nonisolated override func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
-        guard let id = value as? String else { return }
-        nonisolated(unsafe) let client = sender as? IMKTextInput
-        onMain { switchMode(to: InputMode(sourceID: id), client: client) }
     }
 
     nonisolated override func commitComposition(_ sender: Any!) {
@@ -176,15 +157,6 @@ final class TugimeInputController: IMKInputController {
         }
     }
 
-    // MARK: 状態
-
-    private func switchMode(to next: InputMode, client: IMKTextInput?) {
-        if next == .roman, let client {
-            commit(client)
-        }
-        mode = next
-    }
-
     // MARK: 候補の窓
 
     /// 選んでいる文節の候補を選んでいる最中なら、見えている範囲と選んでいる候補。窓が画面に出ているか（アプリが位置を返したか）によらない
@@ -226,18 +198,16 @@ final class TugimeInputController: IMKInputController {
     // MARK: キー入力
 
     private func handleKeyDown(_ event: NSEvent, client: IMKTextInput) -> Bool {
+        // 英数・かなキーでの入力ソースの切り替えは OS が行う。アプリに渡すと空白を入れるアプリがあるので受け取る
         switch event.keyCode {
         case KeyCode.eisu:
             commit(client)
-            client.selectMode(InputMode.roman.sourceID)
             return true
         case KeyCode.kana:
-            client.selectMode(InputMode.japanese.sourceID)
             return true
         default:
             break
         }
-        if mode == .roman { return false }
         if !keys.isEmpty, let arrow = arrowEvent(aliasedBy: event) {
             return handleKeyDown(arrow, client: client)
         }

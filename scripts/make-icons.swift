@@ -2,7 +2,7 @@
 // macOS 同梱の日本語入力（Hiragana.tiff）と同じ形にする: 16pt 四方、1 倍と 2 倍の画素、角丸の四角を塗って文字を抜いたテンプレート画像
 import AppKit
 
-let icons = ["japanese": "つ", "roman": "A"]
+let icons = ["japanese": "つ"]
 let pointSize: CGFloat = 16
 let scales: [CGFloat] = [1, 2]
 let cornerRadius: CGFloat = 3.5
