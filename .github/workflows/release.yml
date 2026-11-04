@@ -114,7 +114,7 @@ jobs:
           retention-days: 1
 
   # ==============================================================
-  # mise の packslip の入れ方が確かめる目録に、この workflow で署名する。
+  # packslip の目録に、この workflow で署名する。
   # 外部の Action を動かすので、リリースと証明へ書き込む権限を持たせない
   # ==============================================================
   sign:
@@ -132,11 +132,12 @@ jobs:
           name: tugime-macos-arm64
           path: dist
 
-      # 出自の証明は release job が付け、目録からはそれを指す
+      # 出自の証明は release job が付け、目録からはそれを指す。配置と登録を行う install.sh を tugime-install として宣言する
       - uses: jdx/packslip@ddcddd9c8c33977d2d08d5db91caec579da59aab # v1.11.0
         id: packslip
         with:
           artifacts: dist/tugime-macos-arm64.tar.gz
+          bin: tugime-install=install.sh
           tag: ${{ env.TAG }}
           attest: link
           upload: false
