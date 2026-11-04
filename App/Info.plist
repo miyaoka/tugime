@@ -45,7 +45,6 @@
 		<key>tsVisibleInputModeOrderedArrayKey</key>
 		<array>
 			<string>com.apple.inputmethod.Japanese</string>
-			<string>com.apple.inputmethod.Roman</string>
 		</array>
 		<key>tsInputModeListKey</key>
 		<dict>
@@ -71,31 +70,6 @@
 				<string>japanese.tiff</string>
 				<key>tsInputModePaletteIconFileKey</key>
 				<string>japanese.tiff</string>
-				<key>TISIconIsTemplate</key>
-				<true/>
-			</dict>
-			<key>com.apple.inputmethod.Roman</key>
-			<dict>
-				<key>TISInputSourceID</key>
-				<string>__BUNDLE_ID__.Roman</string>
-				<key>TISIntendedLanguage</key>
-				<string>en</string>
-				<key>tsInputModeScriptKey</key>
-				<string>smRoman</string>
-				<key>tsInputModePrimaryInScriptKey</key>
-				<false/>
-				<key>tsInputModeDefaultStateKey</key>
-				<true/>
-				<key>tsInputModeIsVisibleKey</key>
-				<true/>
-				<key>tsInputModeJISKeyboardShortcutKey</key>
-				<integer>3</integer>
-				<key>tsInputModeMenuIconFileKey</key>
-				<string>roman.tiff</string>
-				<key>tsInputModeAlternateMenuIconFileKey</key>
-				<string>roman.tiff</string>
-				<key>tsInputModePaletteIconFileKey</key>
-				<string>roman.tiff</string>
 				<key>TISIconIsTemplate</key>
 				<true/>
 			</dict>

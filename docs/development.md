@@ -11,7 +11,7 @@ bun scripts/build-app.ts            # dist/tugime Dev.app を組み立てて ad-
 ./install.sh "dist/tugime Dev.app"  # 配置して登録する
 ```
 
-組み立てたものは `tugime Dev` という別の入力ソースになり、配布版の tugime と並べて入れられる。初めて入れたときは [入力ソースを追加する](../README.md#入力ソースを追加する) と同じ手順で、`tugime Dev (日本語)` を追加する。
+組み立てたものは `tugime Dev` という別の入力ソースになり、配布版の tugime と並べて入れられる。初めて入れたときは [入力ソースを追加する](../README.md#入力ソースを追加する) と同じ手順で、`tugime Dev` を追加する。
 
 ## 変換を確かめる
 
