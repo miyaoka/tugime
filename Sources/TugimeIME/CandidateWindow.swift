@@ -26,6 +26,12 @@ final class CandidateWindow {
         PanelPlacement.show(panel, size: list.fittingSize, below: client, characterIndex: characterIndex)
     }
 
+    /// 窓を置き直さずに、選んでいる候補と見えている範囲だけを描き直す。窓の幅は全候補で決まるので変わらない
+    func redraw(_ page: CandidatePage) {
+        list.page = page
+        list.needsDisplay = true
+    }
+
     func hide() {
         panel?.orderOut(nil)
     }

@@ -16,14 +16,13 @@ enum PanelPlacement {
 
     /// 窓を大きさ size にし、未確定の文字列の characterIndex 文字目（UTF-16 の位置）の行の下に、その文字に左端をそろえて、
     /// アプリの窓より 1 つ上の level で出す。行の下に収まらなければ行の上に置き、左右と上は画面の中へ詰める。
-    /// アプリが位置を返さない（無限大や高さ 0）ときは出さずに偽を返す
-    @discardableResult
-    static func show(_ panel: NSPanel, size: NSSize, below client: IMKTextInput, characterIndex: Int = 0) -> Bool {
+    /// アプリが位置を返さない（無限大や高さ 0）ときは出さない
+    static func show(_ panel: NSPanel, size: NSSize, below client: IMKTextInput, characterIndex: Int = 0) {
         var line = NSRect.zero
         _ = client.attributes(forCharacterIndex: characterIndex, lineHeightRectangle: &line)
         guard line.minX.isFinite, line.minY.isFinite, line.height > 0 else {
             panel.orderOut(nil)
-            return false
+            return
         }
         var origin = NSPoint(x: line.minX, y: line.minY - size.height - gap)
         if let visible = (NSScreen.screens.first { $0.frame.intersects(line) } ?? NSScreen.main)?.visibleFrame {
@@ -35,6 +34,5 @@ enum PanelPlacement {
         panel.setContentSize(size)
         panel.setFrameOrigin(origin)
         panel.orderFrontRegardless()
-        return true
     }
 }

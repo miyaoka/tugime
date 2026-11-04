@@ -183,13 +183,10 @@ final class TugimeInputController: IMKInputController {
     /// 選んでいる文節の候補を選んでいる最中なら、見えている範囲と選んでいる候補。窓が画面に出ているか（アプリが位置を返したか）によらない
     private var candidatePage: CandidatePage?
 
+    /// 候補を選び始め、窓を選んでいる文節の下に置く。窓を置くのはここだけで、候補を進めても置き直さない
     private func openCandidates(_ clauses: [Clause], client: IMKTextInput) {
-        candidatePage = CandidatePage(count: clauses[focus].candidates.count, selected: clauses[focus].selected)
-        drawCandidates(clauses, client: client)
-    }
-
-    private func drawCandidates(_ clauses: [Clause], client: IMKTextInput) {
-        guard let candidatePage else { return }
+        let candidatePage = CandidatePage(count: clauses[focus].candidates.count, selected: clauses[focus].selected)
+        self.candidatePage = candidatePage
         candidateWindow.onClick = { [weak self] index in self?.clickCandidate(index) }
         // 選んでいる文節の最初の文字の、未確定の文字列の中での位置。showMarkedText と同じく UTF-16 で数える
         let start = clauses[..<focus].reduce(0) { $0 + ($1.output as NSString).length }
@@ -319,8 +316,8 @@ final class TugimeInputController: IMKInputController {
 
     /// 文節の選択に入った後
     private func handleConverted(_ event: NSEvent, clauses: [Clause], client: IMKTextInput) -> Bool {
-        let panelVisible = candidatePage != nil
-        if panelVisible, let number = event.characters.flatMap(Int.init), (1...CandidatePage.rows).contains(number) {
+        let choosingCandidate = candidatePage != nil
+        if choosingCandidate, let number = event.characters.flatMap(Int.init), (1...CandidatePage.rows).contains(number) {
             selectCandidate(numbered: number, clauses: clauses, client: client)
             return true
         }
@@ -332,13 +329,13 @@ final class TugimeInputController: IMKInputController {
                 commit(client)
             }
         case KeyCode.space, KeyCode.down:
-            if panelVisible {
+            if choosingCandidate {
                 moveCandidate(by: 1, clauses: clauses, client: client)
             } else {
                 openCandidates(clauses, client: client)
             }
         case KeyCode.up:
-            if panelVisible {
+            if choosingCandidate {
                 moveCandidate(by: -1, clauses: clauses, client: client)
             }
         case KeyCode.left, KeyCode.right:
@@ -353,7 +350,7 @@ final class TugimeInputController: IMKInputController {
             showMarkedText(client)
         case KeyCode.escape, KeyCode.backspace:
             // 候補の窓を閉じる。窓が無ければ文節の選択をやめて、打っている途中の表示に戻る
-            if panelVisible {
+            if choosingCandidate {
                 closeCandidates()
             } else {
                 self.clauses = nil
@@ -369,10 +366,9 @@ final class TugimeInputController: IMKInputController {
     private func moveCandidate(by delta: Int, clauses: [Clause], client: IMKTextInput) {
         let count = clauses[focus].candidates.count
         let index = (clauses[focus].selected + delta + count) % count
-        let selected = Clause.selecting(index, at: focus, in: clauses)
-        self.clauses = selected
+        self.clauses = Clause.selecting(index, at: focus, in: clauses)
         candidatePage?.select(index)
-        drawCandidates(selected, client: client)
+        if let candidatePage { candidateWindow.redraw(candidatePage) }
         showMarkedText(client)
     }
 
