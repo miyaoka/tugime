@@ -44,6 +44,7 @@ model=$(bun scripts/convert-hf-to-gguf.ts <リポジトリ> <コミット> q8_0 
 
 ```bash
 bun install --cwd scripts
+bun scripts/make-hero.ts             # README の冒頭の紹介画像 docs/images/hero.svg
 bun scripts/make-demo.ts             # README の冒頭のデモ docs/images/demo.svg と demo-compare.svg
 bun scripts/make-readme-figures.ts   # docs/images/intro.svg と conversion.svg
 bun scripts/make-pipeline.ts         # README の変換の仕組みの図 docs/images/pipeline.svg

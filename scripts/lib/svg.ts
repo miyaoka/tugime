@@ -46,17 +46,22 @@ export async function step<T>(
 
 export type Fonts = { bold: opentype.Font; regular: opentype.Font };
 
+/// 図の字形を取り出すフォントを用意して読み込む
+export async function loadFonts(): Promise<Fonts> {
+  const paths = await step("フォントの用意", fetchFonts);
+  return {
+    bold: opentype.loadSync(paths.bold),
+    regular: opentype.loadSync(paths.regular),
+  };
+}
+
 /// 表示の変換のモデルとフォントを用意し、tugime-cli を組み立てる
 export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
   const model = await step("表示の変換のモデルの用意", genmai);
-  const fontPaths = await step("フォントの用意", fetchFonts);
+  const fonts = await loadFonts();
   await step("tugime-cli の組み立て", () =>
     run(["swift", "build", "-c", "release", "--product", "tugime-cli"]),
   );
-  const fonts = {
-    bold: opentype.loadSync(fontPaths.bold),
-    regular: opentype.loadSync(fontPaths.regular),
-  };
   return { model, fonts };
 }
 
@@ -261,6 +266,21 @@ export class Glyphs {
       (w, ch) => w + (advance(f.charToGlyph(ch), ch) * size) / f.unitsPerEm,
       0,
     );
+  }
+
+  /// text の字形が描かれる範囲の、ベースラインから上の高さ top と下の深さ bottom（下に出ないなら負）
+  ink(
+    text: string,
+    font: FontName,
+    size: number,
+  ): { top: number; bottom: number } {
+    const f = this.fonts[font];
+    const scale = size / f.unitsPerEm;
+    const boxes = [...text].map((ch) => f.charToGlyph(ch).getBoundingBox());
+    return {
+      top: Math.max(...boxes.map((b) => b.y2)) * scale,
+      bottom: -Math.min(...boxes.map((b) => b.y1)) * scale,
+    };
   }
 
   /// 文字の間に tracking を足して並べたとき、text の幅が width になる字の大きさ（幅は字の大きさに比例する）

@@ -341,7 +341,7 @@ async function main() {
     { no: 1, x: g1x, col: "#2563eb", title: "受け取る" },
     { no: 2, x: g2x, col: "#2563eb", title: "読み分ける" },
     { no: 3, x: g3x, col: "#2563eb", title: "区切りを決める" },
-    { no: 4, x: g4x, col: "#7c3aed", title: "漢字を仕上げる" },
+    { no: 4, x: g4x, col: "#7c3aed", title: "変換を仕上げる" },
   ];
   const gateBack = (gt: Gate) =>
     box(gt.x, GATE_Y0, 0, 0.5, 0.35, GATE_H, gt.col);
@@ -778,7 +778,7 @@ async function main() {
   const style = [...fills]
     .map((c) => `\n  .f${c.slice(1)} { fill: ${c}; }`)
     .join("");
-  const label = `${INPUT} と打ったときの tugime の工程。1 受け取る、2 読み分ける（${en} は読めないので英語）、3 区切りを決める（${v.scored.join("｜")}）、4 漢字を仕上げる（${v.shown}）。各工程では InputMethodKit、ローマ字の綴りの表、システム辞書、wordfreq と Webster's、tugime の検査係、genmai-310M、llama.cpp が働く`;
+  const label = `${INPUT} と打ったときの tugime の工程。1 受け取る、2 読み分ける（${en} は読めないので英語）、3 区切りを決める（${v.scored.join("｜")}）、4 変換を仕上げる（${v.shown}）。各工程では InputMethodKit、ローマ字の綴りの表、システム辞書、wordfreq と Webster's、tugime の検査係、genmai-310M、llama.cpp が働く`;
   await assertAlt("README.md", "pipeline.svg", [
     INPUT,
     v.scored.join("｜"),
