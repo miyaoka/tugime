@@ -37,6 +37,13 @@ private enum KeyCode {
         UInt16(kVK_F9): .fullwidthRoman,
         UInt16(kVK_F10): .roman,
     ]
+    /// Ctrl と押すと矢印キーとして扱うキー。英字の文字ではなくキーの位置で決める
+    static let arrowAliases: [UInt16: (keyCode: UInt16, character: Int)] = [
+        UInt16(kVK_ANSI_H): (left, NSLeftArrowFunctionKey),
+        UInt16(kVK_ANSI_J): (down, NSDownArrowFunctionKey),
+        UInt16(kVK_ANSI_K): (up, NSUpArrowFunctionKey),
+        UInt16(kVK_ANSI_L): (right, NSRightArrowFunctionKey),
+    ]
 }
 
 /// 区切りと変換はプロセスに 1 つだけ持つ。辞書・語表・モデルの読み込みが重いので、入力源ごとに作らない
@@ -231,6 +238,9 @@ final class TugimeInputController: IMKInputController {
             break
         }
         if mode == .roman { return false }
+        if !keys.isEmpty, let arrow = arrowEvent(aliasedBy: event) {
+            return handleKeyDown(arrow, client: client)
+        }
         let modifiers = event.modifierFlags.intersection([.command, .control, .option])
         if !modifiers.isEmpty {
             commit(client)
@@ -249,6 +259,25 @@ final class TugimeInputController: IMKInputController {
             return handleConverted(event, clauses: clauses, client: client)
         }
         return handleComposing(event, client: client)
+    }
+
+    /// Ctrl+H/J/K/L を、Ctrl を外した ← ↓ ↑ → に作り直す。Shift は残すので Ctrl+Shift+H/L は Shift+← → になる
+    private func arrowEvent(aliasedBy event: NSEvent) -> NSEvent? {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option])
+        guard modifiers == .control, let alias = KeyCode.arrowAliases[event.keyCode] else { return nil }
+        let character = String(Character(UnicodeScalar(UInt16(alias.character))!))
+        return NSEvent.keyEvent(
+            with: .keyDown,
+            location: event.locationInWindow,
+            modifierFlags: event.modifierFlags.subtracting(.control).union([.function, .numericPad]),
+            timestamp: event.timestamp,
+            windowNumber: event.windowNumber,
+            context: nil,
+            characters: character,
+            charactersIgnoringModifiers: character,
+            isARepeat: event.isARepeat,
+            keyCode: alias.keyCode
+        )
     }
 
     /// 打っている途中（文節の選択に入る前）。
