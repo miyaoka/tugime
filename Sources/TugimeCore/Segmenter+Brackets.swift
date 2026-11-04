@@ -42,11 +42,6 @@ extension Clause {
         return pairingBrackets(selected, at: focus)
     }
 
-    /// 選ぶ文節を focus から step（-1 で左、1 で右）だけ移した位置。端から先へ移すと反対の端の文節になる
-    public static func focus(_ focus: Int, movedBy step: Int, count: Int) -> Int {
-        (focus + step + count) % count
-    }
-
     /// 文節 focus で表記 text を選ぶ。候補に無ければ末尾に足して選ぶ（F6〜F10 で作った文字種）。組になる括弧も selecting と同じく合わせる
     public static func selecting(text: String, at focus: Int, in clauses: [Clause]) -> [Clause] {
         var added = clauses
