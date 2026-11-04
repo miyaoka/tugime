@@ -351,13 +351,13 @@ final class TugimeInputController: IMKInputController {
                 moveCandidate(by: -1, clauses: clauses, client: client)
             }
         case KeyCode.left, KeyCode.right:
-            // Shift 付きで選ぶ文節を移し、Shift 無しで選んでいる文節を伸縮する
+            // Shift 無しで選ぶ文節を移し、Shift 付きで選んでいる文節を伸縮する
             let step = event.keyCode == KeyCode.left ? -1 : 1
             if event.modifierFlags.contains(.shift) {
-                focus = (focus + step + clauses.count) % clauses.count
-            } else {
                 let (focus, leading) = (focus, leading)
                 self.clauses = conversion.sync { $0.resize(clauses, at: focus, by: step, leading: leading) }
+            } else {
+                focus = (focus + step + clauses.count) % clauses.count
             }
             candidatePanel.hide()
             showMarkedText(client)
