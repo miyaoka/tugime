@@ -15,6 +15,8 @@ package enum ZenzPrompt {
     static let outputPerKana = 1.3
     static let outputMargin = 8
     private static let chunkEnds: Set<Unicode.Scalar> = ["、", "。", "，", "．", "！", "？", "!", "?"]
+    /// 出力の文法（llama.cpp の GBNF）。目印を含まない文字の並び
+    package static let outputGrammar = "root ::= [^\(inputMark)\(outputMark)\(contextMark)]*"
 
     /// 左の文脈。left が空でなければ left。left が空で数字に続くなら、その数字。
     /// それ以外は空。afterWord で left が空なのは、前の語がある入力欄のカーソルより前の文字列を読めなかったときで、
@@ -36,6 +38,19 @@ package enum ZenzPrompt {
     /// モデルの出力の全角の空白を、入力の空白に戻す
     package static func restoreSpaces(_ output: String) -> String {
         output.replacingOccurrences(of: "\u{3000}", with: " ")
+    }
+
+    /// 出力のバイト列から、末尾で字の途中に切れたバイトを除く。出力の上限で止まると、最後のトークンが字の途中で終わることがある。
+    /// llama.cpp の server の validate_utf8 と同じく、末尾の 4 バイトまでに字の頭を探し、字に要るバイトが足りなければそこで切る
+    package static func droppingIncompleteTail(_ bytes: [UInt8]) -> ArraySlice<UInt8> {
+        for back in 1...4 where back <= bytes.count {
+            let byte = bytes[bytes.count - back]
+            // 続きのバイト（10xxxxxx）は字の頭ではないので、さらに前を見る
+            if byte & 0xC0 == 0x80 { continue }
+            let length = byte & 0xE0 == 0xC0 ? 2 : byte & 0xF0 == 0xE0 ? 3 : byte & 0xF8 == 0xF0 ? 4 : 1
+            return length > back ? bytes.dropLast(back) : bytes[...]
+        }
+        return bytes[...]
     }
 
     /// 1 つの区切りの出力。最初の改行より後は捨てる
