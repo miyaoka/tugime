@@ -19,6 +19,8 @@ final class ZenzGenerator: DirectDisplayGenerating {
     private static let allLayersOnGPU: Int32 = 999
     /// 文字にするときに最初に用意する、1 トークンあたりのバイト数。足りなければ llama.cpp が要る大きさを返す
     private static let bytesPerTokenGuess = 8
+    /// 左の文脈を削るときの字数の単位
+    private static let contextTrimStep = 32
 
     private static let backend: Void = llama_backend_init()
 
@@ -107,8 +109,10 @@ final class ZenzGenerator: DirectDisplayGenerating {
             let over = prompt.count + limit - maxPositions
             if over <= 0 { return prompt }
             if scalars.isEmpty { return nil }
-            // 1 字は 1 トークン以上なので、超えたトークンの数だけ字を削れば、少なくともその数のトークンが減る
-            scalars.removeFirst(min(over, scalars.count))
+            // 1 字は 1 トークン以上なので、超えたトークンの数だけ字を削れば、少なくともその数のトークンが減る。
+            // 削る字数は contextTrimStep の倍数に切り上げる。超えた数だけ削ると、読みが伸びるたびに入力の先頭が変わり、KV キャッシュを使い回せない
+            let step = Self.contextTrimStep
+            scalars.removeFirst(min((over + step - 1) / step * step, scalars.count))
         }
     }
 
