@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fetchPinned } from "./lib/fetch";
 import { root } from "./lib/root";
 
-const revision = "535737d970be9ef31bd599436e16c9254f22f0f8";
+const revision = "14d20cdc72a97857d4afa96a9ac6f9b2edc05aec";
 
 export async function genmai(): Promise<string> {
   const path = join(root, ".zenz/genmai-310M-q8_0.gguf");
@@ -13,7 +13,7 @@ export async function genmai(): Promise<string> {
     {
       url: `https://huggingface.co/miyaoka/genmai-310M-GGUF/resolve/${revision}/genmai-310M-q8_0.gguf`,
       sha256:
-        "83cdec80c39534104cbcd0be5dd2c9cc17e24731102d7b7bd22ffdd61fb368a6",
+        "adef071476174c979ec68cc2216e85ac685c8f985ee86bff34004b032389938b",
       path,
     },
   ]);

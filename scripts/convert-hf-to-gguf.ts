@@ -136,22 +136,81 @@ await Bun.write(
   ),
 );
 
+// 変換は config.json の n_ctx を、モデルが学習した列の長さ（context_length）として書き、tugime はその長さまで列を伸ばす。
+// しかし学習の列が n_ctx まで届いたとは限らない。届かなかった位置での変換は学習されていないので、その手前で切る。
+// 学習の列が届かなかった位置の埋め込みの行は、初期値の大きさ（標準偏差 initializer_range）からほとんど動かず、学習した行とは標準偏差がはっきり分かれる（genmai-310M では、学習していない行は最大 0.029、学習した行は最小 0.049）。
+// そこで標準偏差が initializer_range の 2 倍を超える先頭の行だけを残し、n_ctx と n_positions をその行数にした写しを変換する。
+// llama.cpp は位置の埋め込みの行数が context_length と同じであることを求めるので、行も削る。学習した行が先頭に連続していなければ止める
+const trimToTrainedPositions = `
+import json, shutil, sys
+from pathlib import Path
+from safetensors.torch import load_file, save_file
+
+source, dest, weights = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3:]
+config = json.loads((source / "config.json").read_text())
+limit = 2 * config["initializer_range"]
+tensors = {f: load_file(source / f) for f in weights}
+found = [(f, k) for f, ts in tensors.items() for k in ts if k.endswith("wpe.weight")]
+if len(found) != 1:
+    sys.exit(f"位置の埋め込み（wpe.weight）が 1 つではない: {found}")
+[(file, key)] = found
+std = tensors[file][key].double().std(dim=1, correction=0)
+trained = int((std > limit).sum())
+if trained == 0:
+    sys.exit(f"位置の埋め込みに、標準偏差が {limit} を超える行が無い")
+if not bool((std[:trained] > limit).all()):
+    sys.exit(f"位置の埋め込みの、標準偏差が {limit} を超える行が先頭に連続していない")
+rest = std[trained:]
+if dest.exists():
+    shutil.rmtree(dest)
+dest.mkdir(parents=True)
+for path in source.iterdir():
+    if path.is_file() and path.name not in weights:
+        shutil.copy2(path, dest / path.name)
+config["n_ctx"] = config["n_positions"] = trained
+(dest / "config.json").write_text(json.dumps(config, indent=2, ensure_ascii=False))
+tensors[file][key] = tensors[file][key][:trained].contiguous()
+for f, ts in tensors.items():
+    save_file(ts, dest / f, metadata={"format": "pt"})
+print(json.dumps({"rows": len(std), "trained": trained, "trainedMin": float(std[:trained].min()), "restMax": float(rest.max()) if len(rest) else None}))
+`;
+// 変換はディレクトリの名前から general.name などを作るので、写しも最後をリポジトリの名前にする
+const trimmedDir = join(root, ".eval/hf-trained", commit, repo);
+const positions: {
+  rows: number;
+  trained: number;
+  trainedMin: number;
+  restMax: number | null;
+} =
+  await $`${uvRun} python -I - ${sourceDir} ${trimmedDir} ${weights} < ${new Response(trimToTrainedPositions)}`.json();
+console.error(
+  `== 位置の埋め込み ${positions.rows} 行のうち、学習した行 ${positions.trained} を残す（行の標準偏差は、学習した行の最小 ${positions.trainedMin.toFixed(4)}、残りの最大 ${positions.restMax?.toFixed(4) ?? "なし"}）`,
+);
+const trainedPositions = positions.trained;
+
 const out = join(root, ".zenz", `${name}.gguf`);
 await mkdir(join(root, ".zenz"), { recursive: true });
 console.error(`== 変換 ${repo} ${commit} → ${out}（${outtype}）`);
-await $`${uvRun} python ${join(llama, "convert_hf_to_gguf.py")} ${sourceDir} --outtype ${outtype} --outfile ${out}.part 1>&2`;
+await $`${uvRun} python ${join(llama, "convert_hf_to_gguf.py")} ${trimmedDir} --outtype ${outtype} --outfile ${out}.part 1>&2`;
 
-// 書き出した GGUF の前処理の名前を、同じ版の gguf-py で読んで確かめる
-const checkPreTokenizer = `
+// 書き出した GGUF の前処理の名前と学習した列の長さを、同じ版の gguf-py で読んで確かめる
+const checkMetadata = `
 import sys
 sys.path.insert(0, sys.argv[1])
 from gguf import GGUFReader
 
-field = GGUFReader(sys.argv[2]).fields["tokenizer.ggml.pre"]
-pre = bytes(field.parts[field.data[0]]).decode()
+fields = GGUFReader(sys.argv[2]).fields
+def value(key):
+    field = fields[key]
+    return field.parts[field.data[0]]
+pre = bytes(value("tokenizer.ggml.pre")).decode()
 if pre != sys.argv[3]:
     sys.exit(f"tokenizer.ggml.pre が {sys.argv[3]} でなく {pre}")
+key = bytes(value("general.architecture")).decode() + ".context_length"
+length = int(value(key)[0])
+if length != int(sys.argv[4]):
+    sys.exit(f"{key} が {sys.argv[4]} でなく {length}")
 `;
-await $`${uvRun} python - ${join(llama, "gguf-py")} ${out}.part ${PRE_TOKENIZER} < ${new Response(checkPreTokenizer)}`;
+await $`${uvRun} python - ${join(llama, "gguf-py")} ${out}.part ${PRE_TOKENIZER} ${trainedPositions} < ${new Response(checkMetadata)}`;
 await rename(`${out}.part`, out);
 console.log(out);
