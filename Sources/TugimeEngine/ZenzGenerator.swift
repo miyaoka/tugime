@@ -227,7 +227,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
             count = llama_detokenize(vocab, tokens, Int32(tokens.count), &buffer, Int32(buffer.count), false, false)
         }
         guard count >= 0 else { fatalError("トークンを文字にする領域が足りない: \(tokens)") }
-        return String(decoding: buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        return String(decoding: ZenzPrompt.droppingIncompleteTail(buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }), as: UTF8.self)
     }
 }
 

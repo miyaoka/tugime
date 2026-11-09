@@ -183,6 +183,20 @@ private final class FixedGenerator: DirectDisplayGenerating {
         #expect(parts.joined() == "あいうえおかきくけさし")
     }
 
+    /// 出力の上限で字の途中に止まっても、書きかけのバイトを文字にしない（「�」を出さない）。揃った字は残す
+    @Test func dropsOnlyTheIncompleteCharacterAtTheEnd() {
+        let ji = Array("自".utf8)
+        let so = Array("素".utf8)
+        let emoji = Array("😀".utf8)
+        #expect(Array(ZenzPrompt.droppingIncompleteTail(ji + so.prefix(2))) == ji)
+        #expect(Array(ZenzPrompt.droppingIncompleteTail(ji + so.prefix(1))) == ji)
+        #expect(Array(ZenzPrompt.droppingIncompleteTail(ji + emoji.prefix(3))) == ji)
+        #expect(Array(ZenzPrompt.droppingIncompleteTail(ji + so)) == ji + so)
+        #expect(Array(ZenzPrompt.droppingIncompleteTail(ji + emoji)) == ji + emoji)
+        #expect(Array(ZenzPrompt.droppingIncompleteTail(Array("ab".utf8))) == Array("ab".utf8))
+        #expect(ZenzPrompt.droppingIncompleteTail([]).isEmpty)
+    }
+
     @Test func buildsTheZenzFormat() {
         #expect(ZenzPrompt.text(left: "", kana: "きょうは") == "\u{EE00}キョウハ\u{EE01}")
         #expect(ZenzPrompt.text(left: "a b\nc", kana: "ゔぁ") == "\u{EE02}a\u{3000}bc\u{EE00}ヴァ\u{EE01}")
