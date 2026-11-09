@@ -15,6 +15,8 @@ package enum ZenzPrompt {
     static let outputPerKana = 1.3
     static let outputMargin = 8
     private static let chunkEnds: Set<Unicode.Scalar> = ["、", "。", "，", "．", "！", "？", "!", "?"]
+    /// 出力の文法（llama.cpp の GBNF）。目印を含まない文字の並び。語彙はバイト単位の BPE で、目印と語彙に無い字の途中のバイトだけのトークンを持つ
+    package static let outputGrammar = "root ::= [^\(inputMark)\(outputMark)\(contextMark)]*"
 
     /// 左の文脈。left が空でなければ left。left が空で数字に続くなら、その数字。
     /// それ以外は空。afterWord で left が空なのは、前の語がある入力欄のカーソルより前の文字列を読めなかったときで、

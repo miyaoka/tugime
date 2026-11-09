@@ -4,13 +4,12 @@ import TugimeCore
 
 /// zenz 形式のモデル（GGUF）を llama.cpp で動かし、読みから出力の文字列を貪欲に生成する。llama.cpp を直接触るのはこのファイルだけ。
 ///
-/// 区切りごとに「BOS + ZenzPrompt.text をトークンにし、EOS か上限まで、出力の文法が許すうちで logit が最大のトークンを 1 つずつ足した列」を作り、文字にして繋ぐ。
-/// 語彙はバイト単位の BPE で、目印や語彙に無い字の途中のバイトだけのトークンを持つ。argmax がそれになると、文字にならないバイトや目印が出力に入る
+/// 区切りごとに「BOS + ZenzPrompt.text をトークンにし、EOS か上限まで、ZenzPrompt.outputGrammar が許すうちで logit が最大のトークンを 1 つずつ足した列」を作り、文字にして繋ぐ。
 /// 入力と出力がモデルの位置の上限に収まらないときは、左の文脈を前から削る。
 /// 1 つの区切りの読みは出力と合わせて収まる長さに分けてあるので、読みは落ちない。
 /// 打鍵ごとの再計算は、2 つの仕組みで少ない decode にする:
 /// - KV キャッシュには、前に計算した入力と下書きが残る。新しい入力と先頭が一致する範囲は計算し直さない
-/// - 下書きは、同じ左の文脈で前に生成した出力。入力の後ろに置いて一度に decode し、各位置の argmax と一致する先頭だけを採る
+/// - 下書きは、同じ左の文脈で前に生成した出力。入力の後ろに置いて一度に decode し、生成するトークンと一致する先頭だけを採る
 /// まとめて decode した位置と 1 つずつ decode した位置では浮動小数の丸めが違うので、argmax が並ぶ所では、
 /// 同じ入力でもそれまでの打鍵によって出力が変わることがある
 final class ZenzGenerator: DirectDisplayGenerating {
@@ -38,8 +37,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
     /// argmax は、そのトークンを足したときの入力の最後の位置より前では求めないので nil になる
     private var resident: [llama_token] = []
     private var next: [llama_token?] = []
-    /// 出力を、UTF-8 の文字として読めて目印を含まない列に限る。llama.cpp の common_sampler_sample と同じく、argmax だけを確かめ、
-    /// 外れたときだけ全トークンに当てて選び直す
+    /// 出力から、目印と、字の頭にならないバイトを除く
     private let grammar: UnsafeMutablePointer<llama_sampler>
     /// 左の文脈ごとの、前に生成した出力
     private var drafts: [String: [llama_token]] = [:]
@@ -67,7 +65,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
         bos = llama_vocab_bos(vocab)
         eos = llama_vocab_eos(vocab)
         vocabularySize = Int(llama_vocab_n_tokens(vocab))
-        guard let grammar = llama_sampler_init_grammar(vocab, "root ::= [^\u{EE00}-\u{EE02}]*", "root") else { fatalError("出力の文法を作れない") }
+        guard let grammar = llama_sampler_init_grammar(vocab, ZenzPrompt.outputGrammar, "root") else { fatalError("出力の文法を作れない") }
         self.grammar = grammar
     }
 
@@ -187,7 +185,9 @@ final class ZenzGenerator: DirectDisplayGenerating {
         resident += tokens
     }
 
-    /// 位置 index の直後のトークン。argmax が文法に合えばそれを、合わなければその位置を decode し直し、文法が許すうちで logit が最大のものを返す
+    /// 位置 index の直後のトークン。argmax が文法に合えばそれを、合わなければその位置を decode し直し、文法が許すうちで logit が最大のものを返す。
+    /// llama.cpp の common_sampler_sample と同じく、全トークンに文法を当てるのは argmax が外れたときだけにする。
+    /// 位置ごとの logits は持たない（decode のたびに語彙全体を写すことになる）ので、外れた位置は decode し直す
     private func allowed(at index: Int) -> llama_token {
         let token = next[index]!
         var single = llama_token_data(id: token, logit: 1, p: 0)
