@@ -4,7 +4,8 @@ import TugimeCore
 
 /// zenz 形式のモデル（GGUF）を llama.cpp で動かし、読みから出力の文字列を貪欲に生成する。llama.cpp を直接触るのはこのファイルだけ。
 ///
-/// 区切りごとに「BOS + ZenzPrompt.text をトークンにし、EOS か上限まで argmax を 1 つずつ足した列」を作り、文字にして繋ぐ。
+/// 区切りごとに「BOS + ZenzPrompt.text をトークンにし、EOS か上限まで、出力の文法が許すうちで logit が最大のトークンを 1 つずつ足した列」を作り、文字にして繋ぐ。
+/// 語彙はバイト単位の BPE で、目印や語彙に無い字の途中のバイトだけのトークンを持つ。argmax がそれになると、文字にならないバイトや目印が出力に入る
 /// 入力と出力がモデルの位置の上限に収まらないときは、左の文脈を前から削る。
 /// 1 つの区切りの読みは出力と合わせて収まる長さに分けてあるので、読みは落ちない。
 /// 打鍵ごとの再計算は、2 つの仕組みで少ない decode にする:
@@ -37,6 +38,9 @@ final class ZenzGenerator: DirectDisplayGenerating {
     /// argmax は、そのトークンを足したときの入力の最後の位置より前では求めないので nil になる
     private var resident: [llama_token] = []
     private var next: [llama_token?] = []
+    /// 出力を、UTF-8 の文字として読めて目印を含まない列に限る。llama.cpp の common_sampler_sample と同じく、argmax だけを確かめ、
+    /// 外れたときだけ全トークンに当てて選び直す
+    private let grammar: UnsafeMutablePointer<llama_sampler>
     /// 左の文脈ごとの、前に生成した出力
     private var drafts: [String: [llama_token]] = [:]
 
@@ -63,9 +67,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
         bos = llama_vocab_bos(vocab)
         eos = llama_vocab_eos(vocab)
         vocabularySize = Int(llama_vocab_n_tokens(vocab))
+        guard let grammar = llama_sampler_init_grammar(vocab, "root ::= [^\u{EE00}-\u{EE02}]*", "root") else { fatalError("出力の文法を作れない") }
+        self.grammar = grammar
     }
 
     deinit {
+        llama_sampler_free(grammar)
         llama_batch_free(batch)
         LiveLlamaResources.remove(resources)
         resources.release()
@@ -126,9 +133,11 @@ final class ZenzGenerator: DirectDisplayGenerating {
         truncate(keep)
         append(Array(sequence[keep...]), needFrom: needFrom)
         var out: [llama_token] = []
+        llama_sampler_reset(grammar)
         while out.count < limit {
-            let token = next[needFrom + out.count]!
+            let token = allowed(at: needFrom + out.count)
             if token == eos { break }
+            llama_sampler_accept(grammar, token)
             out.append(token)
             let position = prompt.count + out.count - 1
             if position < resident.count, resident[position] == token { continue }
@@ -176,6 +185,28 @@ final class ZenzGenerator: DirectDisplayGenerating {
             next.append(llama_token(best))
         }
         resident += tokens
+    }
+
+    /// 位置 index の直後のトークン。argmax が文法に合えばそれを、合わなければその位置を decode し直し、文法が許すうちで logit が最大のものを返す
+    private func allowed(at index: Int) -> llama_token {
+        let token = next[index]!
+        var single = llama_token_data(id: token, logit: 1, p: 0)
+        let fits = withUnsafeMutablePointer(to: &single) { pointer in
+            var check = llama_token_data_array(data: pointer, size: 1, selected: -1, sorted: false)
+            llama_sampler_apply(grammar, &check)
+            return pointer.pointee.logit != -.infinity
+        }
+        if fits { return token }
+        let input = resident[index]
+        truncate(index)
+        append([input], needFrom: index)
+        let logits = llama_get_logits_ith(context, 0)!
+        var data = (0..<vocabularySize).map { llama_token_data(id: llama_token($0), logit: logits[$0], p: 0) }
+        return data.withUnsafeMutableBufferPointer { buffer in
+            var array = llama_token_data_array(data: buffer.baseAddress, size: buffer.count, selected: -1, sorted: false)
+            llama_sampler_apply(grammar, &array)
+            return buffer.max { $0.logit < $1.logit }!.id
+        }
     }
 
     private func tokenize(_ text: String) -> [llama_token] {
