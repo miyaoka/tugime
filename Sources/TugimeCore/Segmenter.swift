@@ -75,7 +75,7 @@ public final class Segmenter {
         public static let start = Leading("")
 
         /// 入力欄から読む、カーソルより前の文字列の長さの上限（UTF-16 の単位）。表示の変換が左の文脈に使う長さ（ZenzPrompt.maxContextLength）を超えない。
-        /// 未確定の文字列の最初の表示の変換は左の文脈をすべてモデルに通すので、長くするほど打ち始めの打鍵が遅くなる
+        /// モデルに渡すのは、そのうちモデルが学習した列の長さに収まる分だけで、残りは表示の変換が前から削る
         public static let maxLength = 200
 
         /// 入力欄のカーソルより前の文字列を、UTF-16 で maxLength 単位まで読む。caret はカーソルの UTF-16 の位置、
