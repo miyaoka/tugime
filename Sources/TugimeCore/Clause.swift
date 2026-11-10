@@ -841,6 +841,8 @@ extension Segmenter {
         if typedCanBeEnglish { list.append(span.source) }
         list += japaneseConverter.alternatives(kana: reading, context: context)
         list += [reading, Self.katakana(reading)]
+        // 読みが記号の読みなら、その記号も選べる（かっこ の 【】）
+        list += SymbolCandidates.symbols(for: reading)
         if whole, !typedCanBeEnglish { list.append(span.source) }
         return Self.unique(list)
     }
@@ -849,9 +851,14 @@ extension Segmenter {
         var list: [String] = [segment.output]
         switch segment.kind {
         case .punctuation:
-            // 日本語の記号と打ったままの両方を選べる。組の開き括弧に合わせて打ったままの形にした閉じ括弧もある
-            list.append(segment.source)
+            // 記号の打鍵のうち 2 打鍵のもの（z[ zl）は、打ったままの形を候補にしない（打ったままにするのは F10）。
+            // 1 打鍵のもの（[ ] /）と句読点は、打ったままの形を選べる。句読点は日本語の記号も選べる。
+            // 組の開き括弧に合わせて打ったままの形にした閉じ括弧もある
+            if Self.symbols[segment.source] == nil || segment.source.count == 1 { list.append(segment.source) }
             if let mark = segment.source.first.flatMap({ Self.punctuation[$0] }) { list.append(mark) }
+            // 表示の記号を読みとする記号も選べる（「 の 【）。丸括弧は候補を選ぶと組の括弧も同じ形にする（pairingBrackets）ので、
+            // 丸括弧の文節にほかの記号を足すと組が合わなくなる。丸括弧の文節には足さない
+            if !Self.isRoundBracket(segment.output) { list += SymbolCandidates.symbols(for: segment.output) }
         case .word:
             list += (typedJapaneseWords[segment.source] ?? []) + [segment.source] + typedForms(of: segment.source, context: segment.context)
         case .japanese:
