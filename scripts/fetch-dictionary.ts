@@ -1,14 +1,12 @@
 // システム辞書の元（Mozc の OSS 辞書・連接の表・文節の境目の規則）を .dictionary/ に取得して SHA-256 を確かめ、
 // tugime-dictionary で 1 つのファイルに組み立ててパスを出す。組み立てたファイルが無いか、組み立ての道具と並びのソースより古ければ組み立て直す。
-// 版は Mozc のコミットで固定する。更新するときは commit と各ファイルの sha256 と、App/Notices/mozc-dictionary.txt の版を一緒に変える
+// 版は lib/mozc.ts の Mozc のコミットで固定する
 import { $ } from "bun";
 import { readdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { fetchPinned } from "./lib/fetch";
+import { fetchMozc, mozcSource } from "./lib/mozc";
 import { root } from "./lib/root";
 import { swiftBuild } from "./lib/swift-build";
-
-const commit = "c4b2aef7c65e61be394bacadaec200eb5b97f91c";
 
 /// Mozc の src からのパスと SHA-256
 const files: [string, string][] = [
@@ -71,6 +69,7 @@ const builders = [
   "Sources/tugime-dictionary",
   "Sources/SystemDictionaryLayout",
   "scripts/fetch-dictionary.ts",
+  "scripts/lib/mozc.ts",
 ];
 
 /// ファイルか、ディレクトリの中で最も新しいファイルの更新時刻
@@ -84,14 +83,8 @@ async function newest(path: string): Promise<number> {
 }
 
 export async function dictionary(): Promise<string> {
-  const source = join(root, `.dictionary/mozc-${commit}/src`);
-  await fetchPinned(
-    files.map(([path, sha256]) => ({
-      url: `https://raw.githubusercontent.com/google/mozc/${commit}/src/${path}`,
-      sha256,
-      path: join(source, path),
-    })),
-  );
+  const source = mozcSource;
+  await fetchMozc(files);
   const out = join(root, ".dictionary/tugime-dictionary.bin");
   const built = await stat(out).then(
     (s) => s.mtimeMs,

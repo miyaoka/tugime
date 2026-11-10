@@ -185,6 +185,29 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(!english[0].candidates.contains("vue。js"))
     }
 
+    /// 記号と句読点の文節は、表示と打ったままの形（2 打鍵の記号の打鍵を除く）の後に、表示の記号を読みとする記号を並べる。
+    /// 丸括弧の文節には足さず、ほかの文節にも丸括弧を足さない
+    @Test func symbolClausesOfferTheSymbolsOfTheirMark() throws {
+        let clauses = segmenter.clauses("[kore]")
+        let open = try #require(clauses.first?.candidates)
+        let close = try #require(clauses.last?.candidates)
+        #expect(open.prefix(2) == ["「", "["])
+        #expect(open.contains("【") && !open.contains("（"))
+        #expect(close.prefix(2) == ["」", "]"])
+        #expect(close.contains("】") && !close.contains("）"))
+        #expect(!segmenter.clauses("z[")[0].candidates.contains("z["))
+        let arrow = segmenter.clauses("zl")[0].candidates
+        #expect(arrow.first == "→" && !arrow.contains("zl"))
+        #expect(segmenter.clauses("/")[0].candidates.prefix(2) == ["・", "/"])
+        let parens = segmenter.clauses("kore(sore)").filter { $0.output == "（" || $0.output == "）" }.map(\.candidates)
+        #expect(parens == [["（", "("], ["）", ")"]])
+    }
+
+    /// 日本語の文節は、読みを読みとする記号も候補に並べる
+    @Test func japaneseClausesOfferTheSymbolsOfTheirReading() throws {
+        let clause = try #require(segmenter.clauses("kakko").first { $0.reading == "かっこ" })
+        #expect(clause.candidates.contains("【】"))
+    }
     /// 括弧の候補を選び直すと、組になる括弧だけの文節も同じ形になる
     @Test func choosingABracketPairsItsPartner() throws {
         let clauses = segmenter.clauses("kore(sore)")

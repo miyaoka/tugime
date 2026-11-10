@@ -5,6 +5,12 @@ extension Segmenter {
     /// 開き丸括弧ごとの、同じ形の閉じ丸括弧
     static let closingBracket: [Character: Character] = ["(": ")", "（": "）"]
 
+    /// text が丸括弧 1 文字か
+    static func isRoundBracket(_ text: String) -> Bool {
+        guard text.count == 1, let c = text.first else { return false }
+        return closingBracket[c] != nil || closingBracket.values.contains(c)
+    }
+
     /// 句読点 c の区間の形。直前の区間が英語なら nil（打ったまま英語の区間に含める）、日本語なら日本語の記号にする。
     /// 閉じ丸括弧は、opened の最後の開き丸括弧（入れ子を数えて組になるもの）と同じ形にし、opened から外す。全角なら直前が英語でも区間にし、
     /// 半角なら直前が日本語でも半角の区間にする。組が無ければほかの句読点と同じ。
