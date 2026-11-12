@@ -27,21 +27,27 @@ extension Segmenter {
         if let deleted = deletingLastShown(of: keys, shown: display.text, leading: leading, table: table) {
             return (deleted.keys, LiveDisplay(text: deleted.text, differsFromInput: display.differsFromInput))
         }
-        return (deletingLastTyped(of: keys, shownLast: display.text.last, leading: leading, table: table), nil)
+        return (deletingLastTyped(of: keys, shown: display.text, leading: leading, table: table), nil)
     }
 
     /// shown の末尾の 1 文字を、利用者が打ったかなの単位（kanaUnitLength）で、その下の打鍵ごと消した打鍵列と表示。
     /// 打ったままの文字（英字・数字・打ちかけの綴り）は 1 打鍵、句読点と記号はその打鍵、かなは最後の単位、漢字が 1 文字ならその読み、
     /// 2 文字以上の漢字の連なりは字ごとの読みが決まらないので、読みのかなに戻して最後の単位を消す。
+    /// 打ったままの文字は、表示の末尾の ASCII の連なりが打鍵の末尾とそのまま一致するときだけ（利用者の辞書の語の表記は打ったままの文字ではない）。
     /// かなと漢字は、表示の中で最後の打ったままの文字・句読点・記号より後ろだけを、その後ろの打鍵の読みと照らす。対応づかなければ nil
     static func deletingLastShown(of keys: String, shown: String, leading: Leading, table: RomajiTable) -> (keys: String, text: String)? {
         guard let last = shown.last else { return nil }
         if last.isASCII {
-            guard keys.last == last else { return nil }
+            guard keys.hasSuffix(String(shown.reversed().prefix(while: \.isASCII).reversed())) else { return nil }
             return (String(keys.dropLast()), String(shown.dropLast()))
         }
         if let key = markKey(last, endingAt: keys.endIndex, in: keys) {
-            return (String(keys.dropLast(key.count)), String(shown.dropLast()))
+            let kept = keys.dropLast(key.count)
+            let before = shown.dropLast()
+            // 句読点と記号の前の単独の n は ん と読まれ、消すと次のかなを待つ n に戻るので、綴りの表の ん の綴りにする（ん。 の 。 を消した ん は nn）
+            let typing = Typing(keys: kept, afterJapanese: afterJapanese("", leading: leading), preceding: leading.text.last, table: table)
+            guard before.last == "ん", typing.reading.last == "n", let n = table.spelling(of: "ん") else { return (String(kept), String(before)) }
+            return (kept.dropLast() + n.map(\.keys).joined(), String(before))
         }
         // 表示の末尾のかなと漢字の部分（tail）と、それを打った打鍵の位置。前の部分（head）の末尾の打ったままの字・句読点・記号の連なりを
         // そのとおりに打った打鍵の直後から始まる（data管理 の data）
@@ -71,12 +77,16 @@ extension Segmenter {
         return nil
     }
 
-    /// 表示を残せないときの Backspace の後の打鍵列。打鍵の読みの最後の単位を消す。shown の末尾が打ったままの文字か、読みが打ちかけで終わるなら 1 打鍵
-    static func deletingLastTyped(of keys: String, shownLast: Character?, leading: Leading, table: RomajiTable) -> String {
+    /// 表示を残せないときの Backspace の後の打鍵列。打鍵の読みの最後の単位を消す。
+    /// 英語の区間の字（shown の末尾の ASCII の連なりが、大文字と小文字を除いて打鍵の末尾と一致する。API と登録した api）と、
+    /// 読みが打ちかけで終わる打鍵は 1 打鍵。日本語の語に登録した英字の表記（Fiji と登録した kanji）は、打ったかなの単位で消す
+    static func deletingLastTyped(of keys: String, shown: String, leading: Leading, table: RomajiTable) -> String {
+        let typed = String(shown.reversed().prefix(while: \.isASCII).reversed()).lowercased()
+        if !typed.isEmpty, keys.lowercased().hasSuffix(typed) { return String(keys.dropLast()) }
         let typing = Typing(keys: keys[...], afterJapanese: afterJapanese("", leading: leading), preceding: leading.text.last, table: table)
-        guard shownLast?.isASCII == false, typing.reading.last?.isASCII == false,
-              let kept = typing.keys(droppingReading: kanaUnitLength(typing.reading))
-        else { return String(keys.dropLast()) }
+        guard typing.reading.last?.isASCII == false, let kept = typing.keys(droppingReading: kanaUnitLength(typing.reading)) else {
+            return String(keys.dropLast())
+        }
         return kept
     }
 

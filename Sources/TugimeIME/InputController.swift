@@ -471,10 +471,11 @@ final class TugimeInputController: IMKInputController {
         }
     }
 
-    /// 変換が届いた。今の未確定の文字列のものなら覚えて表示を差し替え、その間に打たれていれば最新の打鍵列を積む
+    /// 変換が届いた。今の未確定の文字列のものなら覚えて表示を差し替え、その間に打たれていれば最新の打鍵列を積む。
+    /// 変換の途中に Backspace でその打鍵列に戻って表示を残していれば、残した表示を使い、届いた変換は捨てる
     private func didConvert(_ display: Segmenter.LiveDisplay, keys converted: String, generation: Int) {
         converting = false
-        if generation == conversionGeneration {
+        if generation == conversionGeneration, !self.converted.contains(where: { $0.keys == converted }) {
             self.converted.append((converted, display))
             if clauses == nil, !keys.isEmpty, let client = client() {
                 showMarkedText(client)

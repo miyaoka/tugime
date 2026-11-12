@@ -128,6 +128,8 @@ import Testing
         ("sitta.", "知った。", "sitta", "知った"),
         ("toukyou.", "東京。", "toukyou", "東京"),
         ("ka[", "か「", "ka", "か"),
+        // 句読点の前で ん と読まれた単独の n は、句読点を消しても ん のまま
+        ("n.", "ん。", "nn", "ん"),
         // 句読点・記号・英字・数字の後ろの漢字は、その後ろの打鍵の読みだけと照らす
         ("toukyou,oosaka", "東京、大阪", "toukyou,oosa", "東京、おおさ"),
         ("6ji", "6時", "6", "6"),
@@ -152,21 +154,27 @@ import Testing
         #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: nil, table: table) == expected)
     }
 
-    /// 表示のかなが打鍵の読みと合わなければ、表示を残せない
-    @Test func refusesAKanaThatTheKeysDoNotRead() {
-        #expect(Segmenter.deletingLastShown(of: "toukyouniiku", shown: "東京に行け", leading: .start, table: table) == nil)
+    /// 表示の字に対応する打鍵が決まらなければ、表示を残せない
+    @Test(arguments: [
+        // 表示のかなが打鍵の読みと合わない
+        ("toukyouniiku", "東京に行け"),
+        // 日本語の語に登録した英字の表記。末尾の i が打鍵の末尾とたまたま一致しても、打ったままの字ではない
+        ("kanji", "Fiji"),
+    ])
+    func refusesAShownCharacterWithoutItsKeys(keys: String, shown: String) {
+        #expect(Segmenter.deletingLastShown(of: keys, shown: shown, leading: .start, table: table) == nil)
     }
 
-    /// 表示を残せないときは、打ったかなの最後の単位を消す。打ったままの字か打ちかけで終わるなら 1 打鍵
+    /// 表示を残せないときは、打ったかなの最後の単位を消す。英語の区間の字と、打ちかけで終わる打鍵は 1 打鍵
     @Test(arguments: [
-        // 利用者の辞書の語の表記（よろしくお願いします）は打鍵と対応しない
-        ("yorosiku", "す", "yorosi"),
-        ("tokkyo", "す", "toxtu"),
-        ("kanji", "す", "kann"),
-        ("api", "I", "ap"),
-        ("kak", "す", "ka"),
+        // 利用者の辞書の語の表記は打鍵と対応しない
+        ("yorosiku", "よろしくお願いします", "yorosi"),
+        ("kanji", "Fiji", "kann"),
+        // 英語の区間に登録した表記は、大文字と小文字を除けば打ったまま
+        ("api", "API", "ap"),
+        ("kak", "かk", "ka"),
     ])
-    func deletesTheLastTypedKana(keys: String, shownLast: Character, expected: String) {
-        #expect(Segmenter.deletingLastTyped(of: keys, shownLast: shownLast, leading: .start, table: table) == expected)
+    func deletesTheLastTypedKana(keys: String, shown: String, expected: String) {
+        #expect(Segmenter.deletingLastTyped(of: keys, shown: shown, leading: .start, table: table) == expected)
     }
 }
