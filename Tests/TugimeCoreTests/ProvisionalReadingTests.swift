@@ -115,12 +115,23 @@ import Testing
         ("kyou", "今日", "kyo", "きょ"),
         ("tokkyo", "特許", "toxtu", "とっ"),
         ("nihonn", "日本", "niho", "にほ"),
+        // 残る ん は、続けて打つかなの綴りによらず ん と読める綴りにする
+        ("kanji", "漢字", "kann", "かん"),
+        ("denwa", "電話", "denn", "でん"),
+        // っち は っ と ち の 2 単位
+        ("kotchi", "こっち", "koxtu", "こっ"),
         // 残る っ は、続けて打つかなの綴りによらず っ と読める綴りにする
         ("bassi", "抜歯", "baxtu", "ばっ"),
         ("sitta", "知った", "sixtu", "知っ"),
         ("toxtu", "とっ", "to", "と"),
-        // 句読点は 1 文字
+        // 句読点と記号は 1 文字
         ("sitta.", "知った。", "sitta", "知った"),
+        ("toukyou.", "東京。", "toukyou", "東京"),
+        ("ka[", "か「", "ka", "か"),
+        // 句読点・記号・英字・数字の後ろの漢字は、その後ろの打鍵の読みだけと照らす
+        ("toukyou,oosaka", "東京、大阪", "toukyou,oosa", "東京、おおさ"),
+        ("6ji", "6時", "6", "6"),
+        ("githubue", "github上", "github", "github"),
         // 英字と打ちかけは 1 打鍵
         ("make", "make", "mak", "mak"),
         ("toukyouniik", "東京に行k", "toukyounii", "東京に行"),
@@ -133,13 +144,26 @@ import Testing
     }
 
     /// 残した っ の後は、どの綴りを続けても っ に続けて読む
-    @Test(arguments: [("toxtukyo", "とっきょ"), ("baxtusi", "ばっし"), ("baxtukinn", "ばっきん")])
+    @Test(arguments: [("toxtukyo", "とっきょ"), ("baxtusi", "ばっし"), ("baxtukinn", "ばっきん"), ("kannji", "かんじ")])
     func readsOnAfterAKeptSokuon(keys: String, expected: String) {
         #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: nil, table: table) == expected)
     }
 
-    /// 表示のかなが打鍵の読みと合わなければ消さない（呼び出し側が 1 打鍵消して変換し直す）
+    /// 表示のかなが打鍵の読みと合わなければ、表示を残せない
     @Test func refusesAKanaThatTheKeysDoNotRead() {
         #expect(Segmenter.deletingLastShown(of: "toukyouniiku", shown: "東京に行け", leading: .start, table: table) == nil)
+    }
+
+    /// 表示を残せないときは、打ったかなの最後の単位を消す。打ったままの字か打ちかけで終わるなら 1 打鍵
+    @Test(arguments: [
+        // 利用者の辞書の語の表記（よろしくお願いします）は打鍵と対応しない
+        ("yorosiku", "す", "yorosi"),
+        ("tokkyo", "す", "toxtu"),
+        ("kanji", "す", "kann"),
+        ("api", "I", "ap"),
+        ("kak", "す", "ka"),
+    ])
+    func deletesTheLastTypedKana(keys: String, shownLast: Character, expected: String) {
+        #expect(Segmenter.deletingLastTyped(of: keys, shownLast: shownLast, leading: .start, table: table) == expected)
     }
 }

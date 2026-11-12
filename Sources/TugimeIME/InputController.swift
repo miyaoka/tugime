@@ -298,13 +298,10 @@ final class TugimeInputController: IMKInputController {
             return handleConverted(event, clauses: clauses, client: client)
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
-            // 見えている最後の 1 文字をその打鍵ごと消し、残りは変換し直さずに見えていたまま残す。表示と打鍵が対応づかなければ 1 打鍵消して変換し直す
-            if let deleted = Segmenter.deletingLastShown(of: keys, shown: liveDisplay, leading: leading, table: conversion.table) {
-                keys = deleted.keys
-                if !keys.isEmpty { keep(deleted.display) }
-            } else {
-                keys.removeLast()
-            }
+            // 見えている最後の 1 文字をその打鍵ごと消し、残りは変換し直さずに見えていたまま残す。表示を残せなければ、打ったかなの最後の単位を消して変換し直す
+            let deleted = Segmenter.deletingLast(of: keys, shown: liveDisplay, leading: leading, table: conversion.table)
+            keys = deleted.keys
+            if !keys.isEmpty, let display = deleted.display { keep(display) }
             if keys.isEmpty { endComposition() }
             showMarkedText(client)
             return true
