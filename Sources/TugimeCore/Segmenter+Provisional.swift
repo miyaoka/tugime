@@ -27,7 +27,7 @@ extension Segmenter {
         if let deleted = deletingLastShown(of: keys, shown: display.text, leading: leading, table: table) {
             return (deleted.keys, LiveDisplay(text: deleted.text, differsFromInput: display.differsFromInput))
         }
-        return (deletingLastTyped(of: keys, shown: display.text, leading: leading, table: table), nil)
+        return (deletingLastTyped(of: keys, shown: display.text, endsInEnglish: display.endsInEnglish, leading: leading, table: table), nil)
     }
 
     /// shown の末尾の 1 文字を、利用者が打ったかなの単位（kanaUnitLength）で、その下の打鍵ごと消した打鍵列と表示。
@@ -78,12 +78,12 @@ extension Segmenter {
         return nil
     }
 
-    /// 表示を残せないときの Backspace の後の打鍵列。打鍵の読みの最後の単位を消す。
-    /// 英語の区間の字（shown の末尾の ASCII の連なりが、大文字と小文字を除いて打鍵の末尾と一致する。API と登録した api）と、
-    /// 読みが打ちかけで終わる打鍵は 1 打鍵。日本語の語に登録した英字の表記（Fiji と登録した kanji）は、打ったかなの単位で消す
-    static func deletingLastTyped(of keys: String, shown: String, leading: Leading, table: RomajiTable) -> String {
+    /// 表示を残せないときの Backspace の後の打鍵列。打鍵の読みの最後の単位を消す。英語の区間の字と、読みが打ちかけで終わる打鍵は 1 打鍵。
+    /// 英語の区間かは、区切りの結果から作った表示なら endsInEnglish で決まる（Kubernetes と en で登録した kube は 1 打鍵、
+    /// Fiji と ja で登録した kanji は打ったかなの単位）。それ以外の表示では、末尾の英字が打ったままか（大文字と小文字を除いて打鍵の末尾と一致するか）で決める
+    static func deletingLastTyped(of keys: String, shown: String, endsInEnglish: Bool?, leading: Leading, table: RomajiTable) -> String {
         let typed = String(shown.reversed().prefix(while: \.isASCII).reversed()).lowercased()
-        if !typed.isEmpty, keys.lowercased().hasSuffix(typed) { return String(keys.dropLast()) }
+        if endsInEnglish ?? (!typed.isEmpty && keys.lowercased().hasSuffix(typed)) { return String(keys.dropLast()) }
         let typing = Typing(keys: keys[...], afterJapanese: afterJapanese("", leading: leading), preceding: leading.text.last, table: table)
         guard typing.reading.last?.isASCII == false, let kept = typing.keys(droppingReading: kanaUnitLength(typing.reading)) else {
             return String(keys.dropLast())

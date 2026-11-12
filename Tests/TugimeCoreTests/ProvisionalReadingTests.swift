@@ -171,14 +171,16 @@ import Testing
 
     /// 表示を残せないときは、打ったかなの最後の単位を消す。英語の区間の字と、打ちかけで終わる打鍵は 1 打鍵
     @Test(arguments: [
-        // 利用者の辞書の語の表記は打鍵と対応しない
-        ("yorosiku", "よろしくお願いします", "yorosi"),
-        ("kanji", "Fiji", "kann"),
-        // 英語の区間に登録した表記は、大文字と小文字を除けば打ったまま
-        ("api", "API", "ap"),
-        ("kak", "かk", "ka"),
-    ])
-    func deletesTheLastTypedKana(keys: String, shown: String, expected: String) {
-        #expect(Segmenter.deletingLastTyped(of: keys, shown: shown, leading: .start, table: table) == expected)
+        // 利用者の辞書の語の表記は打鍵と対応しない。区間の種類が分かればそれで決める
+        ("yorosiku", "よろしくお願いします", false, "yorosi"),
+        ("kanji", "Fiji", false, "kann"),
+        ("kube", "Kubernetes", true, "kub"),
+        // 区間の種類が分からない表示では、英語の区間に登録した表記は、大文字と小文字を除けば打ったまま
+        ("api", "API", nil, "ap"),
+        ("kanji", "Fiji", nil, "kann"),
+        ("kak", "かk", nil, "ka"),
+    ] as [(String, String, Bool?, String)])
+    func deletesTheLastTypedKana(keys: String, shown: String, endsInEnglish: Bool?, expected: String) {
+        #expect(Segmenter.deletingLastTyped(of: keys, shown: shown, endsInEnglish: endsInEnglish, leading: .start, table: table) == expected)
     }
 }

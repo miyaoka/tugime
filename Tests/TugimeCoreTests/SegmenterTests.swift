@@ -937,3 +937,11 @@ private final class FixedDisplayConverter: JapaneseConverting {
         #expect(segmenter.liveDisplay("toukyounii").text == original)
     }
 }
+
+/// 区切りの結果から作った表示は、最後の区間が英語かを持つ（Backspace で消す単位を決める）
+@Suite struct LiveDisplayLastSpanTests {
+    @Test(arguments: [("github", true), ("toukyou", false), ("toukyougithub", true), ("githubni", false)])
+    func knowsWhetherTheLastSpanIsEnglish(keys: String, english: Bool) throws {
+        #expect(try Shared.segmenter.get().liveDisplay(keys).endsInEnglish == english)
+    }
+}

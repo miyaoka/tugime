@@ -236,6 +236,8 @@ public final class Segmenter {
         public var text: String
         /// 変換して見せた日本語区間のどれかが、読みと対応づかない（JapaneseDisplay.matchesReading が偽）
         public var differsFromInput: Bool
+        /// 最後の区間が英語の区間か。区切りの結果から作った表示だけが知る。変換の届いていない打鍵をつないだ表示と、Backspace で切った表示では nil
+        public var endsInEnglish: Bool? = nil
     }
 
     /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま。末尾の単独の n は打ったまま見せる（keepingPendingN）。
@@ -246,7 +248,10 @@ public final class Segmenter {
             let text = display?.text ?? segments[index].output
             return (result: (display: display, text: text), shown: text)
         }
-        return LiveDisplay(text: shown.map(\.text).joined(), differsFromInput: shown.contains { $0.display?.matchesReading == false })
+        return LiveDisplay(
+            text: shown.map(\.text).joined(), differsFromInput: shown.contains { $0.display?.matchesReading == false },
+            endsInEnglish: segments.last.map { $0.kind == .english }
+        )
     }
 
     /// 表示の変換にかける 1 区間。日本語区間は表示の変換で表記を決める。それ以外の区間に表示する文字列は、displays の make が決める。
