@@ -49,13 +49,18 @@ final class DirectConverter: JapaneseConverting {
         if let cached = displays[key] { return cached }
         let scored = scorer.convert(kana: kana, context: context)
         let text = generator.generate(left: ZenzPrompt.leftContext(context: context, left: left), kana: kana)
-        var cuts: [Int] = []
-        for scoredClause in scored.clauses.dropLast() { cuts.append((cuts.last ?? 0) + scoredClause.clause.reading.count) }
-        let output = ReadingAlignment(text: text, reading: kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: kana, text: text)]
-        let clauses = Self.keepingUserWords(output, scored: scored.clauses)
+        let clauses = Self.keepingUserWords(Self.clauses(of: text, kana: kana, scored: scored.clauses), scored: scored.clauses)
         let shown = JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses, userWords: scored.clauses.flatMap(\.userWords))
         displays[key] = shown
         return shown
+    }
+
+    /// 読み kana の表示の文字列 text を、採点の文節 scored の境目のうち、ReadingAlignment で text の側の位置が確定したところで文節に切る。
+    /// 対応づかない text は 1 文節（kana, text）にする
+    static func clauses(of text: String, kana: String, scored: [ScoredClause]) -> [JapaneseClause] {
+        var cuts: [Int] = []
+        for scoredClause in scored.dropLast() { cuts.append((cuts.last ?? 0) + scoredClause.clause.reading.count) }
+        return ReadingAlignment(text: text, reading: kana)?.clauses(cutAt: cuts) ?? [JapaneseClause(reading: kana, text: text)]
     }
 
     /// 出力の文節のうち、束ねる採点の文節が使った利用者の語のどれかを、同じ読みに登録したどの表記でも含まないものを、採点の文節の表記を繋いだものにする。

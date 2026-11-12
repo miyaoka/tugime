@@ -20,6 +20,114 @@ extension Segmenter {
         return LiveDisplay(text: text, differsFromInput: false)
     }
 
+    /// Backspace で、打鍵列 keys の表示 shown の末尾の 1 文字を、その下の打鍵ごと消した打鍵列と表示。残りは変換し直さず、shown を切って作る。
+    /// 消す単位は利用者が打ったかなの単位（kanaUnitLength）。末尾が打ったままの文字（英字・数字・打ちかけの綴り）なら 1 打鍵、
+    /// かななら最後の単位、漢字や記号が 1 文字ならその読み、2 文字以上の連なりは字ごとの読みが決まらないので、読みのかなに戻して最後の単位を消す。
+    /// 表示と打鍵の読みが対応づかなければ nil
+    public static func deletingLastShown(of keys: String, shown display: LiveDisplay, leading: Leading, table: RomajiTable) -> (keys: String, display: LiveDisplay)? {
+        guard let deleted = deletingLastShown(of: keys, shown: display.text, leading: leading, table: table) else { return nil }
+        return (deleted.keys, LiveDisplay(text: deleted.text, differsFromInput: display.differsFromInput))
+    }
+
+    static func deletingLastShown(of keys: String, shown: String, leading: Leading, table: RomajiTable) -> (keys: String, text: String)? {
+        guard let last = shown.last else { return nil }
+        if last.isASCII {
+            guard keys.last == last else { return nil }
+            return (String(keys.dropLast()), String(shown.dropLast()))
+        }
+        let read = { (typed: Substring) in
+            provisionalText(of: typed, afterJapanese: afterJapanese("", leading: leading), preceding: leading.text.last, table: table)
+        }
+        let reading = read(keys[...])
+        // 読みを末尾から count 文字落とした読みを打つ打鍵列。打鍵列の頭のうち、ちょうどその読みになる最も長いもの。
+        // 残る読みの末尾の っ は、子音を重ねた打鍵のままでは次のかなが続くまで っ と読まれないので、綴りの表で っ だけを打つ綴りに置き換える
+        // （特許 から きょ を消した とっ は tok では とk と読まれるので、toxtu にする）
+        func dropping(reading count: Int) -> String? {
+            let target = reading.dropLast(count)
+            let base = String(target.reversed().drop { $0 == "っ" }.reversed())
+            guard let kept = (1...keys.count).lazy.map({ keys.dropLast($0) }).first(where: { read($0) == base }) else { return nil }
+            let sokuon = target.count - base.count
+            guard sokuon > 0 else { return String(kept) }
+            guard let tsu = table.spelling(of: "っ")?.map(\.keys).joined() else { return nil }
+            return kept + String(repeating: tsu, count: sokuon)
+        }
+        let unit = kanaUnitLength(reading)
+        if ReadingAlignment.anchor(last) != nil {
+            let shownUnit = shown.suffix(unit)
+            guard shownUnit.count == unit, zip(shownUnit, reading.suffix(unit)).allSatisfy({ ReadingAlignment.anchor($0) == $1 }),
+                  let kept = dropping(reading: unit)
+            else { return nil }
+            return (kept, String(shown.dropLast(unit)))
+        }
+        let run = shown.reversed().prefix { !$0.isASCII && ReadingAlignment.anchor($0) == nil }.count
+        guard let alignment = ReadingAlignment(text: shown, reading: reading),
+              let start = alignment.fixed[shown.count - run]
+        else { return nil }
+        let head = String(shown.dropLast(run))
+        if run == 1 {
+            guard let kept = dropping(reading: reading.count - start) else { return nil }
+            return (kept, head)
+        }
+        guard reading.count - unit >= start, let kept = dropping(reading: unit) else { return nil }
+        return (kept, head + reading.dropFirst(start).dropLast(unit))
+    }
+
+    /// 読み reading の末尾の、利用者が打ったかな 1 単位の長さ。小書きのかな（ゃ ゅ ょ ぁ…）は前のかなと合わせて 1 単位に打つ（kyo の きょ）。
+    /// っ は子音を重ねて単独に打つので 1 単位
+    static func kanaUnitLength(_ reading: String) -> Int {
+        min(reading.count, reading.reversed().prefix { smallKana.contains($0) }.count + 1)
+    }
+
+    /// 前のかなと合わせて 1 単位に打つ小書きのかな
+    static let smallKana: Set<Character> = ["ぁ", "ぃ", "ぅ", "ぇ", "ぉ", "ゃ", "ゅ", "ょ", "ゎ"]
+
+    /// Backspace で残した表示 text を、打鍵列 input の表示として覚える。以後この未確定の文字列のあいだ、input の打っている途中の表示と文節は、
+    /// 日本語区間を変換し直さずに text から作る（文節の選択に入っても、見えていた表記のまま）。
+    /// text を input の区間に割り当てられなければ、何も覚えずに nil を返す
+    public func keepDisplay(_ text: String, for input: String, leading: Leading) -> LiveDisplay? {
+        let segments = segment(input, leading: leading)
+        var kept: [KeptDisplayKey: JapaneseDisplay] = [:]
+        // 打っている途中の表示は末尾の単独の n を外した区切り（keepingPendingN）、文節は外さない区切りで作るので、両方に割り当てる
+        for spans in [segments, keepingPendingN(segments).segments] {
+            guard let pieces = keptPieces(text, over: spans, leading: leading) else { return nil }
+            kept.merge(pieces) { $1 }
+        }
+        let previous = keptDisplays
+        keptDisplays.merge(kept) { $1 }
+        let shown = liveDisplay(input, leading: leading)
+        guard shown.text == text else {
+            keptDisplays = previous
+            return nil
+        }
+        return shown
+    }
+
+    /// text を区間 segments の表示に前から割り当てる。日本語以外の区間には区間の表記がそのまま現れる。日本語区間は次の区間の表記の手前までを取り、
+    /// その読みと対応づかなければ割り当てられない（nil）
+    private func keptPieces(_ text: String, over segments: [Segment], leading: Leading) -> [KeptDisplayKey: JapaneseDisplay]? {
+        var rest = Substring(text)
+        var left = leading.text
+        var kept: [KeptDisplayKey: JapaneseDisplay] = [:]
+        for (index, segment) in segments.enumerated() {
+            let piece: String
+            if segment.kind == .japanese {
+                let end = segments.dropFirst(index + 1).first.flatMap { rest.range(of: $0.output)?.lowerBound } ?? rest.endIndex
+                piece = String(rest[..<end])
+                guard !piece.isEmpty, ReadingAlignment(text: piece, reading: segment.reading) != nil else { return nil }
+                let scored = japaneseConverter.convert(kana: segment.reading, context: segment.context).clauses
+                let clauses = DirectConverter.clauses(of: piece, kana: segment.reading, scored: scored)
+                kept[KeptDisplayKey(kana: segment.reading, context: segment.context, left: left)] =
+                    JapaneseDisplay(text: piece, clauses: clauses, userWords: scored.flatMap(\.userWords))
+            } else {
+                guard rest.hasPrefix(segment.output) else { return nil }
+                piece = segment.output
+            }
+            left += piece
+            rest = rest.dropFirst(piece.count)
+        }
+        return rest.isEmpty ? kept : nil
+    }
+
     /// 表示 shown の後ろの句読点を日本語の記号にするか。区切りと同じく、未確定の文字列の中では直前が日本語か、先頭では入力欄の直前（leading）で決める。
     /// 数字で終わるなら、区切りと同じく数字の前の文字の側に付く（Continuation）
     static func afterJapanese(_ shown: String, leading: Leading) -> Bool {

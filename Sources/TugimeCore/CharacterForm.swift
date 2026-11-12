@@ -72,6 +72,7 @@ extension Segmenter {
     /// 未確定の文字列を確定・取り消ししたときに呼ぶ
     public func endComposition() {
         japaneseConverter.endComposition()
+        keptDisplays = [:]
     }
 
     /// 利用者の語を置き換える。未確定の文字列は終わる。
@@ -88,6 +89,7 @@ extension Segmenter {
             converted += words.map { UserWord(reading: kana, word: $0) }
         }
         japaneseConverter.replaceUserWords(converted)
+        keptDisplays = [:]
         typedWords = dictionary.words(of: .english)
         typedJapaneseWords = typed
     }

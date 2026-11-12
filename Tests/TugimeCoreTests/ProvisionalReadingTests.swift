@@ -101,4 +101,45 @@ import Testing
         )
         #expect(shown.text == expected)
     }
+
+    /// Backspace は見えている最後の 1 文字を、利用者が打ったかなの単位で、その下の打鍵ごと消す。残りは表示のまま
+    @Test(arguments: [
+        // かなは最後の 1 単位。小書きのかなは前のかなと 1 単位
+        ("toukyouniiku", "東京に行く", "toukyounii", "東京に行"),
+        ("makewosuru", "makeをする", "makewosu", "makeをす"),
+        ("kyo", "きょ", "", ""),
+        ("ra-menn", "ラーメン", "ra-me", "ラーメ"),
+        // 1 文字の漢字はその読み
+        ("toukyounii", "東京に行", "toukyouni", "東京に"),
+        // 2 文字以上の漢字の連なりは、読みのかなに戻して最後の単位を消す
+        ("kyou", "今日", "kyo", "きょ"),
+        ("tokkyo", "特許", "toxtu", "とっ"),
+        ("nihonn", "日本", "niho", "にほ"),
+        // 残る っ は、続けて打つかなの綴りによらず っ と読める綴りにする
+        ("bassi", "抜歯", "baxtu", "ばっ"),
+        ("sitta", "知った", "sixtu", "知っ"),
+        ("toxtu", "とっ", "to", "と"),
+        // 句読点は 1 文字
+        ("sitta.", "知った。", "sitta", "知った"),
+        // 英字と打ちかけは 1 打鍵
+        ("make", "make", "mak", "mak"),
+        ("toukyouniik", "東京に行k", "toukyounii", "東京に行"),
+        ("hon", "ほn", "ho", "ほ"),
+    ])
+    func deletesTheLastShownKana(keys: String, shown: String, expectedKeys: String, expectedText: String) {
+        let deleted = Segmenter.deletingLastShown(of: keys, shown: shown, leading: .start, table: table)
+        #expect(deleted?.keys == expectedKeys)
+        #expect(deleted?.text == expectedText)
+    }
+
+    /// 残した っ の後は、どの綴りを続けても っ に続けて読む
+    @Test(arguments: [("toxtukyo", "とっきょ"), ("baxtusi", "ばっし"), ("baxtukinn", "ばっきん")])
+    func readsOnAfterAKeptSokuon(keys: String, expected: String) {
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: nil, table: table) == expected)
+    }
+
+    /// 表示のかなが打鍵の読みと合わなければ消さない（呼び出し側が 1 打鍵消して変換し直す）
+    @Test func refusesAKanaThatTheKeysDoNotRead() {
+        #expect(Segmenter.deletingLastShown(of: "toukyouniiku", shown: "東京に行け", leading: .start, table: table) == nil)
+    }
 }
