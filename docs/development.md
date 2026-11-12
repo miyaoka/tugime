@@ -21,7 +21,7 @@ bun scripts/fetch-genmai.ts                                                     
 bun scripts/fetch-dictionary.ts                                                   # システム辞書を .dictionary/ に組み立てる。swift test も読む
 .build/debug/tugime-cli nodewosakujosite,sitewokoukaisuru                         # 入力メソッドと同じ方式で変換した結果
 .build/debug/tugime-cli --explain sitewokoukaisuru                                # 区間と評価値（採点の変換）
-.build/debug/tugime-cli --typing burauzanankahirakerunda                          # 1 打鍵ずつ打ったときの表示と、未確定の文字列の下の知らせ
+.build/debug/tugime-cli --typing burauzanankahirakerunda                          # 1 打鍵ずつ、打った直後と変換が届いた後の表示、その間の時間
 swift test
 ```
 
