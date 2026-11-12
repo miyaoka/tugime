@@ -43,6 +43,15 @@ public final class Segmenter {
     var typedWords: [String: [String]] = [:]
     /// 利用者の辞書で日本語として扱う、かなに読めない打鍵ごとの表記。ファイルの行の順に持つ
     var typedJapaneseWords: [String: [String]] = [:]
+    /// Backspace で残した表示のうち、日本語区間の表示（keepDisplay）。表示の変換より先に引く。未確定の文字列の寿命だけ持つ
+    var keptDisplays: [KeptDisplayKey: JapaneseDisplay] = [:]
+
+    /// 日本語区間の表示を決めるもの。表示の変換と同じく、区間の読み・文脈・左の文字列
+    struct KeptDisplayKey: Hashable {
+        var kana: String
+        var context: JapaneseContext
+        var left: String
+    }
     /// 英語の綴りの評価値を、日本語の変換の評価値と同じ尺度に揃える倍率
     static let englishWeight = 1.4
     /// 日本語の区間を 1 つ増やすごとに引く値
@@ -227,6 +236,8 @@ public final class Segmenter {
         public var text: String
         /// 変換して見せた日本語区間のどれかが、読みと対応づかない（JapaneseDisplay.matchesReading が偽）
         public var differsFromInput: Bool
+        /// 最後の区間が英語の区間か。区切りの結果から作った表示だけが知る。変換の届いていない打鍵をつないだ表示と、Backspace で切った表示では nil
+        public var endsInEnglish: Bool? = nil
     }
 
     /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま。末尾の単独の n は打ったまま見せる（keepingPendingN）。
@@ -237,7 +248,10 @@ public final class Segmenter {
             let text = display?.text ?? segments[index].output
             return (result: (display: display, text: text), shown: text)
         }
-        return LiveDisplay(text: shown.map(\.text).joined(), differsFromInput: shown.contains { $0.display?.matchesReading == false })
+        return LiveDisplay(
+            text: shown.map(\.text).joined(), differsFromInput: shown.contains { $0.display?.matchesReading == false },
+            endsInEnglish: segments.last.map { $0.kind == .english }
+        )
     }
 
     /// 表示の変換にかける 1 区間。日本語区間は表示の変換で表記を決める。それ以外の区間に表示する文字列は、displays の make が決める。
@@ -282,9 +296,13 @@ public final class Segmenter {
             case .other:
                 nil
             case .japanese(let kana, let context, _):
-                index == lastSpan && (index == 0 ? startsAtHead : spans[index - 1].startsSentence) && kana.count == 1
-                    ? JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])
-                    : japaneseConverter.display(kana: kana, context: context, left: shown)
+                if let kept = keptDisplays[KeptDisplayKey(kana: kana, context: context, left: shown)] {
+                    kept
+                } else if index == lastSpan && (index == 0 ? startsAtHead : spans[index - 1].startsSentence) && kana.count == 1 {
+                    JapaneseDisplay(text: kana, clauses: [JapaneseClause(reading: kana, text: kana)])
+                } else {
+                    japaneseConverter.display(kana: kana, context: context, left: shown)
+                }
             }
             let made = make(index, display, shown)
             shown += made.shown
@@ -394,7 +412,7 @@ public final class Segmenter {
     /// 次の打鍵まで決めない（そうなるとn、にほn）。Enter は見たまま確定するので、「ん」で確定するときは nn と打つ。英語区間は外さない（kotlin）。
     /// 文節に区切るとき（clauses）は外さず、「ん」まで含めて変換する（nihon の候補に 日本）。返す pendingN は n を外したか。
     /// 残りの読みは区間の読みから末尾の「ん」を外したもので、綴りの表から読み直さない（数の区切りの 3-5 は 3ー5 にならない）
-    private func keepingPendingN(_ segments: [Segment]) -> (segments: [Segment], pendingN: Bool) {
+    func keepingPendingN(_ segments: [Segment]) -> (segments: [Segment], pendingN: Bool) {
         guard let last = segments.last, last.kind == .japanese, table.readingBeforePendingN(last.source) != nil else { return (segments, false) }
         precondition(last.reading.last == "ん", "単独の n で終わる日本語区間の読みが「ん」で終わらない: \(last.source)")
         let kana = String(last.reading.dropLast())

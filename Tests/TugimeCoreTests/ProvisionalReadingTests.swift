@@ -101,4 +101,86 @@ import Testing
         )
         #expect(shown.text == expected)
     }
+
+    /// Backspace は見えている最後の 1 文字を、利用者が打ったかなの単位で、その下の打鍵ごと消す。残りは表示のまま
+    @Test(arguments: [
+        // かなは最後の 1 単位。小書きのかなは前のかなと 1 単位
+        ("toukyouniiku", "東京に行く", "toukyounii", "東京に行"),
+        ("makewosuru", "makeをする", "makewosu", "makeをす"),
+        ("kyo", "きょ", "", ""),
+        ("ra-menn", "ラーメン", "ra-me", "ラーメ"),
+        // 1 文字の漢字はその読み
+        ("toukyounii", "東京に行", "toukyouni", "東京に"),
+        // 2 文字以上の漢字の連なりは、読みのかなに戻して最後の単位を消す
+        ("kyou", "今日", "kyo", "きょ"),
+        ("tokkyo", "特許", "toxtu", "とっ"),
+        ("nihonn", "日本", "niho", "にほ"),
+        // 残る ん は、続けて打つかなの綴りによらず ん と読める綴りにする
+        ("kanji", "漢字", "kann", "かん"),
+        ("denwa", "電話", "denn", "でん"),
+        // っち は っ と ち の 2 単位
+        ("kotchi", "こっち", "koxtu", "こっ"),
+        // 残る っ は、続けて打つかなの綴りによらず っ と読める綴りにする
+        ("bassi", "抜歯", "baxtu", "ばっ"),
+        ("sitta", "知った", "sixtu", "知っ"),
+        ("toxtu", "とっ", "to", "と"),
+        // 句読点と記号は 1 文字
+        ("sitta.", "知った。", "sitta", "知った"),
+        ("toukyou.", "東京。", "toukyou", "東京"),
+        ("ka[", "か「", "ka", "か"),
+        // 句読点の前で ん と読まれた単独の n は、句読点を消しても ん のまま
+        ("n.", "ん。", "nn", "ん"),
+        ("nihon.", "日本。", "nihonn", "日本"),
+        ("ra-men.", "ラーメン。", "ra-menn", "ラーメン"),
+        // 英語の区間の n は打ったまま
+        ("kotlin[", "kotlin「", "kotlin", "kotlin"),
+        // 句読点・記号・英字・数字の後ろの漢字は、その後ろの打鍵の読みだけと照らす
+        ("toukyou,oosaka", "東京、大阪", "toukyou,oosa", "東京、おおさ"),
+        ("6ji", "6時", "6", "6"),
+        ("githubue", "github上", "github", "github"),
+        // 英字の打鍵と同じ字が後ろの漢字の打鍵にもある
+        ("datakanri", "data管理", "datakann", "dataかん"),
+        ("datakan", "data感", "data", "data"),
+        // 英字と打ちかけは 1 打鍵
+        ("make", "make", "mak", "mak"),
+        ("toukyouniik", "東京に行k", "toukyounii", "東京に行"),
+        ("hon", "ほn", "ho", "ほ"),
+    ])
+    func deletesTheLastShownKana(keys: String, shown: String, expectedKeys: String, expectedText: String) {
+        let deleted = Segmenter.deletingLastShown(of: keys, shown: shown, leading: .start, table: table)
+        #expect(deleted?.keys == expectedKeys)
+        #expect(deleted?.text == expectedText)
+    }
+
+    /// 残した っ の後は、どの綴りを続けても っ に続けて読む
+    @Test(arguments: [("toxtukyo", "とっきょ"), ("baxtusi", "ばっし"), ("baxtukinn", "ばっきん"), ("kannji", "かんじ")])
+    func readsOnAfterAKeptSokuon(keys: String, expected: String) {
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: nil, table: table) == expected)
+    }
+
+    /// 表示の字に対応する打鍵が決まらなければ、表示を残せない
+    @Test(arguments: [
+        // 表示のかなが打鍵の読みと合わない
+        ("toukyouniiku", "東京に行け"),
+        // 日本語の語に登録した英字の表記。末尾の i が打鍵の末尾とたまたま一致しても、打ったままの字ではない
+        ("kanji", "Fiji"),
+    ])
+    func refusesAShownCharacterWithoutItsKeys(keys: String, shown: String) {
+        #expect(Segmenter.deletingLastShown(of: keys, shown: shown, leading: .start, table: table) == nil)
+    }
+
+    /// 表示を残せないときは、打ったかなの最後の単位を消す。英語の区間の字と、打ちかけで終わる打鍵は 1 打鍵
+    @Test(arguments: [
+        // 利用者の辞書の語の表記は打鍵と対応しない。区間の種類が分かればそれで決める
+        ("yorosiku", "よろしくお願いします", false, "yorosi"),
+        ("kanji", "Fiji", false, "kann"),
+        ("kube", "Kubernetes", true, "kub"),
+        // 区間の種類が分からない表示では、英語の区間に登録した表記は、大文字と小文字を除けば打ったまま
+        ("api", "API", nil, "ap"),
+        ("kanji", "Fiji", nil, "kann"),
+        ("kak", "かk", nil, "ka"),
+    ] as [(String, String, Bool?, String)])
+    func deletesTheLastTypedKana(keys: String, shown: String, endsInEnglish: Bool?, expected: String) {
+        #expect(Segmenter.deletingLastTyped(of: keys, shown: shown, endsInEnglish: endsInEnglish, leading: .start, table: table) == expected)
+    }
 }

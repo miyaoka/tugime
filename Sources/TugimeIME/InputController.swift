@@ -298,7 +298,10 @@ final class TugimeInputController: IMKInputController {
             return handleConverted(event, clauses: clauses, client: client)
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
-            keys.removeLast()
+            // 見えている最後の 1 文字をその打鍵ごと消し、残りは変換し直さずに見えていたまま残す。表示を残せなければ、打ったかなの最後の単位を消して変換し直す
+            let deleted = Segmenter.deletingLast(of: keys, shown: liveDisplay, leading: leading, table: conversion.table)
+            keys = deleted.keys
+            if !keys.isEmpty, let display = deleted.display { keep(display) }
             if keys.isEmpty { endComposition() }
             showMarkedText(client)
             return true
@@ -468,10 +471,11 @@ final class TugimeInputController: IMKInputController {
         }
     }
 
-    /// 変換が届いた。今の未確定の文字列のものなら覚えて表示を差し替え、その間に打たれていれば最新の打鍵列を積む
+    /// 変換が届いた。今の未確定の文字列のものなら覚えて表示を差し替え、その間に打たれていれば最新の打鍵列を積む。
+    /// 変換の途中に Backspace でその打鍵列に戻って表示を残していれば、残した表示を使い、届いた変換は捨てる
     private func didConvert(_ display: Segmenter.LiveDisplay, keys converted: String, generation: Int) {
         converting = false
-        if generation == conversionGeneration {
+        if generation == conversionGeneration, !self.converted.contains(where: { $0.keys == converted }) {
             self.converted.append((converted, display))
             if clauses == nil, !keys.isEmpty, let client = client() {
                 showMarkedText(client)
@@ -479,6 +483,26 @@ final class TugimeInputController: IMKInputController {
             }
         }
         requestConversion()
+    }
+
+    /// Backspace で残した表示を、今の打鍵列の表示としてすぐ見せ、変換にも覚えさせる（文節の選択に入っても同じ表記にするため）。
+    /// 変換が覚えた表示に差し替え、覚えられなければ今の打鍵列を変換し直す
+    private func keep(_ display: Segmenter.LiveDisplay) {
+        converted.append((keys, display))
+        let (keys, leading, generation) = (keys, leading, conversionGeneration)
+        conversion.async { segmenter in
+            let kept = segmenter.keepDisplay(display.text, for: keys, leading: leading)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self.didKeep(kept, keys: keys, generation: generation) }
+            }
+        }
+    }
+
+    private func didKeep(_ kept: Segmenter.LiveDisplay?, keys keptKeys: String, generation: Int) {
+        guard generation == conversionGeneration else { return }
+        converted.removeAll { $0.keys == keptKeys }
+        if let kept { converted.append((keptKeys, kept)) }
+        if clauses == nil, keys == keptKeys, let client = client() { showMarkedText(client) }
     }
 
     /// 届いた変換を捨て、次に届く変換を今の打鍵列のものとして扱う

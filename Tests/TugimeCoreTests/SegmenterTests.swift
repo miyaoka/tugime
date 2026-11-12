@@ -898,3 +898,50 @@ private final class FixedDisplayConverter: JapaneseConverting {
         #expect(try #require(recorder.lefts.last).hasSuffix("githubki"))
     }
 }
+
+/// Backspace で残した表示（keepDisplay）を、打っている途中の表示と文節の両方が使う
+@Suite struct KeptDisplayTests {
+    /// 覚えさせると状態が変わるので、共有の segmenter を使わない
+    let segmenter: Segmenter
+
+    init() throws {
+        segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
+    }
+
+    @Test(arguments: [
+        ("toukyounii", "東京に行"),
+        ("bassisi", "抜歯し"),
+        ("toxtu", "とっ"),
+        ("makewosu", "makeをす"),
+        ("kyo", "きょ"),
+    ])
+    func clausesShowTheKeptText(keys: String, text: String) throws {
+        let kept = try #require(segmenter.keepDisplay(text, for: keys, leading: .start))
+        #expect(kept.text == text)
+        #expect(segmenter.liveDisplay(keys).text == text)
+        #expect(segmenter.clauses(keys).map(\.output).joined() == text)
+    }
+
+    /// 区間に割り当てられない表示は覚えない
+    @Test func refusesTextThatDoesNotFollowTheKeys() {
+        let before = segmenter.liveDisplay("toukyounii").text
+        #expect(segmenter.keepDisplay("大阪に", for: "toukyounii", leading: .start) == nil)
+        #expect(segmenter.liveDisplay("toukyounii").text == before)
+    }
+
+    /// 未確定の文字列が終わると、覚えた表示は捨てる
+    @Test func forgetsAtTheEndOfTheComposition() throws {
+        let original = segmenter.liveDisplay("toukyounii").text
+        _ = try #require(segmenter.keepDisplay("東京に行", for: "toukyounii", leading: .start))
+        segmenter.endComposition()
+        #expect(segmenter.liveDisplay("toukyounii").text == original)
+    }
+}
+
+/// 区切りの結果から作った表示は、最後の区間が英語かを持つ（Backspace で消す単位を決める）
+@Suite struct LiveDisplayLastSpanTests {
+    @Test(arguments: [("github", true), ("toukyou", false), ("toukyougithub", true), ("githubni", false)])
+    func knowsWhetherTheLastSpanIsEnglish(keys: String, english: Bool) throws {
+        #expect(try Shared.segmenter.get().liveDisplay(keys).endsInEnglish == english)
+    }
+}
