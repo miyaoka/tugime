@@ -90,16 +90,18 @@ extension RomajiTable {
 }
 
 extension Segmenter {
-    /// 句読点と記号を打鍵から逆にたどる表。同じ記号に打鍵が複数あれば prefersKeys で選ぶ（・ は / と z/ のうち /）
-    static let symbolKeys: [String: String] = {
-        var keys: [String: String] = [:]
-        let all = punctuation.map { (String($0.key), $0.value) } + symbols.map { ($0.key, $0.value) }
-        for (key, symbol) in all {
-            if let current = keys[symbol], !prefersKeys(key, over: current) { continue }
-            keys[symbol] = key
-        }
+    /// 日本語の記号にした句読点と記号の表示から、それを出す打鍵すべて（・ は / と z/）
+    static let markKeys: [Character: [String]] = {
+        var keys: [Character: [String]] = [:]
+        for (key, mark) in punctuation { keys[Character(mark), default: []].append(String(key)) }
+        for (key, mark) in symbols { keys[Character(mark), default: []].append(key) }
         return keys
     }()
+
+    /// 句読点と記号を打鍵から逆にたどる表。同じ記号に打鍵が複数あれば prefersKeys で選ぶ（・ は / と z/ のうち /）
+    static let symbolKeys: [String: String] = markKeys.reduce(into: [:]) { table, entry in
+        table[String(entry.key)] = entry.value.min { prefersKeys($0, over: $1) }
+    }
 
     /// 読み（ひらがなと、入力メソッドが打鍵から出す句読点・記号、ASCII の文字）を打鍵列に逆にたどる。
     /// 句読点・記号・ASCII の文字の位置で読みを切り、かなの連なりは綴りの表（`RomajiTable.spelling(of:)`）でたどる。ASCII の文字はその文字を打つ。

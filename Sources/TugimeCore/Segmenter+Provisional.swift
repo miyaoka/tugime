@@ -43,15 +43,25 @@ extension Segmenter {
         if let key = markKey(last, endingAt: keys.endIndex, in: keys) {
             return (String(keys.dropLast(key.count)), String(shown.dropLast()))
         }
-        // 表示の末尾のかなと漢字の部分（tail）と、それを打った打鍵の位置。前の部分（head）の最後の字を打った打鍵の直後から始まる
+        // 表示の末尾のかなと漢字の部分（tail）と、それを打った打鍵の位置。前の部分（head）の末尾の打ったままの字・句読点・記号の連なりを
+        // そのとおりに打った打鍵の直後から始まる（data管理 の data。最後の a だけで探すと、管理 の打鍵 kanri の a の後ろと取り違える）
         let tailLength = shown.reversed().prefix { !$0.isASCII && markKeys[$0] == nil }.count
         let head = shown.dropLast(tailLength)
         let tail = String(shown.suffix(tailLength))
-        let starts = head.last.map { headLast in
-            keys.indices.reversed().filter { start in
-                start > keys.startIndex && (headLast.isASCII ? keys[keys.index(before: start)] == headLast : markKey(headLast, endingAt: start, in: keys) != nil)
+        let typedRun = head.reversed().prefix { $0.isASCII || markKeys[$0] != nil }
+        let starts = typedRun.isEmpty ? [keys.startIndex] : keys.indices.reversed().filter { start in
+            var end = start
+            for shown in typedRun {
+                if shown.isASCII {
+                    guard end > keys.startIndex, keys[keys.index(before: end)] == shown else { return false }
+                    end = keys.index(before: end)
+                } else {
+                    guard let key = markKey(shown, endingAt: end, in: keys) else { return false }
+                    end = keys.index(end, offsetBy: -key.count)
+                }
             }
-        } ?? [keys.startIndex]
+            return true
+        }
         for start in starts {
             let preceding = start > keys.startIndex ? keys[keys.index(before: start)] : leading.text.last
             let typing = Typing(keys: keys[start...], afterJapanese: afterJapanese(String(head), leading: leading), preceding: preceding, table: table)
@@ -137,14 +147,6 @@ extension Segmenter {
 
     /// 前のかなと合わせて 1 単位に打つ小書きのかな
     static let smallKana: Set<Character> = ["ぁ", "ぃ", "ぅ", "ぇ", "ぉ", "ゃ", "ゅ", "ょ", "ゎ"]
-
-    /// 日本語の記号にした句読点と記号の打鍵の表示から、その打鍵
-    static let markKeys: [Character: [String]] = {
-        var keys: [Character: [String]] = [:]
-        for (key, mark) in punctuation { keys[Character(mark), default: []].append(String(key)) }
-        for (key, mark) in symbols { keys[Character(mark), default: []].append(key) }
-        return keys
-    }()
 
     /// keys の end までの末尾にある、表示 mark を出す句読点か記号の打鍵。最も長いもの
     private static func markKey(_ mark: Character, endingAt end: String.Index, in keys: String) -> String? {

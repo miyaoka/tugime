@@ -132,6 +132,9 @@ import Testing
         ("toukyou,oosaka", "東京、大阪", "toukyou,oosa", "東京、おおさ"),
         ("6ji", "6時", "6", "6"),
         ("githubue", "github上", "github", "github"),
+        // 英字の打鍵と同じ字が後ろの漢字の打鍵にもある
+        ("datakanri", "data管理", "datakann", "dataかん"),
+        ("datakan", "data感", "data", "data"),
         // 英字と打ちかけは 1 打鍵
         ("make", "make", "mak", "mak"),
         ("toukyouniik", "東京に行k", "toukyounii", "東京に行"),
