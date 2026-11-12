@@ -44,9 +44,10 @@ extension Segmenter {
         if let key = markKey(last, endingAt: keys.endIndex, in: keys) {
             let kept = keys.dropLast(key.count)
             let before = shown.dropLast()
-            // 句読点と記号の前の単独の n は ん と読まれ、消すと次のかなを待つ n に戻るので、綴りの表の ん の綴りにする（ん。 の 。 を消した ん は nn）
+            // 日本語の区間の句読点と記号の前の単独の n は ん と読まれ、消すと次のかなを待つ n に戻るので、綴りの表の ん の綴りにする
+            // （日本。 の 。 を消した 日本 は nihonn）。英語の区間の n（kotlin「 の kotlin）は打ったまま
             let typing = Typing(keys: kept, afterJapanese: afterJapanese("", leading: leading), preceding: leading.text.last, table: table)
-            guard before.last == "ん", typing.reading.last == "n", let n = table.spelling(of: "ん") else { return (String(kept), String(before)) }
+            guard before.last?.isASCII == false, typing.reading.last == "n", let n = table.spelling(of: "ん") else { return (String(kept), String(before)) }
             return (kept.dropLast() + n.map(\.keys).joined(), String(before))
         }
         // 表示の末尾のかなと漢字の部分（tail）と、それを打った打鍵の位置。前の部分（head）の末尾の打ったままの字・句読点・記号の連なりを
