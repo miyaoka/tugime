@@ -44,7 +44,7 @@ extension Segmenter {
             return (String(keys.dropLast(key.count)), String(shown.dropLast()))
         }
         // 表示の末尾のかなと漢字の部分（tail）と、それを打った打鍵の位置。前の部分（head）の末尾の打ったままの字・句読点・記号の連なりを
-        // そのとおりに打った打鍵の直後から始まる（data管理 の data。最後の a だけで探すと、管理 の打鍵 kanri の a の後ろと取り違える）
+        // そのとおりに打った打鍵の直後から始まる（data管理 の data）
         let tailLength = shown.reversed().prefix { !$0.isASCII && markKeys[$0] == nil }.count
         let head = shown.dropLast(tailLength)
         let tail = String(shown.suffix(tailLength))
