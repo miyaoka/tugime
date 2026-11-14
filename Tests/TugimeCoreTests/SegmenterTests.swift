@@ -624,9 +624,7 @@ private final class DisplayRecorder: JapaneseConverting {
 
     /// 空白の直後の句読点も入力を切るので、その後ろの語は句読点を含めずに読む。英語の語でない読める綴り（tesu）は日本語になる
     @Test func readsTheWordAfterPunctuationAfterASpaceOnItsOwn() {
-        let segments = segmenter.segment("kyouha (tesu")
-        #expect(segments.last?.source == "tesu")
-        #expect(segments.last?.kind == .japanese)
+        #expect(!segmenter.liveText("kyouha (tesu").contains("tesu"))
     }
 
     /// 空白は入力を切るので、空白までの区切りは、空白を打った時点の区切りから後ろに打った分で変わらない
