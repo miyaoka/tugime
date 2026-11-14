@@ -21,7 +21,7 @@ let usage = """
       tugime-cli --clauses <打鍵列>...        文節ごとの候補を出す
       tugime-cli --flip <打鍵列>...           空白で終わる打鍵列で Space を押したときの文節を出す。選ぶ文節を [ ] で囲み、その候補を続ける。
                                               反対の言語にできなければ「Space は空白を足す」と出す
-      tugime-cli --resize <打鍵列> <操作>     文節を操作した結果を出す。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す（端では反対の端へ回る）、
+      tugime-cli --resize <打鍵列> <操作>     文節を操作した結果を出す。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す（空白だけの文節は飛ばし、端では反対の端へ回る）、
                                               1〜9 で選んでいる文節のその番号の候補（先頭は 0 番）を選ぶ
       tugime-cli --whole <打鍵列>...          F6〜F10 の全体の変換を出す
       tugime-cli --span <英字|かな>...        英字は英語として、かなは日本語として評価値を出す
@@ -142,8 +142,8 @@ do {
             switch op {
             case "+": clauses = segmenter.resize(clauses, at: focus, by: 1, leading: leading)
             case "-": clauses = segmenter.resize(clauses, at: focus, by: -1, leading: leading)
-            case ">": focus = Clause.focus(focus, movedBy: 1, count: clauses.count)
-            case "<": focus = Clause.focus(focus, movedBy: -1, count: clauses.count)
+            case ">": focus = Clause.focus(focus, movedBy: 1, in: clauses)
+            case "<": focus = Clause.focus(focus, movedBy: -1, in: clauses)
             case "1"..."9":
                 let index = Int(String(op))!
                 guard index < clauses[focus].candidates.count else {

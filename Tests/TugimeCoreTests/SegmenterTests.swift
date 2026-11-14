@@ -390,8 +390,8 @@ private final class DisplayRecorder: JapaneseConverting {
             switch operation {
             case "+": clauses = segmenter.resize(clauses, at: focus, by: 1)
             case "-": clauses = segmenter.resize(clauses, at: focus, by: -1)
-            case ">": focus = Clause.focus(focus, movedBy: 1, count: clauses.count)
-            default: focus = Clause.focus(focus, movedBy: -1, count: clauses.count)
+            case ">": focus = Clause.focus(focus, movedBy: 1, in: clauses)
+            default: focus = Clause.focus(focus, movedBy: -1, in: clauses)
             }
             var keys = ""
             var lastSpan: ClauseSpan?
@@ -401,6 +401,21 @@ private final class DisplayRecorder: JapaneseConverting {
             }
             #expect(keys == input, "\(operation) \(clauses.map(\.output))")
         }
+    }
+
+    /// 選ぶ文節を移すと、空白だけの文節を飛ばし、それ以外の文節にはすべて止まる
+    @Test(arguments: ["kyouha node wo", "kyouha make ", "github ni push sita"])
+    func movingFocusSkipsSpaceClauses(input: String) {
+        let clauses = segmenter.clauses(input)
+        let words = clauses.indices.filter { !clauses[$0].reading.allSatisfy { $0 == " " } }
+        #expect(words.count < clauses.count, "\(clauses.map(\.reading))")
+        var right = [0]
+        for _ in 1..<words.count { right.append(Clause.focus(right.last!, movedBy: 1, in: clauses)) }
+        #expect(right == words)
+        #expect(Clause.focus(right.last!, movedBy: 1, in: clauses) == 0)
+        var left = [Clause.focus(0, movedBy: -1, in: clauses)]
+        for _ in 1..<words.count { left.append(Clause.focus(left.last!, movedBy: -1, in: clauses)) }
+        #expect(left == words.reversed())
     }
 
     /// 括弧の文節を伸ばすと、括弧と中の語を 1 つの日本語の文節にして変換する。縮めると元の区切りに戻る
@@ -625,6 +640,19 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(result.text == "cwd")
         #expect(result.rest == [clauses[1]])
         #expect(result.keys == "de")
+    }
+
+    /// 確定する文節の直後の空白は一緒に確定し、残りは空白で始まらない。空白だけが残るなら残りは空
+    @Test func committingThroughAClauseTakesTheSpacesAfterIt() throws {
+        let clauses = segmenter.clauses("kyouha node wo")
+        let first = try #require(segmenter.commit(clauses, through: 0))
+        #expect(first.text == clauses[0].output + " ")
+        #expect(first.keys == "node wo")
+        #expect(first.rest.first?.isSpace == false)
+        let trailing = segmenter.clauses("kyouha ")
+        let last = try #require(segmenter.commit(trailing, through: 0))
+        #expect(last.rest.isEmpty)
+        #expect(last.keys == "")
     }
 
     /// きゃ は 1 つの綴り kya なので、き と ゃ のあいだに当たる打鍵は無い。かなの文字種にはでき、英字にはできない

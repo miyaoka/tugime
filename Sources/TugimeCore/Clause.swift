@@ -50,9 +50,19 @@ public struct Clause: Sendable, Equatable {
     /// 作り直すときに範囲を守る文節か
     var kept: Bool { fixedRange || fixedValue != nil }
 
-    /// 選ぶ文節を focus から step（-1 で左、1 で右）だけ移した位置。端から先へ移すと反対の端の文節になる
-    public static func focus(_ focus: Int, movedBy step: Int, count: Int) -> Int {
-        (focus + step + count) % count
+    /// 空白だけの文節か。空白は語を区切る印で、変換して選ぶ対象ではない
+    var isSpace: Bool { kind == .english && reading.allSatisfy { $0 == " " } }
+
+    /// 選ぶ文節を focus から step（-1 で左、1 で右）の向きに、空白だけの文節を飛ばして次の文節へ移した位置。
+    /// 端から先へ移すと反対の端から数える。打鍵列は空白で始まらず、文節までの確定も空白だけを残さない（`Segmenter.commit(_:through:)`）ので、
+    /// 空白だけでない文節が必ずある
+    public static func focus(_ focus: Int, movedBy step: Int, in clauses: [Clause]) -> Int {
+        var index = focus
+        for _ in clauses.indices {
+            index = (index + step + clauses.count) % clauses.count
+            if !clauses[index].isSpace { return index }
+        }
+        preconditionFailure("空白だけの文節しか無い: \(clauses.map(\.reading))")
     }
 
     /// 候補 text の番号。候補に無ければ末尾に足す
@@ -847,8 +857,11 @@ extension Segmenter {
     }
 
     /// index の文節までを確定するときの、確定する文字列、残りの文節、残りの打鍵列。
+    /// 直後に続く空白だけの文節も一緒に確定するので、残りは空白だけの文節で始まらない（空白だけが残るなら残りは空）。
     /// 日本語区間の途中で切るときは、残りをその位置から始まる区間として持ち直す。切る位置に当たる打鍵が決まらなければ nil
     public func commit(_ clauses: [Clause], through index: Int) -> (text: String, rest: [Clause], keys: String)? {
+        var index = index
+        while index + 1 < clauses.count, clauses[index + 1].isSpace { index += 1 }
         let text = clauses[...index].map(\.output).joined()
         var rest = Array(clauses[(index + 1)...])
         if let next = rest.first, next.span == clauses[index].span {
