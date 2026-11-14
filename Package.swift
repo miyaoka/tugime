@@ -56,7 +56,7 @@ let package = Package(
         .executableTarget(name: "TugimeSync", dependencies: ["UserDictionaryLayout"]),
         .testTarget(
             name: "TugimeCoreTests",
-            dependencies: ["TugimeCore"],
+            dependencies: ["TugimeCore", "SystemDictionaryLayout"],
             // テストは 1 つの本物の変換器を共有するので、同時に使わないようメインアクターで動かす
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),

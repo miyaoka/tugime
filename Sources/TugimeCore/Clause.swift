@@ -57,6 +57,9 @@ public struct Clause: Sendable, Equatable {
     /// 端から先へ移すと反対の端から数える。打鍵列は空白で始まらず、文節までの確定も空白だけを残さない（`Segmenter.commit(_:through:)`）ので、
     /// 空白だけでない文節が必ずある
     public static func focus(_ focus: Int, movedBy step: Int, in clauses: [Clause]) -> Int {
+        guard clauses.indices.contains(focus), step == -1 || step == 1 else {
+            return Unexpected.reached("選ぶ文節を移す元が文節の範囲の外か、向きが -1 と 1 のどちらでもない（文節、向き、文節の数）", numbers: [focus, step, clauses.count], continuingWith: focus)
+        }
         var index = focus
         for _ in clauses.indices {
             index = (index + step + clauses.count) % clauses.count
@@ -271,6 +274,9 @@ extension Segmenter {
     /// 伸縮できなければ元のまま返す
     /// leading は clauses より前にある、入力欄のカーソルより前の文字列
     public func resize(_ clauses: [Clause], at index: Int, by delta: Int, leading: Leading = .start) -> [Clause] {
+        guard clauses.indices.contains(index) else {
+            return Unexpected.reached("伸縮する文節が文節の範囲の外（文節、文節の数）", numbers: [index, clauses.count], continuingWith: clauses)
+        }
         let clause = clauses[index]
         if clause.kind == .whole {
             let segmented = self.clauses(clause.span.source, leading: leading)
@@ -867,6 +873,9 @@ extension Segmenter {
     /// 直後に続く空白だけの文節も一緒に確定するので、残りは空白だけの文節で始まらない（空白だけが残るなら残りは空）。
     /// 日本語区間の途中で切るときは、残りをその位置から始まる区間として持ち直す。切る位置に当たる打鍵が決まらなければ nil
     public func commit(_ clauses: [Clause], through index: Int) -> (text: String, rest: [Clause], keys: String)? {
+        guard clauses.indices.contains(index) else {
+            return Unexpected.reached("確定する文節が文節の範囲の外（文節、文節の数）", numbers: [index, clauses.count], continuingWith: nil)
+        }
         var index = index
         while index + 1 < clauses.count, clauses[index + 1].isSpace { index += 1 }
         let text = clauses[...index].map(\.output).joined()

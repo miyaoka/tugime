@@ -43,6 +43,9 @@ extension Clause {
     /// それも丸括弧 1 文字なら同じ形の候補を選ぶ。組の括弧がほかの文字と同じ文節にあるときは変えない。
     /// 先頭以外の候補を選んだ文節は、その表記を選んだ表記（fixedValue）として持つ。先頭の候補に戻すと外す
     public static func selecting(_ index: Int, at focus: Int, in clauses: [Clause]) -> [Clause] {
+        guard clauses.indices.contains(focus), clauses[focus].candidates.indices.contains(index) else {
+            return Unexpected.reached("選ぶ候補が候補の範囲の外（文節、候補、文節の数）", numbers: [focus, index, clauses.count], continuingWith: clauses)
+        }
         var selected = clauses
         selected[focus].select(index)
         return pairingBrackets(selected, at: focus)
@@ -50,6 +53,9 @@ extension Clause {
 
     /// 文節 focus で表記 text を選ぶ。候補に無ければ末尾に足して選ぶ（F6〜F10 で作った文字種）。組になる括弧も selecting と同じく合わせる
     public static func selecting(text: String, at focus: Int, in clauses: [Clause]) -> [Clause] {
+        guard clauses.indices.contains(focus) else {
+            return Unexpected.reached("表記を選ぶ文節が文節の範囲の外（文節、文節の数）", numbers: [focus, clauses.count], continuingWith: clauses)
+        }
         var added = clauses
         let index = added[focus].candidateIndex(adding: text)
         return selecting(index, at: focus, in: added)
