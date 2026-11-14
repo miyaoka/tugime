@@ -81,7 +81,7 @@ struct KeptClause: Equatable {
         self.fixedValue = clause.fixedValue
     }
 
-    private init(range: Range<Int>, fixedRange: Bool, fixedValue: String?) {
+    init(range: Range<Int>, fixedRange: Bool, fixedValue: String?) {
         self.range = range
         self.fixedRange = fixedRange
         self.fixedValue = fixedValue
@@ -155,6 +155,60 @@ extension Segmenter {
     /// 日本語区間は、前の文字列と前の区間の表示を左の文脈にして表示の変換で文節に分ける
     public func clauses(_ input: String, leading: Leading = .start) -> [Clause] {
         clauses(of: segment(input, leading: leading), left: leading.text, firstIndex: 0, startsAtHead: true, endsInput: true)
+    }
+
+    /// 空白で終わる打鍵列で、末尾の空白の前の 1 語を、今の区切りと反対の言語の 1 区間・1 文節にして文節に分ける（空白の後の Space）。
+    /// 語は、その前の空白（無ければ打鍵列の先頭）から末尾の空白までの打鍵。今の区切りで語の打鍵がすべて英語の区間にあれば日本語に、
+    /// 日本語を含めば英語にする。語より前は語の手前までを入力として区切り、末尾の空白は英語の区間にする。
+    /// 語の文節の候補は、反対の言語の表記を先頭に、打っている途中に見えていた語の表示を 2 番目に置くので、候補を 1 つ進めると見えていた表示に戻る。
+    /// 返す focus は語の文節の位置。語が無いか、句読点か記号の打鍵を含むか、数字だけか（数は日本語でも英語でもない）、
+    /// 日本語にするのに読み切れなければ nil
+    public func clausesFlippingLastWord(_ input: String, leading: Leading = .start) -> (clauses: [Clause], focus: Int)? {
+        let chars = Array(input)
+        let trailing = chars.reversed().prefix { $0 == " " }.count
+        guard trailing > 0 else { return nil }
+        let wordEnd = chars.count - trailing
+        let wordStart = chars[..<wordEnd].lastIndex(of: " ").map { $0 + 1 } ?? 0
+        guard wordStart < wordEnd else { return nil }
+        let word = String(chars[wordStart..<wordEnd])
+        // 句読点と記号の打鍵は入力を切るので、それを含む語は 1 区間にできない
+        let wordChars = Array(word)
+        guard wordChars.indices.allSatisfy({ Self.punctuation[wordChars[$0]] == nil && Self.symbol(at: $0, in: wordChars) == nil }),
+              !Self.isNumber(word)
+        else { return nil }
+
+        // 空白は入力を切るので、語の打鍵の範囲は区間の切れ目と一致する。語の区間の種類と、打っている途中に見えていた語の表示を、
+        // 打っている途中の表示（liveDisplay）と同じ経路で取る
+        let segments = segment(input, leading: leading)
+        var keyStart = 0
+        var wordIsEnglish = true
+        var shown = ""
+        _ = displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true, endsInput: true, endsWithPendingN: false) { index, display, _ in
+            let segment = segments[index]
+            let text = display?.text ?? segment.output
+            if (wordStart..<wordEnd).contains(keyStart) {
+                wordIsEnglish = wordIsEnglish && segment.kind == .english
+                shown += text
+            }
+            keyStart += segment.source.count
+            return (result: (), shown: text)
+        }
+
+        let before = segment(String(chars[..<wordStart]), leading: leading)
+        // 語の前は空白の区間で終わり、その区間が後ろを評価する文脈を持つ
+        let context = before.last?.context ?? leading.japaneseContext
+        let preceding = wordStart > 0 ? chars[wordStart - 1] : leading.text.last
+        guard let flipped = span(word, as: wordIsEnglish ? .japanese : .english, context: context, preceding: preceding) else { return nil }
+        let spaces = Self.spaceSegment(String(chars[wordEnd...]), context: Self.context(after: chars[..<wordEnd]))
+        // 日本語にした語は、表示の変換が文節に分けても 1 文節に保つ
+        let fixed = wordIsEnglish ? [KeptClause(range: wordStart..<wordEnd, fixedRange: true, fixedValue: nil)] : []
+        var clauses = clauses(of: before + [flipped, spaces], left: leading.text, firstIndex: 0, startsAtHead: true, endsInput: true, fixedKeys: fixed)
+        guard let focus = clauses.firstIndex(where: { $0.span.index == before.count }) else {
+            preconditionFailure("入れ替えた語の文節が無い: \(input)")
+        }
+        let flippedText = clauses[focus].candidates[0]
+        clauses[focus].candidates = [flippedText] + [shown].filter { $0 != flippedText } + clauses[focus].candidates.dropFirst().filter { $0 != shown }
+        return (clauses, focus)
     }
 
     /// 区間を、left に続けて表示の変換にし、文節に分ける。区間の番号は firstIndex から振る。

@@ -274,7 +274,17 @@ final class TugimeInputController: IMKInputController {
             // 打っている途中も変換して見せているので、Space は日本語の文に英語の語句を空白で区切って混ぜるのに使い、
             // 文節の選択には Shift+Space で入る
             if !event.modifierFlags.contains(.shift) {
-                keys.append(" ")
+                // 空白の後の Space は、空白の前の語を反対の言語にして、その文節の候補の窓を出す。次の Space で元の言語の表記に進む。
+                // 反対の言語にできない語なら、空白を足す
+                let (keys, leading) = (keys, leading)
+                if keys.last == " ", let flipped = conversion.sync({ $0.clausesFlippingLastWord(keys, leading: leading) }) {
+                    clauses = flipped.clauses
+                    focus = flipped.focus
+                    showMarkedText(client)
+                    openCandidates(flipped.clauses, client: client)
+                    return true
+                }
+                self.keys.append(" ")
                 showMarkedText(client)
                 return true
             }

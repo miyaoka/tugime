@@ -615,6 +615,58 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(cafe.contains("カフェ"))
         #expect(segmenter.clauses("github")[0].candidates == ["github", "ｇｉｔｈｕｂ"])
     }
+
+    /// 空白は英語の区間なので、空白の直後の句読点と開き丸括弧は、空白の前の語によらず打ったままにする
+    @Test(arguments: [("kyou ,", ","), ("make ,", ","), ("kyouha (tesuto", "(")])
+    func keepsPunctuationAfterASpaceAsTyped(input: String, mark: String) {
+        #expect(segmenter.liveText(input).contains(mark))
+    }
+
+    /// 空白の直後の句読点も入力を切るので、その後ろの語は句読点を含めずに読む。英語の語でない読める綴り（tesu）は日本語になる
+    @Test func readsTheWordAfterPunctuationAfterASpaceOnItsOwn() {
+        #expect(!segmenter.liveText("kyouha (tesu").contains("tesu"))
+    }
+
+    /// 空白は入力を切るので、空白までの区切りは、空白を打った時点の区切りから後ろに打った分で変わらない
+    @Test(arguments: ["kyouha node wo sakujo suru", "sake wo nomu", "github ni push sita", "kore ha 3 ko desu"])
+    func keepsTheSegmentsBeforeASpace(input: String) {
+        let whole = segmenter.segment(input)
+        for (index, char) in input.enumerated() where char == " " {
+            let typed = segmenter.segment(String(input.prefix(index + 1)))
+            #expect(Array(whole.prefix(typed.count)) == typed, "\(input.prefix(index + 1))")
+        }
+    }
+
+    /// 空白の後の Space は、末尾の空白の前の 1 語を、今の区切りと反対の言語の 1 文節にする。どちらの言語に読まれるかは点で決まるので、
+    /// 今の区切りの種類を読んでから、その反対になることを確かめる。打っている途中に見えていた語の表示を 2 番目の候補に置き、
+    /// 語より前は語の手前までを入力として区切る
+    @Test(arguments: ["kyouha make ", "kyou ", "kono hide  ", "watasi ha nomu "])
+    func flipsTheLastWordBeforeTheSpaceToTheOtherLanguage(input: String) throws {
+        let word = input.trimmingCharacters(in: .whitespaces).split(separator: " ").last.map(String.init)!
+        let wordStart = input.reversed().drop { $0 == " " }.count - word.count
+        var position = 0
+        let wasEnglish = segmenter.segment(input).allSatisfy { segment in
+            defer { position += segment.source.count }
+            return position + segment.source.count <= wordStart || segment.kind == .english
+        }
+        let (clauses, focus) = try #require(segmenter.clausesFlippingLastWord(input))
+        let flipped = clauses[focus]
+        #expect(flipped.span.source == word)
+        #expect(flipped.kind == (wasEnglish ? .japanese : .english))
+        if !wasEnglish { #expect(flipped.output == word) }
+        let before = String(input.prefix(wordStart))
+        // 空白より前の表示は後ろの打鍵で変わらないので、見えていた語の表示は、全体の表示から語の前の表示と末尾の空白を除いたもの
+        let shown = segmenter.liveText(input).dropFirst(segmenter.liveText(before).count).trimmingCharacters(in: .whitespaces)
+        #expect(flipped.candidates[1] == shown)
+        #expect(clauses[..<focus].map(\.output).joined() == segmenter.clauses(before).map(\.output).joined())
+        #expect(clauses[(focus + 1)...].map(\.output).joined() == String(repeating: " ", count: input.count - wordStart - word.count))
+    }
+
+    /// 空白で終わらない、空白しか無い、語が句読点か記号を含む、数字だけ、英語の語が日本語に読み切れないときは、反対の言語にしない（Space は空白を足す）
+    @Test(arguments: ["make", " ", "kyou, ", "kore[ ", "kore ha 3 ", "github "])
+    func keepsTheWordWhenItCannotFlip(input: String) {
+        #expect(segmenter.clausesFlippingLastWord(input) == nil)
+    }
 }
 
 /// 本物の変換器に処理を任せ、表示の変換の末尾に読みに無いかなを足して、読みと合わない表示にする
