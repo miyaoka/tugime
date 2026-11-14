@@ -413,8 +413,11 @@ public final class Segmenter {
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, preceding: runStart == 0 ? preceding : chars[runStart - 1], spaced: runAfterSpace, observe: collect)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runContinuation == .afterEnglish)
-            // nil なら打ったまま直前の英語の区間に含める
-            let mark = symbol.map(\.mark) ?? Self.punctuationMark(chars[i], opened: &opened, previousIsEnglish: previousIsEnglish)
+            // nil なら打ったまま直前の英語の区間に含める。空白の直後は含める英語の語が無いので、打ったままの形の句読点の区間にして入力を切る
+            let afterSpace = runAfterSpace && runStart == i
+            let mark = symbol.map(\.mark)
+                ?? Self.punctuationMark(chars[i], opened: &opened, previousIsEnglish: previousIsEnglish)
+                ?? (afterSpace ? String(chars[i]) : nil)
             guard let mark else { continue }
             runSpans.forEach { observe?($0) }
             segments += before

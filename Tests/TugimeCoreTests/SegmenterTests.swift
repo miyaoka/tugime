@@ -617,11 +617,16 @@ private final class DisplayRecorder: JapaneseConverting {
     }
 
     /// 空白は英語の区間なので、空白の直後の句読点と開き丸括弧は、空白の前の語によらず打ったままにする
-    @Test(arguments: ["kyou ,", "make ,", "kyouha (tesuto"])
-    func keepsPunctuationAfterASpaceAsTyped(input: String) {
-        let mark = segmenter.segment(input).first { $0.source.contains { Segmenter.punctuation[$0] != nil } }
-        #expect(mark?.kind == .english)
-        #expect(mark.map { $0.output.contains(",") || $0.output.contains("(") } == true)
+    @Test(arguments: [("kyou ,", ","), ("make ,", ","), ("kyouha (tesuto", "(")])
+    func keepsPunctuationAfterASpaceAsTyped(input: String, mark: String) {
+        #expect(segmenter.liveText(input).contains(mark))
+    }
+
+    /// 空白の直後の句読点も入力を切るので、その後ろの語は句読点を含めずに読む。英語の語でない読める綴り（tesu）は日本語になる
+    @Test func readsTheWordAfterPunctuationAfterASpaceOnItsOwn() {
+        let segments = segmenter.segment("kyouha (tesu")
+        #expect(segments.last?.source == "tesu")
+        #expect(segments.last?.kind == .japanese)
     }
 
     /// 空白は入力を切るので、空白までの区切りは、空白を打った時点の区切りから後ろに打った分で変わらない
