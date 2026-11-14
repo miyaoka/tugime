@@ -31,12 +31,24 @@ mkdir -p "$dest"
 rsync -a --delete "$src/" "$dest/"
 "$lsregister" -f "$dest"
 "$exe" --register
-# 動いている古い版を止める。次に入力源が選ばれたときに新しい版が起動する
+# 動いている古い版を止め、終わるのを待ってから新しい版を起動する。起動を macOS に任せると、
+# 古い版が終わった直後、macOS がそれを知る前に入力メソッドを求めたアプリが、アプリを起動し直すまで打てなくなることがある
 # 実行ファイル名はどの .app も tugime なので、実行ファイルのパスと文字列として一致するものだけを止める
 # 代入を挟み、ps の失敗を set -e で止める
 found=$(ps -axo pid=,comm= | exe="$exe" awk '{ pid = $1; sub(/^ *[0-9]+ /, ""); if ($0 == ENVIRON["exe"]) printf "%s ", pid }')
 read -r -a pids <<< "$found"
-(( ${#pids[@]} == 0 )) || kill "${pids[@]}"
+if (( ${#pids[@]} > 0 )); then
+    kill "${pids[@]}"
+    for pid in "${pids[@]}"; do
+        for _ in {1..50}; do
+            kill -0 "$pid" 2>/dev/null || continue 2
+            sleep 0.1
+        done
+        echo "古い版（$pid）が 5 秒以内に止まらない" >&2
+        exit 1
+    done
+    open -g "$dest"
+fi
 echo "== 配置 $dest"
 # システム設定は、ログインし直すまで新しい入力ソースを一覧に出さない（https://developer.apple.com/forums/thread/775526）
 echo "初めて入れたときは、ログアウトしてログインし直してから、システム設定 → キーボード → 入力ソース → 「+」→ 日本語 → ${app_dir%.app} で追加する"
