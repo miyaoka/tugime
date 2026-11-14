@@ -334,14 +334,45 @@ public final class Segmenter {
     /// 前の文字列は、区切りの評価と、表示の変換の左の文脈に使う
     public func liveDisplay(_ input: String, leading: Leading = .start) -> LiveDisplay {
         let (segments, pendingN) = keepingPendingN(segment(input, leading: leading))
-        let shown = displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true, endsInput: true, endsWithPendingN: pendingN) { index, display, _ in
-            let text = display?.text ?? segments[index].output
+        let shown = shownSegments(segments, left: leading.text, startsAtHead: true, endsInput: true, endsWithPendingN: pendingN) { _, segment, display, _ in
+            let text = display?.text ?? segment.output
             return (result: (display: display, text: text), shown: text)
         }
         return LiveDisplay(
             text: shown.map(\.text).joined(), differsFromInput: shown.contains { $0.display?.matchesReading == false },
             endsInEnglish: segments.last.map { $0.kind == .english }
         )
+    }
+
+    /// 句読点の区間を、表示の変換で決まった前の文字列で決め直すもの。区切りの時点では日本語区間の表記が決まっていないので、その後ろの句読点は
+    /// 日本語の記号にしてあるが、見えている文字列（空白と数を飛ばす）が打ったままの側の字で終われば（日本語として登録した ai → AI、モデルが SNS に変換した読み）、
+    /// 打ったままの形にする。閉じ丸括弧は、組の開き丸括弧を決め直したなら同じ形にする。区間を前から順に渡す
+    struct ShownPunctuation {
+        /// 渡した区間の中の閉じていない開き丸括弧ごとに、打ったままの形に決め直したか
+        private var opened: [Bool] = []
+
+        mutating func decide(_ segment: Segment, shown: String) -> Segment {
+            guard segment.kind == .punctuation, let key = segment.source.first, segment.source.count == 1 else { return segment }
+            let typed = Segment(kind: .punctuation, source: segment.source, reading: segment.source, output: segment.source, score: segment.score, context: segment.context)
+            if key == ")" {
+                return opened.popLast() == true && segment.output == Segmenter.punctuation[key] ? typed : segment
+            }
+            let redecided = Segmenter.punctuation[key] == segment.output && Segmenter.keepsPunctuationTyped(afterText: shown)
+            if key == "(" { opened.append(redecided) }
+            return redecided ? typed : segment
+        }
+    }
+
+    /// segments を表示の変換にかけ（displays）、句読点の区間は前に見えている文字列で決め直して（ShownPunctuation）make に渡す。
+    /// 区間から表示の文字列を作るところは、どれもこれを通る
+    func shownSegments<Result>(
+        _ segments: [Segment], left: String, startsAtHead: Bool, endsInput: Bool, endsWithPendingN: Bool,
+        make: (Int, Segment, JapaneseDisplay?, String) -> (result: Result, shown: String)
+    ) -> [Result] {
+        var punctuation = ShownPunctuation()
+        return displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: startsAtHead, endsInput: endsInput, endsWithPendingN: endsWithPendingN) { index, display, shown in
+            make(index, punctuation.decide(segments[index], shown: shown), display, shown)
+        }
     }
 
     /// 表示の変換にかける 1 区間。日本語区間は表示の変換で表記を決める。それ以外の区間に表示する文字列は、displays の make が決める。

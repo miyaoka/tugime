@@ -48,7 +48,22 @@ extension Clause {
         }
         var selected = clauses
         selected[focus].select(index)
-        return pairingBrackets(selected, at: focus)
+        return punctuatingAfter(pairingBrackets(selected, at: focus), at: focus)
+    }
+
+    /// 文節 focus の後ろの句読点の文節（空白だけの文節は飛ばす）を、focus までに見えている表記の最後の字で決め直す（AI を 愛 に選び替えたら , を 、 に）。
+    /// 句読点の形を選んだ文節（fixedValue）と、組の開き丸括弧で形が決まる閉じ丸括弧は替えない。開き丸括弧を替えたら組の閉じ丸括弧も合わせる
+    private static func punctuatingAfter(_ clauses: [Clause], at focus: Int) -> [Clause] {
+        let next = clauses.indices.dropFirst(focus + 1).first { !clauses[$0].output.allSatisfy { $0 == " " } } ?? clauses.endIndex
+        guard clauses[focus].kind != .punctuation, clauses.indices.contains(next), clauses[next].kind == .punctuation, clauses[next].fixedValue == nil,
+              let typed = clauses[next].candidates.first(where: { $0.count == 1 && Segmenter.punctuation[$0.first!] != nil }),
+              typed != ")", let japanese = Segmenter.punctuation[typed.first!], clauses[next].candidates.contains(japanese)
+        else { return clauses }
+        let wanted = Segmenter.keepsPunctuationTyped(afterText: clauses[..<next].map(\.output).joined()) ? typed : japanese
+        guard let index = clauses[next].candidates.firstIndex(of: wanted), index != clauses[next].selected else { return clauses }
+        var redecided = clauses
+        redecided[next].selected = index
+        return pairingBrackets(redecided, at: next)
     }
 
     /// 文節 focus で表記 text を選ぶ。候補に無ければ末尾に足して選ぶ（F6〜F10 で作った文字種）。組になる括弧も selecting と同じく合わせる

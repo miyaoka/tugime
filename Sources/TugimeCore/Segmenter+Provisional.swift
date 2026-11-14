@@ -211,10 +211,16 @@ extension Segmenter {
         var rest = Substring(text)
         var left = leading.text
         var kept: [KeptDisplayKey: JapaneseDisplay] = [:]
-        for (index, segment) in segments.enumerated() {
+        // 句読点は、表示と同じく前に見えている文字列で決め直した形で照らす（shownSegments）
+        var punctuation = ShownPunctuation()
+        for (index, typed) in segments.enumerated() {
+            let segment = punctuation.decide(typed, shown: left)
             let piece: String
             if segment.kind == .japanese {
-                let end = segments.dropFirst(index + 1).first.flatMap { rest.range(of: $0.output)?.lowerBound } ?? rest.endIndex
+                // 次の句読点の区間は、決め直す前と後（打ったまま）のどちらの形でも表示に現れうるので、先に現れる方の手前まで
+                let end = segments.dropFirst(index + 1).first.flatMap { next in
+                    (next.kind == .punctuation ? [next.output, next.source] : [next.output]).compactMap { rest.range(of: $0)?.lowerBound }.min()
+                } ?? rest.endIndex
                 piece = String(rest[..<end])
                 guard !piece.isEmpty, ReadingAlignment(text: piece, reading: segment.reading) != nil else { return nil }
                 let scored = japaneseConverter.convert(kana: segment.reading, context: segment.context).clauses

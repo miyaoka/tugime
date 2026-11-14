@@ -136,7 +136,7 @@ import Testing
 
     init() throws {
         segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten\njpy.dev\tCurrency API\ten\nvue\tVue\ten\n404\tNot Found\ten\n110\t警察\ten\npwd.x\tPWDX\tja"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten\njpy.dev\tCurrency API\ten\nvue\tVue\ten\n404\tNot Found\ten\n110\t警察\ten\npwd.x\tPWDX\tja\nai\tAI\tja"))
     }
 
     /// 登録した語の後ろの句読点は、区間の種類（日本語か英語か）ではなく、語の見えている表記の最後の字で、確定済みの文字列の後と同じく形を決める。
@@ -160,6 +160,37 @@ import Testing
     @Test(arguments: [("jpy.dev", "Currency API"), ("jpy.dev,", "Currency API,"), ("pwd.x", "PWDX"), ("jpy.", "円。"), ("pwd.", "PWD.")])
     func readsARegisteredKeyAcrossPunctuation(keys: String, shown: String) {
         #expect(segmenter.liveText(keys) == shown)
+    }
+
+    /// かなに読める打鍵を日本語として登録した語（ai → AI）は日本語区間の中で表記が決まる。その後ろの句読点も、見えている表記の最後の字（空白は飛ばす）で決め、
+    /// 語まで確定してから打った場合と同じ形にする。開き丸括弧を打ったままにしたら、組の閉じ丸括弧も同じ形にする。日本語の表記の後ろは日本語の記号のまま。
+    /// 打っている途中の表示と文節の両方で、句読点の文字だけを比べる
+    @Test(arguments: [
+        ("ai,", ","), ("korehaai.", "."), ("ai(sore)", "()"), ("ai ,", ","), ("ai (sore)", "()"), ("kore(ai)", "（）"), ("kyouha,", "、"),
+    ])
+    func punctuatesAfterAJapaneseUserWordByItsShownForm(keys: String, marks: String) {
+        let isMark = { (c: Character) in Segmenter.punctuation[c] != nil || Segmenter.punctuation.values.contains(String(c)) }
+        #expect(String(segmenter.liveText(keys).filter(isMark)) == marks)
+        #expect(String(segmenter.clauses(keys).map(\.output).joined().filter(isMark)) == marks, "文節")
+    }
+
+    /// 語の文節で候補を選び替えたら、後ろの句読点（空白は飛ばす）も選んだ表記の最後の字で決め直す。句読点の形を選んだ文節は替えない
+    @Test(arguments: ["ai,", "ai ,"])
+    func punctuatesAfterTheCandidateChosenForTheWordBefore(keys: String) throws {
+        let clauses = segmenter.clauses(keys)
+        let mark = try #require(clauses.indices.last)
+        let kana = try #require(clauses[0].candidates.firstIndex(of: "あい"))
+        let chosen = Clause.selecting(kana, at: 0, in: clauses)
+        #expect(chosen[mark].output == "、")
+        #expect(Clause.selecting(0, at: 0, in: chosen)[mark].output == ",", "先頭の候補に戻す")
+        let wide = try #require(clauses[mark].candidates.firstIndex(of: "，"))
+        #expect(Clause.selecting(kana, at: 0, in: Clause.selecting(wide, at: mark, in: clauses))[mark].output == "，", "句読点の形を選んだ文節")
+    }
+
+    /// Backspace で残す表示は、句読点を決め直した表示でも、区間に割り当てて残せる
+    @Test func keepsADisplayWithARedecidedMark() throws {
+        let kept = try #require(segmenter.keepDisplay("AI,これ。東京に行", for: "ai,kore.toukyounii", leading: .start))
+        #expect(kept.text == "AI,これ。東京に行")
     }
 
     /// 登録した語の後ろの数の後ろの句読点は、数の前の語の表記で決める（Vue3. は e の側）。数字だけの打鍵で登録した語（404 → Not Found）は数ではなく語なので、その表記で決める

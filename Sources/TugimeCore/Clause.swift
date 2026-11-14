@@ -200,8 +200,7 @@ extension Segmenter {
         var keyStart = 0
         var wordIsEnglish = true
         var shown = ""
-        _ = displays(of: segments.map(ShownSpan.init), left: leading.text, startsAtHead: true, endsInput: true, endsWithPendingN: false) { index, display, _ in
-            let segment = segments[index]
+        _ = shownSegments(segments, left: leading.text, startsAtHead: true, endsInput: true, endsWithPendingN: false) { _, segment, display, _ in
             let text = display?.text ?? segment.output
             if (wordStart..<wordEnd).contains(keyStart) {
                 wordIsEnglish = wordIsEnglish && segment.kind == .english
@@ -235,8 +234,7 @@ extension Segmenter {
     /// 印と選んだ表記を付け直す。後ろの区間は、選んだ表記を含めて表示した文字列を左の文脈にして変換する
     private func clauses(of segments: [Segment], left: String, firstIndex: Int, startsAtHead: Bool, endsInput: Bool, fixedKeys: [KeptClause] = []) -> [Clause] {
         var keyStart = 0
-        return displays(of: segments.map(ShownSpan.init), left: left, startsAtHead: startsAtHead, endsInput: endsInput, endsWithPendingN: false) { offset, display, shown in
-            let segment = segments[offset]
+        return shownSegments(segments, left: left, startsAtHead: startsAtHead, endsInput: endsInput, endsWithPendingN: false) { offset, segment, display, shown in
             defer { keyStart += segment.source.count }
             let keys = keyStart..<(keyStart + segment.source.count)
             let span = ClauseSpan(index: firstIndex + offset, source: segment.source, reading: segment.reading, context: segment.context)
