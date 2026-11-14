@@ -155,32 +155,25 @@ public final class Segmenter {
         segment.kind != .japanese && keepsPunctuationTyped(afterText: segment.output)
     }
 
-    /// text の後ろの句読点を打ったままにするか。末尾の空白を飛ばした最後の文字が、日本語の文字か日本語の記号（isJapaneseSide）、改行、
-    /// 何も無いなら日本語の記号にし、それ以外（ラテン文字・ASCII の記号など）なら打ったままにする。数で終われば、数はその前の文字の側に付くので数の前の文字で決める。
+    /// text の後ろの句読点を打ったままにするか。末尾の空白を飛ばした最後の文字が、ASCII の英字・記号かラテン文字（isLatinSide）なら打ったまま、
+    /// それ以外（かな・漢字・全角の記号・※ などの記号・絵文字）、改行、何も無いなら日本語の記号にする。数で終われば、数はその前の文字の側に付くので数の前の文字で決める。
     /// 後ろが文の頭か（Continuation）とは別に決める。英語の文の途中の . ! ? の後ろ（wait... really?!）は文の頭ではなく英語の続き
     static func keepsPunctuationTyped(afterText spaced: String) -> Bool {
         let text = droppingTrailingSpaces(spaced)
         let number = numberLength(text.reversed())
         guard let last = number > 0 ? text.dropLast(number).last : text.last else { return false }
-        return !last.isWhitespace && !isJapaneseSide(last)
+        return isLatinSide(last)
     }
 
-    /// 後ろの句読点を日本語の記号にする文字か。日本語の文字（isJapaneseLetter）と、日本語の記号。日本語の記号は、句読点と記号の打鍵が出す形と、
-    /// 全角の記号の区画（中黒、CJK の記号と句読点、全角形）の字
-    static func isJapaneseSide(_ c: Character) -> Bool {
-        if isJapaneseLetter(c) || japaneseMarks.contains(c) { return true }
-        guard let base = c.unicodeScalars.first else { return false }
-        return japaneseMarkRanges.contains { $0.contains(base.value) }
+    /// 後ろの句読点を打ったままにする文字か。空白でない ASCII の字と、Unicode の文字種がラテン文字（Script=Latin）の字（é ü ß）。
+    /// 全角の英字（Ａ）はラテン文字だが、全角形は日本語の文章で使う形なので含めない
+    static func isLatinSide(_ c: Character) -> Bool {
+        guard !c.isWhitespace, let base = c.unicodeScalars.first else { return false }
+        if base.isASCII { return true }
+        if (0xFF00...0xFFEF).contains(base.value) { return false }
+        // 正規表現の Unicode 属性は、Character には最初の scalar で当たる
+        return String(c).wholeMatch(of: #/\p{Script=Latin}/#) != nil
     }
-
-    private static let japaneseMarks = Set((Array(punctuation.values) + Array(symbols.values)).joined())
-
-    private static let japaneseMarkRanges: [ClosedRange<UInt32>] = [
-        0x3000...0x303F, // CJK の記号と句読点（、。「」『』【】〜 など）
-        0x30FB...0x30FB, // 中黒
-        0xFF01...0xFF60, // 全角形（！？（）：＝ など）
-        0xFF61...0xFF65, // 半角の句読点と括弧（｡｢｣､･）
-    ]
 
     /// 末尾の空白（" "）を除いた文字列。改行は除かない
     static func droppingTrailingSpaces(_ text: String) -> String {
