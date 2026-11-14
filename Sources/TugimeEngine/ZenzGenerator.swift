@@ -28,10 +28,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
     enum LoadError: Error, CustomStringConvertible {
         case model(String)
         case context(String)
+        case vocabulary(String)
         case grammar
         var description: String {
             switch self {
             case .model(let path): "モデルを読めない: \(path)"
+            case .vocabulary(let path): "モデルの語彙を読めない: \(path)"
             case .context(let path): "llama.cpp のコンテキストを作れない: \(path)"
             case .grammar: "出力の文法を作れない"
             }
@@ -46,6 +48,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
         case nonFinite
         case tokenize(String)
         case detokenize([llama_token])
+        /// decode する列が、位置の上限か batch の大きさを超える
+        case overflow
+        /// llama.cpp が位置の logits を返さない
+        case logits
+        /// argmax を求めていない位置の次のトークンを読もうとした
+        case argmax
     }
 
     private let resources: LlamaResources
@@ -72,7 +80,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
         var modelParams = llama_model_default_params()
         modelParams.n_gpu_layers = Self.allLayersOnGPU
         guard let model = llama_model_load_from_file(weight.path, modelParams) else { throw LoadError.model(weight.path) }
-        vocab = llama_model_get_vocab(model)!
+        // 語彙が無いと、トークンにすることも、logits の最大を選ぶこともできない
+        guard let vocab = llama_model_get_vocab(model), llama_vocab_n_tokens(vocab) > 0 else {
+            llama_model_free(model)
+            throw LoadError.vocabulary(weight.path)
+        }
+        self.vocab = vocab
         maxPositions = Int(llama_model_n_ctx_train(model))
         var contextParams = llama_context_default_params()
         contextParams.n_ctx = UInt32(maxPositions)
@@ -120,6 +133,9 @@ final class ZenzGenerator: DirectDisplayGenerating {
             case .nonFinite: Unexpected.reached("モデルの計算が壊れた（logits が有限でない）", continuingWith: "")
             case .tokenize(let text): Unexpected.reached("トークンにできない", detail: text, continuingWith: "")
             case .detokenize(let tokens): Unexpected.reached("トークンを文字にできない", detail: "\(tokens)", continuingWith: "")
+            case .overflow: Unexpected.reached("decode する列が位置の上限を超える", continuingWith: "")
+            case .logits: Unexpected.reached("llama.cpp が logits を返さない", continuingWith: "")
+            case .argmax: Unexpected.reached("argmax を求めていない位置を読もうとした", continuingWith: "")
             }
         }
     }
@@ -214,6 +230,8 @@ final class ZenzGenerator: DirectDisplayGenerating {
     private func append(_ tokens: [llama_token], needFrom: Int) throws(Failure) {
         guard !tokens.isEmpty else { return }
         let start = resident.count
+        // batch とコンテキストは maxPositions の大きさで作ってある
+        guard start + tokens.count <= maxPositions else { throw .overflow }
         batch.n_tokens = 0
         for (i, token) in tokens.enumerated() {
             batch.token[i] = token
@@ -229,7 +247,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
                 next.append(nil)
                 continue
             }
-            let logits = llama_get_logits_ith(context, Int32(i))!
+            guard let logits = llama_get_logits_ith(context, Int32(i)) else { throw .logits }
             var best = 0
             var finite = logits[0].isFinite
             for v in 1..<vocabularySize {
@@ -246,7 +264,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
     /// llama.cpp の common_sampler_sample と同じく、全トークンに文法を当てるのは argmax が外れたときだけにする。
     /// 位置ごとの logits は持たない（decode のたびに語彙全体を写すことになる）ので、外れた位置は decode し直す
     private func allowed(at index: Int) throws(Failure) -> llama_token {
-        let token = next[index]!
+        guard index < next.count, let token = next[index] else { throw .argmax }
         var single = llama_token_data(id: token, logit: 1, p: 0)
         let fits = withUnsafeMutablePointer(to: &single) { pointer in
             var check = llama_token_data_array(data: pointer, size: 1, selected: -1, sorted: false)
@@ -257,7 +275,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
         let input = resident[index]
         try truncate(index)
         try append([input], needFrom: index)
-        let logits = llama_get_logits_ith(context, 0)!
+        guard let logits = llama_get_logits_ith(context, 0) else { throw .logits }
         var data = (0..<vocabularySize).map { llama_token_data(id: llama_token($0), logit: logits[$0], p: 0) }
         return data.withUnsafeMutableBufferPointer { buffer in
             var array = llama_token_data_array(data: buffer.baseAddress, size: buffer.count, selected: -1, sorted: false)
