@@ -110,7 +110,7 @@ public final class Segmenter {
         /// 入力が前の文字列のどこに続くか
         var continuation: Continuation { Continuation(after: text) }
 
-        /// 入力の最初の日本語区間の評価のしかた。前の文字列が数字で終わるなら、未確定の文字列の中の数字の後と同じく、その数字に続く形にする。
+        /// 入力の最初の日本語区間の評価のしかた。前の文字列が、末尾の空白を飛ばして数字で終わるなら、未確定の文字列の中の数字の後と同じく、その数字に続く形にする。
         /// 確定してから続きを打っても、まとめて打ったときと同じ評価になる
         var japaneseContext: JapaneseContext {
             let afterText = Segmenter.context(after: Segmenter.droppingTrailingSpaces(text))
@@ -121,7 +121,7 @@ public final class Segmenter {
 
     /// 入力が前の文字列のどこに続くか
     enum Continuation: Equatable {
-        /// 文頭。前に何も無いか、空白・改行・文末の記号の後
+        /// 文頭。前に何も無いか、改行などの空白（" " は飛ばす）・文末の記号の後
         case start
         /// 日本語の文の途中
         case afterJapanese
