@@ -99,8 +99,7 @@ final class TugimeInputController: IMKInputController {
     // InputMethodKit の基底クラスは隔離の指定を持たないので、上書きする関数は nonisolated にし、中身を onMain でメインアクターとして動かす。
     // IMK から渡される引数は並行性で安全と示されていない型だが、同期的に使うだけなので nonisolated(unsafe) で受け直して渡す
 
-    /// メインアクターで同期実行する。IMK の呼び出しは経験上メインスレッドで届くが、Apple の文書には書かれていない。
-    /// メインスレッド以外で届いたら、想定外の状態として記録し、メインスレッドで同期実行する（macSKK の InputController.mainSync と同じ扱い）
+    /// メインアクターで同期実行する。メインスレッド以外で届いたら、想定外の状態として記録し、メインスレッドで同期実行する
     private nonisolated func onMain<T: Sendable>(_ work: @MainActor () -> T) -> T {
         if Thread.isMainThread { return MainActor.assumeIsolated(work) }
         Unexpected.reached("IMK の呼び出しがメインスレッド以外で届いた", continuingWith: ())
