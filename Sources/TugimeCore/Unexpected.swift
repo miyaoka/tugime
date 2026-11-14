@@ -31,10 +31,11 @@ public enum Unexpected {
 
     static let logger = Logger(subsystem: logSubsystem, category: "unexpected")
 
-    /// 想定外の状態に当たったことを記録して value を返す。value は計算を最後まで進めるためだけの値で、操作の結果は `guarded` が捨てる。
+    /// 想定外の状態に当たったことを記録して value を返す。`guarded` の中では、value は計算を最後まで進めるためだけの値で、操作の結果は `guarded` が捨てる。
+    /// 捨てる操作の外（設定の窓など）では value をそのまま使うので、利用者に見えても困らない値を渡す。
     /// reason（理由の文）と numbers（位置や件数）はログに読める形で出す。reason を StaticString にして、利用者の打鍵を補間できないようにする。
     /// detail は利用者の打鍵から来る値で、ログでは伏せる
-    static func reached<T>(
+    package static func reached<T>(
         _ reason: StaticString, numbers: [Int] = [], detail: @autoclosure () -> String = "", continuingWith value: T,
         file: StaticString = #fileID, line: UInt = #line
     ) -> T {

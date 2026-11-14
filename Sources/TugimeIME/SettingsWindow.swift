@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import TugimeCore
 
 /// 入力メニューの「設定…」で開く窓。プロセスに 1 つ
 let settingsWindow = SettingsWindow()
@@ -22,10 +23,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     private func makeWindow() -> NSWindow {
         let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
-        guard let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String else {
-            fatalError("Info.plist に CFBundleName が無い")
+        if let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String {
+            window.title = "\(name) の設定"
+        } else {
+            window.title = Unexpected.reached("Info.plist に CFBundleName が無い", continuingWith: "設定")
         }
-        window.title = "\(name) の設定"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.delegate = self
@@ -74,22 +76,22 @@ private let buildVersion: String = {
     let info = Bundle.main
     if let commit = info.object(forInfoDictionaryKey: "TugimeCommit") as? String { return commit }
     guard let version = info.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
-        fatalError("Info.plist に CFBundleShortVersionString が無い")
+        return Unexpected.reached("Info.plist に CFBundleShortVersionString が無い", continuingWith: "")
     }
     return version
 }()
 
 /// 配布版の辞書を開発版の辞書へ写す道具（TugimeSync）。開発版にだけ同梱するので、同梱されているかで出すかを決める
 enum DictionarySync {
-    /// 置き場所は Info.plist の TugimeSyncApp に書いてある。組み立てと検査も同じキーを読む
-    static let app: URL = {
+    /// 置き場所は Info.plist の TugimeSyncApp に書いてある。組み立てと検査も同じキーを読む。キーが無ければ nil で、道具を出さない
+    static let app: URL? = {
         guard let path = Bundle.main.object(forInfoDictionaryKey: "TugimeSyncApp") as? String else {
-            fatalError("Info.plist に TugimeSyncApp が無い")
+            return Unexpected.reached("Info.plist に TugimeSyncApp が無い", continuingWith: nil)
         }
         return Bundle.main.bundleURL.appendingPathComponent(path)
     }()
 
-    static var isAvailable: Bool { FileManager.default.fileExists(atPath: app.path) }
+    static var isAvailable: Bool { app.map { FileManager.default.fileExists(atPath: $0.path) } ?? false }
 
     /// 終わるのを待っている道具の監視
     private static var watching: NSKeyValueObservation?
@@ -97,6 +99,7 @@ enum DictionarySync {
     /// 置き換えてよいかを確かめてから、道具を起動する。
     /// 子プロセスとして起動すると IME の Sandbox を引き継いで配布版のコンテナを読めないので、LaunchServices で起動する
     static func run() {
+        guard let app else { return }
         let confirm = NSAlert()
         confirm.messageText = "配布版の辞書を写す"
         confirm.informativeText = "開発版の辞書を、配布版の辞書で置き換えます。開発版にだけある語は消えます。"

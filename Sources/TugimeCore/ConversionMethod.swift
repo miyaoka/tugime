@@ -7,8 +7,8 @@ import Foundation
 /// 検証の道具は case を switch せず、使い方の文言も `forms` から作るので、触らずに新しい方式を測れる
 public enum ConversionMethod: Sendable, Hashable {
     /// モデルのファイルから、表示の文字列を生成するものを作る。モデルを読み込み終えた生成器を返し、最初の変換に読み込みの時間を混ぜない。
-    /// 読めなければプロセスごと止める（投げないので、make の呼び出し元は受け止められない）。llama.cpp でモデルを動かす TugimeEngine の modelGenerator(weight:) を渡す
-    package typealias ModelGenerator = (URL) -> any DirectDisplayGenerating
+    /// 読めなければ投げる。llama.cpp でモデルを動かす TugimeEngine の modelGenerator(weight:) を渡す
+    package typealias ModelGenerator = (URL) throws -> any DirectDisplayGenerating
 
     /// システム辞書の格子だけで変換する。検証の基準
     case lattice
@@ -59,7 +59,7 @@ public enum ConversionMethod: Sendable, Hashable {
     public static let forms = specs.map(\.form).joined(separator: " | ")
 
     /// `forms` のどれかを読む。相対パスは今の作業ディレクトリから引く。
-    /// モデルのファイルが無ければ、辞書を読み込む前にここで止める。在っても読めないモデルは make() の先読みで止まる
+    /// モデルのファイルが無ければ、辞書を読み込む前にここで投げる。在っても読めないモデルは make() の先読みで投げる
     public init(spec: String) throws {
         for entry in Self.specs where spec.hasPrefix(entry.prefix) {
             let rest = String(spec.dropFirst(entry.prefix.count))
@@ -84,16 +84,16 @@ public enum ConversionMethod: Sendable, Hashable {
 
     /// 同梱の綴りの表と語表で、この方式の区切りを作る。区切りはこれからだけ作る
     package func makeSegmenter(dictionary: SystemDictionary, generator: ModelGenerator) throws -> Segmenter {
-        try Segmenter(table: .bundled(), english: .bundled(), japanese: make(dictionary: dictionary, generator: generator))
+        try Segmenter(table: .bundled(), english: .bundled(), japanese: try make(dictionary: dictionary, generator: generator))
     }
 
     /// この方式の変換器を作る。モデルを使う方式は、generator でモデルを読む
-    package func make(dictionary: SystemDictionary, generator: ModelGenerator) -> any JapaneseConverting {
+    package func make(dictionary: SystemDictionary, generator: ModelGenerator) throws -> any JapaneseConverting {
         switch self {
         case .lattice:
             LatticeConverter(dictionary: dictionary)
         case .direct(let weight):
-            DirectConverter(scorer: LatticeConverter(dictionary: dictionary), generator: generator(weight))
+            DirectConverter(scorer: LatticeConverter(dictionary: dictionary), generator: try generator(weight))
         }
     }
 }

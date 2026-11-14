@@ -2,6 +2,7 @@ import Carbon
 import Cocoa
 import InputMethodKit
 import TugimeCore
+import os
 
 /// バンドルを入力源として登録する。有効化はしない（利用者がシステム設定の「+」で追加する）
 func register() -> Int32 {
@@ -39,9 +40,16 @@ func printStatus() -> Int32 {
     return 0
 }
 
-/// 組み立てたバンドルから綴りの表・語表・システム辞書・表示の変換のモデルを読み、1 文を表示の変換で変換して出す。読めなければ初期化の時点で止まる。
+/// 組み立てたバンドルから綴りの表・語表・システム辞書・表示の変換のモデルを読み、1 文を表示の変換で変換して出す。読めなければ理由を出して失敗にする。
 /// 続けて、システム辞書に無い表記の 1 語の辞書を入れ、利用者の語で変換できるかを確かめる。利用者の辞書のファイルは読まない
 func check() -> Int32 {
+    let conversion: ConversionQueue
+    do {
+        conversion = try ConversionQueue.inputMethod()
+    } catch {
+        print("変換器を作れない: \(error)")
+        return 1
+    }
     let input = "kyouhagoogledekensaku"
     print("\(input)\t\(conversion.sync { $0.liveText(input) })")
     let word = (keys: "i-sou", entry: "i-sou\t一索牌", text: "一索牌")
@@ -64,8 +72,26 @@ default:
     break
 }
 
+/// 変換器を作れないときは、キーをすべてアプリに渡す入力メソッドとして動く（Mozc が変換のサーバーに繋がらないときと同じ）。
+/// 打鍵はそのままアプリに届くので、利用者は入力ソースを切り替えなくても打ち続けられる。原因はログに残し、デバッグビルドでは止める
+func runWithoutConversion(connectionName: String, error: any Error) -> Never {
+    Logger(subsystem: logSubsystem, category: "startup").fault("変換器を作れないので、キーをすべてアプリに渡す: \(String(describing: error), privacy: .public)")
+    assertionFailure("変換器を作れない: \(error)")
+    let server = IMKServer(name: connectionName, controllerClass: PassThroughInputController.self, delegateClass: nil)
+    withExtendedLifetime(server) { NSApplication.shared.run() }
+    exit(1)
+}
+
+// 接続の名前が無いと、入力メソッドとしてアプリから繋がる口を作れない。まだ何も打たれていないので、止める
 guard let connectionName = Bundle.main.infoDictionary?["InputMethodConnectionName"] as? String else {
     fatalError("Info.plist に InputMethodConnectionName が無い")
+}
+// 区切りと変換はプロセスに 1 つだけ持ち、最初の打鍵より前に読み込みを済ませる
+let conversion: ConversionQueue
+do {
+    conversion = try ConversionQueue.inputMethod()
+} catch {
+    runWithoutConversion(connectionName: connectionName, error: error)
 }
 // IMKServer はプロセスに 1 つだけ作る。2 つあると Chromium 系のアプリに入力が届かない
 let server = IMKServer(name: connectionName, bundleIdentifier: Bundle.main.bundleIdentifier)
@@ -73,7 +99,7 @@ let server = IMKServer(name: connectionName, bundleIdentifier: Bundle.main.bundl
 let candidateWindow = CandidateWindow()
 // 表示が打った読みと合わないときの警告の窓もプロセスに 1 つ
 let rewriteWarning = RewriteWarning()
-// 綴りの表・語表・辞書と表示の変換のモデルの読み込みを、最初の打鍵より前に済ませる。利用者の辞書も読んでおく
+// 利用者の辞書も最初の打鍵より前に読んでおく
 userDictionaryFile.refresh(into: conversion)
 NSApplication.shared.mainMenu = mainMenu()
 NSApplication.shared.run()
