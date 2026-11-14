@@ -136,7 +136,13 @@ import Testing
 
     init() throws {
         segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja"))
+    }
+
+    /// 日本語として扱う語の区間の後ろの - は、その語の見えている最後の字で長音を判定する（すご の後ろは ー、Café の後ろは打ったまま）
+    @Test func readsADashAfterAUserWordByItsShownLetter() {
+        #expect(segmenter.candidates("cwd-desu").contains { $0.after == .word && $0.segment.kind == .japanese && $0.segment.reading == "ーです" })
+        #expect(!segmenter.candidates("cafe-desu").contains { $0.after == .word && $0.segment.reading.hasPrefix("ー") })
     }
 
     /// 綴りの表で読める打鍵は、そのかなの語になり、長い打鍵の途中でも効く
@@ -200,7 +206,7 @@ import Testing
 
     /// 文節の伸縮で打鍵を 1 区間として判定し直すときも、読めない日本語の打鍵はその語の区間にする
     @Test func makesUnreadableJapaneseKeysTheWordWhenResized() {
-        let span = segmenter.singleSpan("cafe", context: .start, preceding: nil)
+        let span = segmenter.singleSpan("cafe", context: .start, preceding: Segmenter.Preceding(nil))
         #expect(span.kind == .word)
         #expect(span.output == "Café")
     }

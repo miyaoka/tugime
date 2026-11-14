@@ -197,7 +197,7 @@ extension Segmenter {
         let before = segment(String(chars[..<wordStart]), leading: leading)
         // 語の前は空白の区間で終わり、その区間が後ろを評価する文脈を持つ
         let context = before.last?.context ?? leading.japaneseContext
-        let preceding = wordStart > 0 ? chars[wordStart - 1] : leading.text.last
+        let preceding = Preceding(wordStart > 0 ? chars[wordStart - 1] : leading.text.last)
         guard let flipped = span(word, as: wordIsEnglish ? .japanese : .english, context: context, preceding: preceding) else { return nil }
         let spaces = Self.spaceSegment(String(chars[wordEnd...]), context: Self.context(after: chars[..<wordEnd]))
         // 日本語にした語は、表示の変換が文節に分けても 1 文節に保つ
@@ -407,11 +407,13 @@ extension Segmenter {
         }
         let left = leading.text + before.map(\.output).joined()
         let fixedContext = context(after: before.last, keys: keys[..<range.lowerBound], leading: leading)
-        let parts = parts(in: range.lowerBound..<end, of: units, keys: keys, leading: leading)
+        // 文節の直前は、前の文節の打鍵と、前の文節の見えている文字。前の文節が無ければ入力欄の文字
+        let preceding = Preceding(key: keys[..<range.lowerBound].last ?? leading.text.last, shown: left.last)
+        let parts = parts(in: range.lowerBound..<end, of: units, keys: keys, leading: leading, preceding: preceding)
         let joinedParts = parts.count > 1 && parts.contains { $0.kind == .mark } ? parts : []
         let fixed = parts.count == 1 && parts[0].kind == .mark || !joinedParts.isEmpty
             ? joined(parts, context: fixedContext)
-            : singleSpan(String(keys[range.lowerBound..<end]), context: fixedContext, preceding: keys[..<range.lowerBound].last ?? leading.text.last)
+            : singleSpan(String(keys[range.lowerBound..<end]), context: fixedContext, preceding: preceding)
         let span: ClauseSpan
         if joinedParts.isEmpty, let (segmented, count) = segmentedSpan(fixed, before: before, start: range.lowerBound, end: end, keys: keys, leading: leading) {
             let first = before.count - count
@@ -457,7 +459,7 @@ extension Segmenter {
                     after: markContinuation ?? (fixed.kind == .english ? .afterEnglish : .afterJapanese),
                     context: self.context(after: resized, keys: keys[..<end], leading: leading),
                     opened: Self.unclosedOpeners(in: left + resized.output),
-                    preceding: keys[..<end].last ?? leading.text.last
+                    preceding: Segmenter.Preceding(key: keys[..<end].last ?? leading.text.last, shown: (left + resized.output).last)
                 ),
                 left: left + resized.output,
                 firstIndex: span.index + 1,
@@ -522,8 +524,8 @@ extension Segmenter {
     }
 
     /// 打鍵列の range にある、今見えている区間（まとめた区間はその部分）ごとの部分。日本語は打鍵をかなに読み直し、
-    /// 句読点と記号は見えていた形のまま持つ。隣り合う日本語どうし、英語どうしはつなぐ
-    private func parts(in range: Range<Int>, of units: [KeySpan], keys: [Character], leading: Leading) -> [ClausePart] {
+    /// 句読点と記号は見えていた形のまま持つ。隣り合う日本語どうし、英語どうしはつなぐ。preceding は range の直前
+    private func parts(in range: Range<Int>, of units: [KeySpan], keys: [Character], leading: Leading, preceding: Preceding) -> [ClausePart] {
         var parts: [ClausePart] = []
         for unit in units where unit.start < range.upperBound && range.lowerBound < unit.end {
             let start = max(unit.start, range.lowerBound)
@@ -535,7 +537,10 @@ extension Segmenter {
                     source: source,
                     reading: source == unit.span.source
                         ? unit.span.reading
-                        : Self.japaneseReading(table: table, of: source, before: keys[..<start].last ?? leading.text.last) ?? source
+                        : Self.japaneseReading(
+                            table: table, of: source,
+                            before: parts.last.map { Preceding(key: keys[start - 1], shown: $0.reading.last) } ?? preceding
+                        ) ?? source
                 )
             case .punctuation:
                 ClausePart(kind: .mark, source: source, reading: unit.span.reading)
