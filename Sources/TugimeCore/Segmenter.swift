@@ -155,13 +155,26 @@ public final class Segmenter {
         segment.kind != .japanese && keepsPunctuationTyped(afterText: segment.output)
     }
 
-    /// text の後ろの句読点を打ったままにするか。末尾の空白を飛ばした最後の文字が、ASCII の英字・記号かラテン文字（isLatinSide）なら打ったまま、
-    /// それ以外（かな・漢字・全角の記号・※ などの記号・絵文字）、改行、何も無いなら日本語の記号にする。数で終われば、数はその前の文字の側に付くので数の前の文字で決める。
+    /// segments のうち、数だけの日本語区間を除いた最後の区間。数は日本語でも英語でもないので、句読点の形は数の前の区間で決める。
+    /// 数字だけの打鍵で登録した英語の語（404 → Not Found）は数ではなく語なので除かない
+    static func lastWord(in segments: [Segment]) -> Segment? {
+        segments.last { !isNumberSpan($0) }
+    }
+
+    /// 数だけの日本語区間か
+    static func isNumberSpan(_ segment: Segment) -> Bool {
+        segment.kind == .japanese && isNumber(segment.source)
+    }
+
+    /// text の後ろの句読点を打ったままにするか。末尾の空白と数を、どちらも無くなるまで飛ばした最後の文字が、ASCII の英字・記号かラテン文字（isLatinSide）なら打ったまま、
+    /// それ以外（かな・漢字・全角の記号・※ などの記号・絵文字）、改行、何も無いなら日本語の記号にする。数は日本語でも英語でもないので、その前の文字の側に付く（API 5 は I、今日 3 5 は 日）。
     /// 後ろが文の頭か（Continuation）とは別に決める。英語の文の途中の . ! ? の後ろ（wait... really?!）は文の頭ではなく英語の続き
     static func keepsPunctuationTyped(afterText spaced: String) -> Bool {
-        let text = droppingTrailingSpaces(spaced)
-        let number = numberLength(text.reversed())
-        guard let last = number > 0 ? text.dropLast(number).last : text.last else { return false }
+        var text = droppingTrailingSpaces(spaced)
+        while case let number = numberLength(text.reversed()), number > 0 {
+            text = droppingTrailingSpaces(String(text.dropLast(number)))
+        }
+        guard let last = text.last else { return false }
         return isLatinSide(last)
     }
 
@@ -462,12 +475,14 @@ public final class Segmenter {
             if chars[i] == " " {
                 // 空白も入力を切る。空白より前は、空白を打つ前と同じ打鍵列だけで区切るので、後ろに打った分で変わらない。
                 // 空白の後ろの日本語は前の語に続く形（空白の前が数字なら助数詞）で評価する。
-                // 空白の直後の句読点は、空白を飛ばした前の区間が日本語なら日本語の記号、英語なら打ったままにする
                 let spaces = chars[i...].prefix { $0 == " " }.count
                 let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, preceding: runStart == 0 ? preceding : Preceding(chars[runStart - 1]), spaced: true, observe: observe)
                 segments += before
-                if let last = before.last {
+                if !before.isEmpty {
                     runContext = Self.context(after: chars[runStart..<i])
+                }
+                // 空白の直後の句読点は、空白を飛ばした前の区間（数だけの区間を除く）で決める。数しか無ければ、空白の前で決めた側のまま
+                if let last = Self.lastWord(in: before) {
                     runKeepsTyped = Self.keepsPunctuationTyped(after: last)
                 }
                 segments.append(Self.spaceSegment(String(chars[i..<(i + spaces)]), context: runContext))
@@ -488,12 +503,14 @@ public final class Segmenter {
             // 直前の英語の区間か利用者の辞書の語の区間から、句読点をまたいで登録した打鍵どおりに打たれていれば（jpy.dev）、ここで切らずに語として読む
             if symbol == nil, let last = before.last, last.kind != .japanese,
                typesRegisteredKeys(from: i - last.source.count, across: i, in: chars) { continue }
-            let previousIsEnglish = before.last.map { Self.keepsPunctuationTyped(after: $0) } ?? runKeepsTyped
+            // 数だけの区間の後ろは、その前の区間で決める（version 2. の 2 の後ろは version の側）
+            let previousIsEnglish = Self.lastWord(in: before).map { Self.keepsPunctuationTyped(after: $0) } ?? runKeepsTyped
             // nil なら打ったまま直前の英語の区間に含める。空白の直後は含める英語の語が無いので、打ったままの形の句読点の区間にして入力を切る。
             // 空白の直後の previousIsEnglish は、空白を飛ばした前の区間の表記で決めた runKeepsTyped
             // 利用者の辞書の語の後ろも、含めると打鍵が語と一致しなくなるので、英字で終わる語の後ろは打ったままの形の句読点の区間にして入力を切る
             let afterSpace = runAfterSpace && runStart == i
-            let keepsTyped = afterSpace || before.last?.kind == .word
+            // 数だけの区間を飛ばして英語の側に決めたとき（vue3.）も、含めると打鍵が語と一致しなくなるので切る
+            let keepsTyped = afterSpace || before.last.map { $0.kind == .word || Self.isNumberSpan($0) } ?? false
             let mark = symbol.map(\.mark)
                 ?? Self.punctuationMark(chars[i], opened: &opened, previousIsEnglish: previousIsEnglish)
                 ?? (keepsTyped ? String(chars[i]) : nil)
@@ -725,21 +742,30 @@ public final class Segmenter {
         source.split(separator: " ", omittingEmptySubsequences: false).map { registered(String($0)) }.joined(separator: " ")
     }
 
-    /// 綴りをそのまま引き（node.js）、無ければ句読点で区切った綴りごとに引く。英語の後の句読点は英語区間に入るので（github, や github,gitlab）
+    /// 綴りを句読点で区切り、頭から、句読点をまたいで最も長く一致する登録した打鍵（node.js、jpy.dev）ごとに引く。
+    /// 英語の後の句読点は英語区間に入るので（github, や github,gitlab や jpy.dev,）
     private func registered(_ spelling: String) -> String {
-        if let word = typedWords[spelling]?.first { return word }
-        var shown = ""
-        var run = ""
+        var tokens: [String] = []
         for c in spelling {
-            guard Self.punctuation[c] != nil else {
-                run.append(c)
+            if Self.punctuation[c] != nil || tokens.last.map({ Self.punctuation[$0.last!] != nil }) ?? true {
+                tokens.append(String(c))
+            } else {
+                tokens[tokens.count - 1].append(c)
+            }
+        }
+        var shown = ""
+        var start = 0
+        while start < tokens.count {
+            let end = (start..<tokens.count).reversed().first { typedWords[tokens[start...$0].joined()] != nil }
+            guard let end else {
+                shown += tokens[start]
+                start += 1
                 continue
             }
-            shown += typedWords[run]?.first ?? run
-            shown.append(c)
-            run = ""
+            shown += typedWords[tokens[start...end].joined()]![0]
+            start = end + 1
         }
-        return shown + (typedWords[run]?.first ?? run)
+        return shown
     }
 
     /// 隣り合う日本語区間を 1 つにまとめ、まとめた読みを最初の区間の文脈で変換し直す。

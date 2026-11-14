@@ -136,7 +136,7 @@ import Testing
 
     init() throws {
         segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten\njpy.dev\tCurrency API\ten\npwd.x\tPWDX\tja"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten\njpy.dev\tCurrency API\ten\nvue\tVue\ten\n404\tNot Found\ten\n110\t警察\ten\npwd.x\tPWDX\tja"))
     }
 
     /// 登録した語の後ろの句読点は、区間の種類（日本語か英語か）ではなく、語の見えている表記の最後の字で、確定済みの文字列の後と同じく形を決める。
@@ -157,9 +157,24 @@ import Testing
     }
 
     /// 登録した語の後ろの句読点で入力を切る前に、句読点をまたいで登録したもっと長い打鍵（jpy.dev、pwd.x）がそのまま打たれていれば、その語として読む
-    @Test(arguments: [("jpy.dev", "Currency API"), ("pwd.x", "PWDX"), ("jpy.", "円。"), ("pwd.", "PWD.")])
+    @Test(arguments: [("jpy.dev", "Currency API"), ("jpy.dev,", "Currency API,"), ("pwd.x", "PWDX"), ("jpy.", "円。"), ("pwd.", "PWD.")])
     func readsARegisteredKeyAcrossPunctuation(keys: String, shown: String) {
         #expect(segmenter.liveText(keys) == shown)
+    }
+
+    /// 登録した語の後ろの数の後ろの句読点は、数の前の語の表記で決める（Vue3. は e の側）。数字だけの打鍵で登録した語（404 → Not Found）は数ではなく語なので、その表記で決める
+    @Test(arguments: [("vue3.", "Vue3."), ("kyou 404,", "今日 Not Found,"), ("API 110,", "API 警察、")])
+    func punctuatesAfterANumberByTheUserWordBeforeIt(keys: String, shown: String) {
+        #expect(segmenter.liveText(keys) == shown)
+    }
+
+    /// 登録した語の文節を縮めて数だけの文節にしても、後ろの句読点は数の前に見えている文字列で決める（API 40 の後の 4, は I の側）
+    @Test func punctuatesAfterAUserWordResizedToANumber() throws {
+        let clauses = segmenter.clauses("API 404,")
+        let word = try #require(clauses.firstIndex { $0.output.hasPrefix("Not Found") })
+        let resized = segmenter.resize(segmenter.resize(clauses, at: word, by: -1), at: word, by: -1)
+        #expect(resized.map(\.output).joined().hasSuffix(","))
+        #expect(!resized.map(\.output).joined().contains("、"))
     }
 
     /// 文節の伸縮で登録した語の文節に戻したときも、後ろの句読点は区間の種類ではなく語の表記で形を決める（英語として登録した 円 の後は 、）
