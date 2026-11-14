@@ -4,13 +4,22 @@ import Foundation
 extension Segmenter {
     /// 打鍵列 keys の打っている途中の表示を、届いた変換 converted（届いた順）から作る。
     /// keys と同じ打鍵列の変換が届いていればそれを出す。届いていなければ、keys の先頭に当たる最新の変換から末尾の打ちかけの部分を外し、
-    /// 外した打鍵とその後に打った打鍵の読みをつなぐ。打ちかけの部分を外せない変換は飛ばして、その前の変換を使う。どれも使えなければ keys 全体を読む
+    /// 外した打鍵とその後に打った打鍵の読みをつなぐ。変換の後に入力を切る字を打ったなら、変換を外さずそのまま使う。
+    /// 打ちかけの部分を外せない変換は飛ばして、その前の変換を使う。どれも使えなければ keys 全体を読む
     public static func liveDisplay(
         of keys: String, converted: [(keys: String, display: LiveDisplay)], leading: Leading, table: RomajiTable
     ) -> LiveDisplay {
         if let same = converted.last(where: { $0.keys == keys }) { return same.display }
         for base in converted.reversed() where keys.hasPrefix(base.keys) {
-            guard let split = splitPending(base.display.text, typed: base.keys, table: table) else { continue }
+            // 利用者の辞書の語の表記（pwd → PWD、qqx → 第2）は末尾が打鍵と一致しないので、打ちかけの部分を外す形では使えない
+            let next = keys.dropFirst(base.keys.count).first
+            guard var split = splitPending(base.display.text, typed: base.keys, table: table)
+                ?? (next.map(cutsInput) == true ? (base.display.text, 0) : nil) else { continue }
+            // 数字の後の句読点（3。）の後に数字を打ったら、その句読点は数の区切りなので外して読み直す（3.1）
+            if split.pending == 0, next.map(isDigit) == true, let mark = base.keys.last, numberSeparators.contains(mark),
+               base.keys.dropLast().last.map(isDigit) == true, !split.kept.isEmpty {
+                split = (String(split.kept.dropLast()), 1)
+            }
             let rest = keys.dropFirst(base.keys.count - split.pending)
             let preceding = Preceding(split.kept.last ?? leading.text.last)
             let text = split.kept + provisionalText(
@@ -237,6 +246,11 @@ extension Segmenter {
         !keepsPunctuationTyped(afterText: leading.text + shown)
     }
 
+    /// 入力を切る打鍵か。空白、句読点、1 打鍵の記号（/ [ ]）
+    static func cutsInput(_ c: Character) -> Bool {
+        c == " " || punctuation[c] != nil || symbols[String(c)] != nil
+    }
+
     /// 打鍵列 keys の変換の表示 shown を、後ろに読みをつないでも崩れない部分と、末尾の打ちかけの打鍵の数に分ける。
     /// 打ちかけは、最後の母音より後ろの子音（表示に打ったまま出ている。読み終えた nn を除く）と、表示に打ったまま出ている末尾の単独の n。
     /// 末尾の n が単独かは、打鍵の末尾の英字のうち綴りの表で読める最も長い部分を、表の読みで決める（RomajiTable.readingBeforePendingN）。
@@ -283,9 +297,13 @@ extension Segmenter {
                 // 記号の後ろは区切りと同じく、日本語の記号の後なら日本語の側、組に合わせて半角にした閉じ丸括弧の後なら英語の側
                 afterJapanese = continuation(after: String(input[position]), mark: mark) != .afterEnglish
                 position += 1
-            } else if let longest = japaneseReadings(table: table, from: position, in: input, before: preceding).last(where: {
-                $0.end < input.count || table.readingBeforePendingN(String(input[position...])) == nil
-            }) {
+            } else if case let runEnd = runEnd(from: position, in: input, preceding: preceding),
+                      let longest = japaneseReadings(table: table, from: position, in: Array(input[..<runEnd]), before: preceding).last(where: {
+                          // 日本語の側の後で入力を切る字の手前の単独の n は、区切りと同じく日本語区間の終わりの n として ん と読む（nihon. の n）。
+                          // 英語の後の n（kotlin. の n）は英語の綴りの続きなので読まない
+                          $0.end < runEnd || (runEnd < input.count && afterJapanese)
+                              || table.readingBeforePendingN(String(input[position..<runEnd])) == nil
+                      }) {
                 text += longest.kana
                 // 数字は日本語でも英語でもないので、数字だけの読みは直前の側を変えない（html5. の . は打ったまま）
                 if !isNumber(longest.kana) { afterJapanese = true }
@@ -297,5 +315,12 @@ extension Segmenter {
             }
         }
         return text
+    }
+
+    /// position から、区切りと同じく入力を切る位置（記号の打鍵、数の区切りでない句読点・空白）まで。読みはこの手前で終える
+    private static func runEnd(from position: Int, in input: [Character], preceding: Preceding) -> Int {
+        (position..<input.count).first { i in
+            symbol(at: i, in: input) != nil || (cutsInput(input[i]) && !isNumberSeparator(at: i, in: input, before: preceding.key))
+        } ?? input.count
     }
 }

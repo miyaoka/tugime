@@ -118,6 +118,15 @@ import Testing
         ("konna", [("konn", "Konn")], "", "Konnあ"),
         // 綴りの表で xn が組になる xnn の最後の n は単独なので、次の打鍵と読み直す
         ("kaxnna", [("kaxnn", "艦n")], "", "艦な"),
+        // 届いた変換の後に入力を切る字を打ったなら、末尾が打鍵と一致しない表記（利用者の辞書の語）もそのまま使う
+        ("pwd,", [("pwd", "PWD")], "", "PWD,"),
+        ("qqx ", [("qqx", "第2")], "", "第2 "),
+        // 日本語の後で入力を切る字の手前の単独の n は ん。英語の後の n は英語の綴りの続き
+        ("nihon.", [("nihon", "にほn")], "", "にほん。"),
+        ("nihon.", [], "", "にほん。"),
+        ("kotlin.", [("kotlin", "kotlin")], "", "kotlin."),
+        // 数字の後の句読点の後に数字を打ったら、句読点は数の区切り
+        ("kanji 3.1", [("kanji 3.", "感じ 3。")], "", "感じ 3.1"),
     ])
     func liveDisplay(keys: String, converted: [(String, String)], before: String, expected: String) {
         let shown = Segmenter.liveDisplay(

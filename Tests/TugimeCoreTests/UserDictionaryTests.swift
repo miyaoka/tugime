@@ -141,19 +141,22 @@ import Testing
 
     /// 登録した語の後ろの句読点は、区間の種類（日本語か英語か）ではなく、語の見えている表記の最後の字で、確定済みの文字列の後と同じく形を決める。
     /// 日本語の文字の後は日本語の記号、ラテン文字（é を含む）や記号の後は打ったまま。数で終われば数の前の文字で決める。続けて打っても、語まで確定してから打っても同じ形になる。
-    /// 変換が届く前の表示の句読点も同じ形になる。ただし登録した表記が打鍵と違う綴りで始まり、日本語の側の字で終わる語（qqx → 第2、jpy → 円）は、
-    /// 届く前は打鍵の全体を打ったまま読み直し（qqx,）、句読点の前の字が変わるので、届く前を比べない
+    /// 変換が届く前の表示も、届いた語の表記に句読点をつないだ同じ表示になる（登録した表記が打鍵と違う綴りの pwd → PWD、qqx → 第2 も）
     @Test(arguments: [
-        ("pwd", "PWD", ",", true), ("resume", "résumé", ",", true), ("cafe", "Café", ",", true),
-        ("qqx", "第2", "、", false), ("yahoo", "Yahoo!", ",", true), ("jpy", "円", "、", false),
+        ("pwd", "PWD", ","), ("resume", "résumé", ","), ("cafe", "Café", ","),
+        ("qqx", "第2", "、"), ("yahoo", "Yahoo!", ","), ("jpy", "円", "、"),
     ])
-    func punctuatesAfterAUserWordByItsShownLetter(keys: String, shown: String, mark: String, comparesProvisional: Bool) {
+    func punctuatesAfterAUserWordByItsShownLetter(keys: String, shown: String, mark: String) {
         #expect(segmenter.liveText(keys + ",") == shown + mark)
-        if comparesProvisional {
-            let beforeConversion = Segmenter.liveDisplay(of: keys + ",", converted: [(keys, segmenter.liveDisplay(keys))], leading: .start, table: segmenter.table)
-            #expect(beforeConversion.text.last == mark.last, "変換が届く前")
-        }
+        let beforeConversion = Segmenter.liveDisplay(of: keys + ",", converted: [(keys, segmenter.liveDisplay(keys))], leading: .start, table: segmenter.table)
+        #expect(beforeConversion.text == shown + mark, "変換が届く前")
         #expect(segmenter.liveText(",", leading: Segmenter.Leading(shown)) == mark, "確定してから")
+    }
+
+    /// 登録した語の後に空白を打っても、変換が届く前の表示は語の表記のまま（PWD に空白をつなぐ）
+    @Test func keepsAUserWordShownBeforeASpace() {
+        let beforeConversion = Segmenter.liveDisplay(of: "pwd ", converted: [("pwd", segmenter.liveDisplay("pwd"))], leading: .start, table: segmenter.table)
+        #expect(beforeConversion.text == "PWD ")
     }
 
     /// 登録した語の後ろの句読点で入力を切る前に、句読点をまたいで登録したもっと長い打鍵（jpy.dev、pwd.x）がそのまま打たれていれば、その語として読む
