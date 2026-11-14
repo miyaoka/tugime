@@ -635,8 +635,9 @@ private final class DisplayRecorder: JapaneseConverting {
     }
 
     /// 空白の後の Space は、末尾の空白の前の 1 語を、今の区切りと反対の言語の 1 文節にする。どちらの言語に読まれるかは点で決まるので、
-    /// 今の区切りの種類を読んでから、その反対になることを確かめる。元の言語の表記は 2 番目の候補に置き、語より前は語の手前までを入力として区切る
-    @Test(arguments: ["kyouha make ", "kyou ", "kono hide  "])
+    /// 今の区切りの種類を読んでから、その反対になることを確かめる。打っている途中に見えていた語の表示を 2 番目の候補に置き、
+    /// 語より前は語の手前までを入力として区切る
+    @Test(arguments: ["kyouha make ", "kyou ", "kono hide  ", "watasi ha nomu "])
     func flipsTheLastWordBeforeTheSpaceToTheOtherLanguage(input: String) throws {
         let word = input.trimmingCharacters(in: .whitespaces).split(separator: " ").last.map(String.init)!
         let wordStart = input.reversed().drop { $0 == " " }.count - word.count
@@ -649,19 +650,17 @@ private final class DisplayRecorder: JapaneseConverting {
         let flipped = clauses[focus]
         #expect(flipped.span.source == word)
         #expect(flipped.kind == (wasEnglish ? .japanese : .english))
-        if wasEnglish {
-            #expect(flipped.candidates[1] == word)
-        } else {
-            #expect(flipped.output == word)
-            #expect(!flipped.candidates[1].contains { $0.isASCII && $0.isLetter })
-        }
+        if !wasEnglish { #expect(flipped.output == word) }
         let before = String(input.prefix(wordStart))
+        // 空白より前の表示は後ろの打鍵で変わらないので、見えていた語の表示は、全体の表示から語の前の表示と末尾の空白を除いたもの
+        let shown = segmenter.liveText(input).dropFirst(segmenter.liveText(before).count).trimmingCharacters(in: .whitespaces)
+        #expect(flipped.candidates[1] == shown)
         #expect(clauses[..<focus].map(\.output).joined() == segmenter.clauses(before).map(\.output).joined())
         #expect(clauses[(focus + 1)...].map(\.output).joined() == String(repeating: " ", count: input.count - wordStart - word.count))
     }
 
-    /// 空白で終わらない、空白しか無い、語が句読点か記号を含む、英語の語が日本語に読み切れないときは、反対の言語にしない（Space は空白を足す）
-    @Test(arguments: ["make", " ", "kyou, ", "kore[ ", "github "])
+    /// 空白で終わらない、空白しか無い、語が句読点か記号を含む、数字だけ、英語の語が日本語に読み切れないときは、反対の言語にしない（Space は空白を足す）
+    @Test(arguments: ["make", " ", "kyou, ", "kore[ ", "kore ha 3 ", "github "])
     func keepsTheWordWhenItCannotFlip(input: String) {
         #expect(segmenter.clausesFlippingLastWord(input) == nil)
     }
