@@ -294,6 +294,9 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(output(",", leading: Segmenter.Leading("了解😊")) == "、")
         #expect(output(",", leading: Segmenter.Leading("ＡＢＣ")) == "、")
         #expect(output(",", leading: Segmenter.Leading("Straße")) == ",")
+        #expect(output(",", leading: Segmenter.Leading("cafe\u{301}")) == ",")
+        #expect(output(",", leading: Segmenter.Leading("ドラゴンクエストⅢ")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("手順1️⃣")) == "、")
         #expect(output("~", leading: Segmenter.Leading("今日")) == "〜")
         #expect(output("~", leading: Segmenter.Leading("API")) == "~")
     }

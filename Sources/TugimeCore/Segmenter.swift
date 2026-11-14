@@ -165,12 +165,18 @@ public final class Segmenter {
         return isLatinSide(last)
     }
 
-    /// 後ろの句読点を打ったままにする文字か。空白でない ASCII の字と、Unicode の文字種がラテン文字（Script=Latin）の字（é ü ß）。
-    /// 全角の英字（Ａ）はラテン文字だが、全角形は日本語の文章で使う形なので含めない
+    /// 後ろの句読点を打ったままにする文字か。空白でない ASCII の字と、Unicode の文字種がラテン文字（Script=Latin）の文字（é ü ß）。
+    /// ASCII かは字全体で見る（キーキャップの絵文字 1️⃣ は ASCII の 1 に記号が重なった字なので含めない）。
+    /// ラテン文字の区画にあっても文字でない字（ローマ数字 Ⅲ）と、全角形の英字（Ａ。日本語の文章で使う形）は含めない
     static func isLatinSide(_ c: Character) -> Bool {
         guard !c.isWhitespace, let base = c.unicodeScalars.first else { return false }
-        if base.isASCII { return true }
+        if c.isASCII { return true }
         if (0xFF00...0xFFEF).contains(base.value) { return false }
+        // ローマ数字は Alphabetic なので Character.isLetter では外れない。一般カテゴリで文字（L）かを見る
+        switch base.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter: break
+        default: return false
+        }
         // 正規表現の Unicode 属性は、Character には最初の scalar で当たる
         return String(c).wholeMatch(of: #/\p{Script=Latin}/#) != nil
     }
