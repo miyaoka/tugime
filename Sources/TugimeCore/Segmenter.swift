@@ -110,8 +110,8 @@ public final class Segmenter {
         /// 入力が前の文字列のどこに続くか
         var continuation: Continuation { Continuation(after: text) }
 
-        /// 入力の先頭の句読点の側。句読点の形は、後ろが文の頭かとは別に、前の文字列の直前の文字で決める（keepsPunctuationTyped(afterText:)）
-        var punctuationContinuation: Continuation { Segmenter.keepsPunctuationTyped(afterText: text) ? .afterEnglish : .afterJapanese }
+        /// 入力の先頭の句読点を打ったままにするか。後ろが文の頭か（continuation）とは別に、前の文字列の直前の文字で決める
+        var keepsPunctuationTyped: Bool { Segmenter.keepsPunctuationTyped(afterText: text) }
 
         /// 入力の最初の日本語区間の評価のしかた。前の文字列が、末尾の空白を飛ばして数字で終わるなら、未確定の文字列の中の数字の後と同じく、その数字に続く形にする。
         /// 確定してから続きを打っても、まとめて打ったときと同じ評価になる
@@ -136,21 +136,13 @@ public final class Segmenter {
         /// 数（numberLength）で終わるなら、未確定の文字列の中と同じく、数はその前の文字の側に付く。前が ASCII の英字や記号なら英語の後、それ以外は日本語の後
         init(after spaced: String) {
             let text = Segmenter.droppingTrailingSpaces(spaced)
-            let number = Segmenter.numberLength(text.reversed())
-            guard number > 0 else {
-                self.init(last: text.last)
-                return
-            }
-            let before = text.dropLast(number).last
-            self = before.map { $0.isASCII && !$0.isWhitespace } == true ? .afterEnglish : .afterJapanese
-        }
-
-        private init(last: Character?) {
-            guard let last, !last.isWhitespace, !last.unicodeScalars.contains(where: \.properties.isSentenceTerminal) else {
+            let startsSentence = Segmenter.numberLength(text.reversed()) == 0
+                && text.last.map { $0.isWhitespace || $0.unicodeScalars.contains(where: \.properties.isSentenceTerminal) } ?? true
+            if startsSentence {
                 self = .start
                 return
             }
-            self = last.isASCII ? .afterEnglish : .afterJapanese
+            self = Segmenter.keepsPunctuationTyped(afterText: text) ? .afterEnglish : .afterJapanese
         }
 
         /// 最初の日本語区間の評価のしかた
@@ -418,33 +410,34 @@ public final class Segmenter {
     /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
     /// 句読点と記号の打鍵を英語の区間に含めないときは、その位置で入力を切り、後ろは continuation(after:mark:) で評価する
     public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
-        segment(input, after: leading.punctuationContinuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text), preceding: Preceding(leading.text.last))
+        segment(input, keepsPunctuationTyped: leading.keepsPunctuationTyped, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text), preceding: Preceding(leading.text.last))
     }
 
     /// 区切りを決めた部分の採点で比べた区間の候補を返す。句読点の前で英語に続くと分かって採点し直す部分の候補は含めない。診断用
     public func candidates(_ input: String, leading: Leading = .start) -> [ScoredSpan] {
         var spans: [ScoredSpan] = []
         _ = segment(
-            input, after: leading.punctuationContinuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text), preceding: Preceding(leading.text.last)
+            input, keepsPunctuationTyped: leading.keepsPunctuationTyped, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text), preceding: Preceding(leading.text.last)
         ) { spans.append($0) }
         return spans
     }
 
-    /// context は、最初の句読点か記号までの部分の最初の日本語区間を評価する形。opened は入力より前の閉じていない開き丸括弧。
+    /// keepsPunctuationTyped は、入力の先頭の句読点を打ったままにするか。context は、最初の句読点か記号までの部分の最初の日本語区間を評価する形。opened は入力より前の閉じていない開き丸括弧。
     /// preceding は入力の直前で、入力の先頭が数の区切りか（isNumberSeparator）と、長音と読めるか（lengthensOnlyJapanese）を決めるのに使う
-    func segment(_ input: String, after continuation: Continuation, context: JapaneseContext, opened: [Character], preceding: Preceding) -> [Segment] {
-        segment(input, after: continuation, context: context, opened: opened, preceding: preceding, observe: nil)
+    func segment(_ input: String, keepsPunctuationTyped: Bool, context: JapaneseContext, opened: [Character], preceding: Preceding) -> [Segment] {
+        segment(input, keepsPunctuationTyped: keepsPunctuationTyped, context: context, opened: opened, preceding: preceding, observe: nil)
     }
 
     /// observe には、区切りを決めた部分の区間の候補だけを渡す。句読点の前で英語に続くと分かって採点し直す部分の候補は渡さない
     private func segment(
-        _ input: String, after continuation: Continuation, context: JapaneseContext, opened: [Character], preceding: Preceding,
+        _ input: String, keepsPunctuationTyped: Bool, context: JapaneseContext, opened: [Character], preceding: Preceding,
         observe: ((ScoredSpan) -> Void)?
     ) -> [Segment] {
         let chars = Array(input)
         var segments: [Segment] = []
         var runStart = 0
-        var runContinuation = continuation
+        // 今の部分の先頭の句読点を打ったままにするか
+        var runKeepsTyped = keepsPunctuationTyped
         var runContext = context
         var opened = opened
         // 今の部分の前が空白か
@@ -460,7 +453,7 @@ public final class Segmenter {
                 segments += before
                 if let last = before.last {
                     runContext = Self.context(after: chars[runStart..<i])
-                    runContinuation = Self.keepsPunctuationTyped(after: last) ? .afterEnglish : .afterJapanese
+                    runKeepsTyped = Self.keepsPunctuationTyped(after: last)
                 }
                 segments.append(Self.spaceSegment(String(chars[i..<(i + spaces)]), context: runContext))
                 i += spaces
@@ -477,9 +470,9 @@ public final class Segmenter {
             var runSpans: [ScoredSpan] = []
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, preceding: runStart == 0 ? preceding : Preceding(chars[runStart - 1]), spaced: runAfterSpace, observe: collect)
-            let previousIsEnglish = before.last.map { Self.keepsPunctuationTyped(after: $0) } ?? (runContinuation == .afterEnglish)
+            let previousIsEnglish = before.last.map { Self.keepsPunctuationTyped(after: $0) } ?? runKeepsTyped
             // nil なら打ったまま直前の英語の区間に含める。空白の直後は含める英語の語が無いので、打ったままの形の句読点の区間にして入力を切る。
-            // 空白の直後の previousIsEnglish は、空白を飛ばした前の区間の言語（runContinuation）
+            // 空白の直後の previousIsEnglish は、空白を飛ばした前の区間の表記で決めた runKeepsTyped
             // 利用者の辞書の語の後ろも、含めると打鍵が語と一致しなくなるので、英字で終わる語の後ろは打ったままの形の句読点の区間にして入力を切る
             let afterSpace = runAfterSpace && runStart == i
             let keepsTyped = afterSpace || before.last?.kind == .word
@@ -491,8 +484,9 @@ public final class Segmenter {
             segments += before
             segments.append(Segment(kind: .punctuation, source: key, reading: mark, output: mark, score: 0, context: .start))
             runStart = end
-            runContinuation = Self.continuation(after: key, mark: mark)
-            runContext = runContinuation.japaneseContext
+            let markContinuation = Self.continuation(after: key, mark: mark)
+            runKeepsTyped = markContinuation == .afterEnglish
+            runContext = markContinuation.japaneseContext
             // 空白の直後の句読点か記号の後ろ（空白で区切った括弧の中の語）も、空白で区切った語として読む
             runAfterSpace = afterSpace
         }
