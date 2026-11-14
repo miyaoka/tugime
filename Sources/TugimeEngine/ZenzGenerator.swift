@@ -29,11 +29,13 @@ final class ZenzGenerator: DirectDisplayGenerating {
         case model(String)
         case context(String)
         case vocabulary(String)
+        case positions(String)
         case grammar
         var description: String {
             switch self {
             case .model(let path): "モデルを読めない: \(path)"
             case .vocabulary(let path): "モデルの語彙を読めない: \(path)"
+            case .positions(let path): "モデルの位置の数が、読みと出力を 1 字も収められない: \(path)"
             case .context(let path): "llama.cpp のコンテキストを作れない: \(path)"
             case .grammar: "出力の文法を作れない"
             }
@@ -86,7 +88,13 @@ final class ZenzGenerator: DirectDisplayGenerating {
             throw LoadError.vocabulary(weight.path)
         }
         self.vocab = vocab
-        maxPositions = Int(llama_model_n_ctx_train(model))
+        // 読みは出力と合わせて位置の数に収まる長さに分けて変換するので、1 字も収まらない位置の数では変換できない
+        let positions = Int(llama_model_n_ctx_train(model))
+        guard ZenzPrompt.maxChunkLength(positions: positions) >= 1 else {
+            llama_model_free(model)
+            throw LoadError.positions(weight.path)
+        }
+        maxPositions = positions
         var contextParams = llama_context_default_params()
         contextParams.n_ctx = UInt32(maxPositions)
         contextParams.n_batch = UInt32(maxPositions)

@@ -99,9 +99,11 @@ final class TugimeInputController: IMKInputController {
     // InputMethodKit の基底クラスは隔離の指定を持たないので、上書きする関数は nonisolated にし、中身を onMain でメインアクターとして動かす。
     // IMK から渡される引数は並行性で安全と示されていない型だが、同期的に使うだけなので nonisolated(unsafe) で受け直して渡す
 
-    /// メインアクターで同期実行する。IMK の呼び出しはメインスレッドで届く前提で、崩れたらここで止める
+    /// メインアクターで同期実行する。メインスレッド以外で届いたら、想定外の状態として記録し、メインスレッドで同期実行する
     private nonisolated func onMain<T: Sendable>(_ work: @MainActor () -> T) -> T {
-        MainActor.assumeIsolated(work)
+        if Thread.isMainThread { return MainActor.assumeIsolated(work) }
+        Unexpected.reached("IMK の呼び出しがメインスレッド以外で届いた", continuingWith: ())
+        return DispatchQueue.main.sync { MainActor.assumeIsolated(work) }
     }
 
     nonisolated override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
@@ -134,7 +136,7 @@ final class TugimeInputController: IMKInputController {
     /// 入力メニュー（メニューバーの入力ソースのメニュー）に足す項目。選ぶと IMK がこのコントローラの action を呼ぶ
     nonisolated override func menu() -> NSMenu! {
         nonisolated(unsafe) var menu: NSMenu?
-        MainActor.assumeIsolated {
+        onMain {
             let built = NSMenu()
             // 設定は窓に集める。よく使うものは入口としてここにも並べる
             built.addItem(NSMenuItem(title: "tugime の辞書を編集…", action: #selector(openUserDictionary(_:)), keyEquivalent: ""))

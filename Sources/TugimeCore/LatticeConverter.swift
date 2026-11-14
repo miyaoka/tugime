@@ -15,6 +15,10 @@ final class LatticeConverter: JapaneseConverting {
     static let listingBest = 20
     /// 数の語のコスト。Mozc が入力の数字に置く語と同じ（immutable_converter.cc の kDefaultNumberCost）
     static let numberCost: Int32 = 3000
+    /// 道のコストが Int32 に収まる読みの長さの上限。道の 1 歩は 1 文字以上を食い、足すのは語のコストと連接のコストの 1 つずつで、
+    /// どちらも絶対値が Int16 の範囲に収まる（辞書の語と連接は Int16 で持ち、利用者の語・数・辞書に無い 1 かなのコストはそれより小さい）。
+    /// 区間の終わりで足す連接 1 つを加えても収まる
+    static let maxReadingLength = Int(Int32.max) / (2 * (Int(Int16.max) + 1))
 
     /// 読みの start..<end が、数（Segmenter.numberLength。3.14 1,000 も 1 つの数）の頭から始まる数だけの並びか。数の語は数の頭から始める。
     /// 読みは後ろへ伸びるので、数の終わりは決めず、どこで終わっても 1 語にする。格子は語の読みの最長の文字数より前へ遡らないので、
@@ -71,9 +75,10 @@ final class LatticeConverter: JapaneseConverting {
 
     // 前向きの計算の作業域。品詞の数だけの表を使い回す
     private var ridSlot: [Int32]
-    private var memoStamp: [Int32]
+    /// 位置ごとの計算の印。プロセスが動く間、戻さずに増やすので、あふれない幅（Int）で持つ
+    private var memoStamp: [Int]
     private var memo: [[(cost: Int32, rid: UInt16, rank: UInt8)]]
-    private var stamp: Int32 = 0
+    private var stamp = 0
 
     init(dictionary: SystemDictionary) {
         self.dictionary = dictionary
@@ -322,6 +327,9 @@ final class LatticeConverter: JapaneseConverting {
     private func reading(_ kana: String, startRid: UInt16, context: JapaneseContext) -> JapaneseReading {
         let unconverted = JapaneseReading(text: kana, value: 0, clauses: [], context: context)
         guard !kana.isEmpty else { return Unexpected.reached("空の読みは変換しない", continuingWith: unconverted) }
+        guard kana.count <= Self.maxReadingLength else {
+            return Unexpected.reached("道のコストが収まらない長さの読みは変換しない（読みの長さ）", numbers: [kana.count], continuingWith: unconverted)
+        }
         let key = ReadingKey(kana: kana, context: context)
         if let cached = readings[key] { return cached }
         let (chars, bytes, offsets) = Self.layout(kana)
@@ -344,6 +352,9 @@ final class LatticeConverter: JapaneseConverting {
 
     func alternatives(kana: String, context: JapaneseContext) -> [String] {
         guard !kana.isEmpty else { return [] }
+        guard kana.count <= Self.maxReadingLength else {
+            return Unexpected.reached("道のコストが収まらない長さの読みは候補を求めない（読みの長さ）", numbers: [kana.count], continuingWith: [])
+        }
         let (chars, bytes, offsets) = Self.layout(kana)
         var positions = [Self.startPosition(startRid(context))]
         for end in 1...chars.count {

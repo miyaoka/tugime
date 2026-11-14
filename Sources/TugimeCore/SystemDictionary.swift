@@ -62,7 +62,9 @@ public final class SystemDictionary: @unchecked Sendable {
         let pos = Int(header[F.posCount.rawValue])
         let ids = [F.numberId, .nounId, .properNounId, .periodId].map { Int(header[$0.rawValue]) }
         guard header[F.magic.rawValue] == SystemDictionaryLayout.magic, header[F.version.rawValue] == SystemDictionaryLayout.version,
-              (1...Int(UInt16.max) + 1).contains(pos), ids.allSatisfy({ $0 < pos }), header[F.maxReadingChars.rawValue] >= 1
+              (1...Int(UInt16.max) + 1).contains(pos), ids.allSatisfy({ $0 < pos }), header[F.maxReadingChars.rawValue] >= 1,
+              // 格子は語の番号を Int32 で持つ
+              header[F.entryCount.rawValue] <= UInt32(Int32.max)
         else {
             munmap(mapped, length)
             throw LoadError.wrongFormat(url.path)
@@ -142,7 +144,7 @@ public final class SystemDictionary: @unchecked Sendable {
         let start = Int(readingOffsets[i])
         let count = Int(readingOffsets[i + 1]) - start
         let order = memcmp(readingBytes + start, key.baseAddress!, min(count, key.count))
-        return order != 0 ? order : Int32(count - key.count)
+        return order != 0 ? order : count < key.count ? -1 : count > key.count ? 1 : 0
     }
 
     /// key と同じ読みの語の範囲
