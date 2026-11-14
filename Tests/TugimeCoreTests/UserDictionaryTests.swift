@@ -136,7 +136,17 @@ import Testing
 
     init() throws {
         segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten"))
+    }
+
+    /// 登録した語の後ろの句読点は、区間の種類（日本語か英語か）ではなく、語の見えている最後の字で形を決める。
+    /// 続けて打っても、変換が届く前の表示でも、語まで確定してから打っても同じ形になる
+    @Test(arguments: [("pwd", "PWD", ","), ("resume", "résumé", "、"), ("cafe", "Café", "、")])
+    func punctuatesAfterAUserWordByItsShownLetter(keys: String, shown: String, mark: String) {
+        #expect(segmenter.liveText(keys + ",") == shown + mark)
+        let provisional = Segmenter.liveDisplay(of: keys + ",", converted: [(keys, segmenter.liveDisplay(keys))], leading: .start, table: segmenter.table)
+        #expect(provisional.text.hasSuffix(mark), "変換が届く前")
+        #expect(segmenter.liveText(",", leading: Segmenter.Leading(shown)) == mark, "確定してから")
     }
 
     /// 日本語として扱う語の区間の後ろの - は、その語の見えている最後の字で長音を判定する（すご の後ろは ー、Café の後ろは打ったまま）
