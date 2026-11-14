@@ -582,6 +582,19 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(result.keys == "de")
     }
 
+    /// 確定する文節の直後の空白は一緒に確定し、残りは空白で始まらない。空白だけが残るなら残りは空
+    @Test func committingThroughAClauseTakesTheSpacesAfterIt() throws {
+        let clauses = segmenter.clauses("kyouha node wo")
+        let first = try #require(segmenter.commit(clauses, through: 0))
+        #expect(first.text == clauses[0].output + " ")
+        #expect(first.keys == "node wo")
+        #expect(first.rest.first?.isSpace == false)
+        let trailing = segmenter.clauses("kyouha ")
+        let last = try #require(segmenter.commit(trailing, through: 0))
+        #expect(last.rest.isEmpty)
+        #expect(last.keys == "")
+    }
+
     /// きゃ は 1 つの綴り kya なので、き と ゃ のあいだに当たる打鍵は無い。かなの文字種にはでき、英字にはできない
     @Test func refusesLettersForACutInsideOneSpelling() {
         let clauses = segmenter.resize(segmenter.resize(segmenter.clauses("kyaku"), at: 0, by: -1), at: 0, by: -1)

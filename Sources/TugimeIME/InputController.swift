@@ -538,7 +538,8 @@ final class TugimeInputController: IMKInputController {
     /// 選んでいる文節までを確定し、残りの文節は変換したまま、次の文節を選んだ状態で残す。
     /// 選んでいるのが最後の文節なら全体を確定する。切る位置に当たる打鍵が決まらなければ何もしない
     private func commitThroughFocus(_ clauses: [Clause], client: IMKTextInput) {
-        guard focus < clauses.count - 1 else {
+        // 後ろが空白だけなら、空白ごと全体を確定する（`Segmenter.commit(_:through:)` は空白だけを残さない）
+        guard clauses[(focus + 1)...].contains(where: { !$0.isSpace }) else {
             commit(client)
             return
         }
