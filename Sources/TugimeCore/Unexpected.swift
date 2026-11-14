@@ -32,14 +32,20 @@ public enum Unexpected {
     static let logger = Logger(subsystem: logSubsystem, category: "unexpected")
 
     /// 想定外の状態に当たったことを記録して value を返す。value は計算を最後まで進めるためだけの値で、操作の結果は `guarded` が捨てる。
-    /// reason は利用者の入力を含まない理由の文で、ログに読める形で出す。detail は利用者の打鍵から来る値で、ログでは伏せる
+    /// reason（理由の文）と numbers（位置や件数）はログに読める形で出す。reason を StaticString にして、利用者の打鍵を補間できないようにする。
+    /// detail は利用者の打鍵から来る値で、ログでは伏せる
     static func reached<T>(
-        _ reason: String, detail: @autoclosure () -> String = "", continuingWith value: T, file: StaticString = #fileID, line: UInt = #line
+        _ reason: StaticString, numbers: [Int] = [], detail: @autoclosure () -> String = "", continuingWith value: T,
+        file: StaticString = #fileID, line: UInt = #line
     ) -> T {
+        let reason = "\(reason)"
+        let counts = numbers.map(String.init).joined(separator: " ")
         let shown = detail()
-        logger.fault("想定外の状態（\(file, privacy: .public):\(line, privacy: .public)）: \(reason, privacy: .public) \(shown, privacy: .private)")
+        logger.fault(
+            "想定外の状態（\(file, privacy: .public):\(line, privacy: .public)）: \(reason, privacy: .public) \(counts, privacy: .public) \(shown, privacy: .private)"
+        )
         current?.mark()
-        if stopsInDebug { assertionFailure("\(reason) \(shown)", file: file, line: line) }
+        if stopsInDebug { assertionFailure("\(reason) \(counts) \(shown)", file: file, line: line) }
         return value
     }
 

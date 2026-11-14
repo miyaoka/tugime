@@ -64,7 +64,7 @@ extension Segmenter {
     /// 文字種の変換は名前が決まっているので失敗しない
     private static func transform(_ text: String, _ transform: StringTransform, reverse: Bool) -> String {
         guard let result = text.applyingTransform(transform, reverse: reverse) else {
-            return Unexpected.reached("文字種の変換に失敗した: \(transform.rawValue)", detail: text, continuingWith: text)
+            return Unexpected.reached("文字種の変換に失敗した", detail: "\(transform.rawValue) \(text)", continuingWith: text)
         }
         return result
     }

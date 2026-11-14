@@ -164,12 +164,14 @@ final class TugimeInputController: IMKInputController {
     /// 選んでいる文節の候補を選んでいる最中なら、見えている範囲と選んでいる候補。窓が画面に出ているか（アプリが位置を返したか）によらない
     private var candidatePage: CandidatePage?
 
-    /// 候補を選び始め、窓を選んでいる文節の下に置く。窓を置くのはここだけで、候補を進めても置き直さない
-    private func openCandidates(_ clauses: [Clause], client: IMKTextInput) {
-        let focus = focus
-        guard let candidatePage = Unexpected.guarded({ CandidatePage(count: clauses[focus].candidates.count, selected: clauses[focus].selected) }) else {
-            return
-        }
+    /// 文節 clauses の focus 番目の候補を選び始めるときの窓の範囲。想定外の状態に当たれば nil
+    private static func candidatePage(of clauses: [Clause], at focus: Int) -> CandidatePage? {
+        Unexpected.guarded { CandidatePage(count: clauses[focus].candidates.count, selected: clauses[focus].selected) }
+    }
+
+    /// 候補を選び始め、窓を選んでいる文節の下に置く。窓を置くのはここだけで、候補を進めても置き直さない。
+    /// candidatePage は candidatePage(of:at:) で、状態を書き換える前に作っておく
+    private func openCandidates(_ clauses: [Clause], page candidatePage: CandidatePage, client: IMKTextInput) {
         self.candidatePage = candidatePage
         candidateWindow.onClick = { [weak self] index in self?.clickCandidate(index) }
         // 選んでいる文節の最初の文字の、未確定の文字列の中での位置。showMarkedText と同じく UTF-16 で数える
@@ -274,9 +276,7 @@ final class TugimeInputController: IMKInputController {
             if event.modifierFlags.contains(.shift) {
                 // 矢印キーと同じく文節の選択に入り、最初の文節までを確定する
                 guard let clauses = segmentedClauses() else { return true }
-                self.clauses = clauses
-                focus = 0
-                commitThroughFocus(clauses, client: client)
+                commitThroughFocus(clauses, at: 0, client: client)
             } else {
                 commit(client)
             }
@@ -295,10 +295,11 @@ final class TugimeInputController: IMKInputController {
                         return true
                     }
                     if let flipped = flip {
+                        guard let page = Self.candidatePage(of: flipped.clauses, at: flipped.focus) else { return true }
                         clauses = flipped.clauses
                         focus = flipped.focus
                         showMarkedText(client)
-                        openCandidates(flipped.clauses, client: client)
+                        openCandidates(flipped.clauses, page: page, client: client)
                         return true
                     }
                 }
@@ -307,33 +308,38 @@ final class TugimeInputController: IMKInputController {
                 return true
             }
             // 打っている途中に変換はもう見せているので、↓ と同じく最初の文節を選んで候補の窓まで出す
-            guard let clauses = segmentedClauses() else { return true }
+            guard let clauses = segmentedClauses(), let page = Self.candidatePage(of: clauses, at: 0) else { return true }
             self.clauses = clauses
             focus = 0
             showMarkedText(client)
-            return handleConverted(event, clauses: clauses, client: client)
+            openCandidates(clauses, page: page, client: client)
+            return true
         case KeyCode.left, KeyCode.right, KeyCode.up, KeyCode.down:
-            // 打っている途中も変換して見せているので、矢印キーで Shift+Space を押さずに文節の選択に入る
+            // 打っている途中も変換して見せているので、矢印キーで Shift+Space を押さずに文節の選択に入る。
+            // 入った後のキーの動き（Shift+← → の伸縮、↓ の候補の窓）も、状態を書き換える前に計算する
             guard !keys.isEmpty else { return false }
             let toLast = event.keyCode == KeyCode.left
-            guard let clauses = segmentedClauses(),
-                  let focus = Unexpected.guarded({ toLast ? Clause.focus(0, movedBy: -1, in: clauses) : 0 })
+            guard let segmented = segmentedClauses(),
+                  let focus = Unexpected.guarded({ toLast ? Clause.focus(0, movedBy: -1, in: segmented) : 0 })
             else { return true }
+            var clauses = segmented
+            var page: CandidatePage?
+            if [KeyCode.left, KeyCode.right].contains(event.keyCode), event.modifierFlags.contains(.shift) {
+                guard let resized = resizing(segmented, at: focus, by: toLast ? -1 : 1) else { return true }
+                clauses = resized
+            } else if event.keyCode == KeyCode.down {
+                guard let opened = Self.candidatePage(of: segmented, at: focus) else { return true }
+                page = opened
+            }
             self.clauses = clauses
             self.focus = focus
-            // ↑ ↓ は文節の表示を描き直さないので、先に文節の選択の表示にしておく
             showMarkedText(client)
-            // Shift 無しの ← → は、文節を選ぶところまでがそのキーの動き
-            let selectsOnly = [KeyCode.left, KeyCode.right].contains(event.keyCode) && !event.modifierFlags.contains(.shift)
-            if selectsOnly { return true }
-            return handleConverted(event, clauses: clauses, client: client)
+            if let page { openCandidates(clauses, page: page, client: client) }
+            return true
         case KeyCode.backspace:
             guard !keys.isEmpty else { return false }
             // 見えている最後の 1 文字をその打鍵ごと消し、残りは変換し直さずに見えていたまま残す。表示を残せなければ、打ったかなの最後の単位を消して変換し直す
-            let (typed, typedLeading, table) = (keys, leading, conversion.table)
-            guard let shown = liveDisplay,
-                  let deleted = Unexpected.guarded({ Segmenter.deletingLast(of: typed, shown: shown, leading: typedLeading, table: table) })
-            else { return true }
+            let deleted = Segmenter.deletingLast(of: keys, shown: liveDisplay, leading: leading, table: conversion.table)
             keys = deleted.keys
             if !keys.isEmpty, let display = deleted.display { keep(display) }
             if keys.isEmpty { endComposition() }
@@ -360,15 +366,15 @@ final class TugimeInputController: IMKInputController {
         switch event.keyCode {
         case KeyCode.returnKey, KeyCode.enter:
             if event.modifierFlags.contains(.shift) {
-                commitThroughFocus(clauses, client: client)
+                commitThroughFocus(clauses, at: focus, client: client)
             } else {
                 commit(client)
             }
         case KeyCode.space, KeyCode.down:
             if choosingCandidate {
                 moveCandidate(by: 1, clauses: clauses, client: client)
-            } else {
-                openCandidates(clauses, client: client)
+            } else if let page = Self.candidatePage(of: clauses, at: focus) {
+                openCandidates(clauses, page: page, client: client)
             }
         case KeyCode.up:
             if choosingCandidate {
@@ -377,10 +383,8 @@ final class TugimeInputController: IMKInputController {
         case KeyCode.left, KeyCode.right:
             let step = event.keyCode == KeyCode.left ? -1 : 1
             if event.modifierFlags.contains(.shift) {
-                let (focus, leading) = (focus, leading)
-                if let resized = conversion.sync({ segmenter in Unexpected.guarded { segmenter.resize(clauses, at: focus, by: step, leading: leading) } }) {
-                    self.clauses = resized
-                }
+                guard let resized = resizing(clauses, at: focus, by: step) else { return true }
+                self.clauses = resized
             } else {
                 let focus = focus
                 guard let moved = Unexpected.guarded({ Clause.focus(focus, movedBy: step, in: clauses) }) else { return true }
@@ -401,6 +405,12 @@ final class TugimeInputController: IMKInputController {
             return appendCharacter(event, client: client)
         }
         return true
+    }
+
+    /// 文節 clauses の focus 番目を step だけ伸縮した文節。想定外の状態に当たれば nil
+    private func resizing(_ clauses: [Clause], at focus: Int, by step: Int) -> [Clause]? {
+        let leading = leading
+        return conversion.sync { segmenter in Unexpected.guarded { segmenter.resize(clauses, at: focus, by: step, leading: leading) } }
     }
 
     private func moveCandidate(by delta: Int, clauses: [Clause], client: IMKTextInput) {
@@ -448,15 +458,11 @@ final class TugimeInputController: IMKInputController {
             commit(client)
             return false
         }
-        let starts = keys.isEmpty
-        if starts {
+        if keys.isEmpty {
+            leading = readLeading(of: client)
             // 辞書を替えるのは未確定の文字列の始まりだけにする。打っている途中に替えると、同じ打鍵列の表示が途中で変わる
             userDictionaryFile.refresh(into: conversion)
         }
-        // 足した打鍵の表示を作れなければ（想定外の状態）、その打鍵を足さず、打っていた文字列を残す
-        let (next, converted, leading, table) = (keys + text, converted, starts ? readLeading(of: client) : leading, conversion.table)
-        guard Unexpected.guarded({ Segmenter.liveDisplay(of: next, converted: converted, leading: leading, table: table) }) != nil else { return true }
-        self.leading = leading
         keys.append(text)
         showMarkedText(client)
         return true
@@ -475,8 +481,7 @@ final class TugimeInputController: IMKInputController {
                 marked.append(styled(clause.output, style: style, at: marked.length))
             }
         } else {
-            // 表示を作れなければ（想定外の状態）、今出している未確定の文字列を書き換えずに残す
-            guard let live = liveDisplay else { return }
+            let live = liveDisplay
             shownText = live.text
             marked.append(styled(live.text, style: kTSMHiliteRawText, at: 0))
             differs = live.differsFromInput
@@ -505,16 +510,9 @@ final class TugimeInputController: IMKInputController {
         return NSAttributedString(string: text, attributes: attributes)
     }
 
-    /// 打っている途中に表示する文字列と、それが打った読みと合わない変換を含むか。作れなければ（想定外の状態）nil
-    private var liveDisplay: Segmenter.LiveDisplay? {
-        let (keys, converted, leading, table) = (keys, converted, leading, conversion.table)
-        return Unexpected.guarded { Segmenter.liveDisplay(of: keys, converted: converted, leading: leading, table: table) }
-    }
-
-    /// 変換 entry を届いた変換に足しても、今の打鍵列の表示を作れるか。作れない変換を足すと、以後の打鍵の表示も作れなくなる
-    private func displays(adding entry: (keys: String, display: Segmenter.LiveDisplay)) -> Bool {
-        let (keys, converted, leading, table) = (keys, converted + [entry], leading, conversion.table)
-        return Unexpected.guarded { Segmenter.liveDisplay(of: keys, converted: converted, leading: leading, table: table) } != nil
+    /// 打っている途中に表示する文字列と、それが打った読みと合わない変換を含むか
+    private var liveDisplay: Segmenter.LiveDisplay {
+        Segmenter.liveDisplay(of: keys, converted: converted, leading: leading, table: conversion.table)
     }
 
     /// 今の打鍵列の変換を、届いていなければキューに積む。積んでいる変換があれば、それが届いてから積む
@@ -535,8 +533,7 @@ final class TugimeInputController: IMKInputController {
     /// 変換が想定外の状態に当たっていれば（display が nil）、表示は変換を待たずに出したまま残す
     private func didConvert(_ display: Segmenter.LiveDisplay?, keys converted: String, generation: Int) {
         converting = false
-        // 届いた変換を足すと今の打鍵列の表示を作れなくなるなら、変換が想定外の状態に当たったときと同じく使わない
-        guard let display, displays(adding: (converted, display)) else {
+        guard let display else {
             if generation == conversionGeneration { failedConversion = converted }
             requestConversion()
             return
@@ -554,8 +551,6 @@ final class TugimeInputController: IMKInputController {
     /// Backspace で残した表示を、今の打鍵列の表示としてすぐ見せ、変換にも覚えさせる（文節の選択に入っても同じ表記にするため）。
     /// 変換が覚えた表示に差し替え、覚えられなければ今の打鍵列を変換し直す
     private func keep(_ display: Segmenter.LiveDisplay) {
-        // 残した表示で今の打鍵列の表示を作れなければ（想定外の状態）、残さずに変換し直す
-        guard displays(adding: (keys, display)) else { return }
         converted.append((keys, display))
         let (keys, leading, generation) = (keys, leading, conversionGeneration)
         conversion.async { segmenter in
@@ -570,7 +565,7 @@ final class TugimeInputController: IMKInputController {
     private func didKeep(_ kept: Segmenter.LiveDisplay?, keys keptKeys: String, generation: Int) {
         guard generation == conversionGeneration else { return }
         converted.removeAll { $0.keys == keptKeys }
-        if let kept, displays(adding: (keptKeys, kept)) { converted.append((keptKeys, kept)) }
+        if let kept { converted.append((keptKeys, kept)) }
         if clauses == nil, keys == keptKeys, let client = client() { showMarkedText(client) }
     }
 
@@ -594,15 +589,20 @@ final class TugimeInputController: IMKInputController {
         return conversion.sync { segmenter in Unexpected.guarded { segmenter.clauses(keys, leading: leading) } }
     }
 
-    /// 選んでいる文節とその直後の空白までを確定し、残りの文節は変換したまま、次の文節を選んだ状態で残す。
-    /// 残りが無ければ全体を確定する。切る位置に当たる打鍵が決まらなければ何もしない
-    private func commitThroughFocus(_ clauses: [Clause], client: IMKTextInput) {
+    /// 文節 clauses の focus 番目とその直後の空白までを確定し、残りの文節は変換したまま、次の文節を選んだ状態で残す。
+    /// 残りが無ければ全体を確定する。切る位置に当たる打鍵が決まらなければ、clauses の focus 番目を選んだ文節の選択にするだけで確定しない。
+    /// 想定外の状態に当たれば、何も変えない
+    private func commitThroughFocus(_ clauses: [Clause], at focus: Int, client: IMKTextInput) {
         guard focus < clauses.count - 1 else {
+            self.clauses = clauses
+            self.focus = focus
             commit(client)
             return
         }
-        let focus = focus
-        guard let result = conversion.sync({ segmenter in Unexpected.guarded { segmenter.commit(clauses, through: focus) } }) ?? nil else {
+        guard let committed = conversion.sync({ segmenter in Unexpected.guarded { segmenter.commit(clauses, through: focus) } }) else { return }
+        self.clauses = clauses
+        self.focus = focus
+        guard let result = committed else {
             // 確定しないときも、文節の選択に入った表示にそろえる。打っている途中から入ったときはまだ描いていない
             showMarkedText(client)
             return
