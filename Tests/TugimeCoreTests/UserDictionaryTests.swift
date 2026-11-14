@@ -157,7 +157,7 @@ import Testing
     }
 
     /// 登録した語の後ろの句読点で入力を切る前に、句読点をまたいで登録したもっと長い打鍵（jpy.dev、pwd.x）がそのまま打たれていれば、その語として読む
-    @Test(arguments: [("jpy.dev", "Currency API"), ("pwd.x", "PWDX"), ("jpy.", "円。"), ("pwd.", "PWD.")])
+    @Test(arguments: [("jpy.dev", "Currency API"), ("jpy.dev,", "Currency API,"), ("pwd.x", "PWDX"), ("jpy.", "円。"), ("pwd.", "PWD.")])
     func readsARegisteredKeyAcrossPunctuation(keys: String, shown: String) {
         #expect(segmenter.liveText(keys) == shown)
     }

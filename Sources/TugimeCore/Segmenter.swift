@@ -725,21 +725,30 @@ public final class Segmenter {
         source.split(separator: " ", omittingEmptySubsequences: false).map { registered(String($0)) }.joined(separator: " ")
     }
 
-    /// 綴りをそのまま引き（node.js）、無ければ句読点で区切った綴りごとに引く。英語の後の句読点は英語区間に入るので（github, や github,gitlab）
+    /// 綴りを句読点で区切り、頭から、句読点をまたいで最も長く一致する登録した打鍵（node.js、jpy.dev）ごとに引く。
+    /// 英語の後の句読点は英語区間に入るので（github, や github,gitlab や jpy.dev,）
     private func registered(_ spelling: String) -> String {
-        if let word = typedWords[spelling]?.first { return word }
-        var shown = ""
-        var run = ""
+        var tokens: [String] = []
         for c in spelling {
-            guard Self.punctuation[c] != nil else {
-                run.append(c)
+            if Self.punctuation[c] != nil || tokens.last.map({ Self.punctuation[$0.last!] != nil }) ?? true {
+                tokens.append(String(c))
+            } else {
+                tokens[tokens.count - 1].append(c)
+            }
+        }
+        var shown = ""
+        var start = 0
+        while start < tokens.count {
+            let end = (start..<tokens.count).reversed().first { typedWords[tokens[start...$0].joined()] != nil }
+            guard let end else {
+                shown += tokens[start]
+                start += 1
                 continue
             }
-            shown += typedWords[run]?.first ?? run
-            shown.append(c)
-            run = ""
+            shown += typedWords[tokens[start...end].joined()]![0]
+            start = end + 1
         }
-        return shown + (typedWords[run]?.first ?? run)
+        return shown
     }
 
     /// 隣り合う日本語区間を 1 つにまとめ、まとめた読みを最初の区間の文脈で変換し直す。
