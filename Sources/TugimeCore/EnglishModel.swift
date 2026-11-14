@@ -100,7 +100,9 @@ public struct EnglishModel: Sendable {
         // 並びがまだ続く確率が十分小さくなるまで伸ばし、maxLength 以上の長さの分はまとめて足す
         while state.reduce(0, +) > Self.lengthMassTolerance {
             length += 1
-            precondition(length <= Self.lengthMassIterations, "綴りらしさの長さごとの確率が \(Self.lengthMassIterations) 文字までに収まらない")
+            guard length <= Self.lengthMassIterations else {
+                return Unexpected.reached("綴りらしさの長さごとの確率が \(Self.lengthMassIterations) 文字までに収まらない", continuingWith: mass)
+            }
             var next = Array(repeating: 0.0, count: n * n)
             for a in 0..<n {
                 for b in 0..<n where state[a * n + b] > 0 {

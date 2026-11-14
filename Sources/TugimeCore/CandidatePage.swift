@@ -9,10 +9,17 @@ public struct CandidatePage: Equatable, Sendable {
     public private(set) var first = 0
 
     public init(count: Int, selected: Int) {
-        precondition((0..<count).contains(selected), "選ぶ候補 \(selected) が候補の数 \(count) の外")
         self.count = count
-        self.selected = selected
+        self.selected = Self.inRange(selected, count: count)
         scrollToSelected()
+    }
+
+    /// 候補の範囲に収めた位置。範囲の外は想定外の状態で、操作の結果は `Unexpected.guarded` が捨てる
+    private static func inRange(_ index: Int, count: Int) -> Int {
+        guard (0..<count).contains(index) else {
+            return Unexpected.reached("選ぶ候補 \(index) が候補の数 \(count) の外", continuingWith: min(max(index, 0), max(count - 1, 0)))
+        }
+        return index
     }
 
     public var visible: Range<Int> { first..<min(first + Self.rows, count) }
@@ -23,8 +30,7 @@ public struct CandidatePage: Equatable, Sendable {
     }
 
     public mutating func select(_ index: Int) {
-        precondition((0..<count).contains(index), "選ぶ候補 \(index) が候補の数 \(count) の外")
-        selected = index
+        selected = Self.inRange(index, count: count)
         scrollToSelected()
     }
 

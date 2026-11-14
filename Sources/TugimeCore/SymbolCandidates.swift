@@ -6,17 +6,19 @@ import Foundation
 enum SymbolCandidates {
     static let file = "symbol-candidates.tsv"
 
-    /// 読みごとの記号。並びは表の順
+    /// 読みごとの記号。並びは表の順。表を読めなければ、読めない行（読めなければ表の全体）の記号を候補に足さない
     static let byKey: [String: [String]] = {
         guard let url = Bundle.module.url(forResource: "symbol-candidates", withExtension: "tsv", subdirectory: "Resources"),
               let contents = try? String(contentsOf: url, encoding: .utf8)
-        else { preconditionFailure("\(file) をバンドルから読めない") }
+        else { return Unexpected.reached("\(file) をバンドルから読めない", continuingWith: [:]) }
         var table: [String: [String]] = [:]
         for (index, line) in contents.split(separator: "\n").enumerated() {
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-            guard fields.count >= 2, !fields[0].isEmpty, table.updateValue(Array(fields.dropFirst()), forKey: fields[0]) == nil else {
-                preconditionFailure("\(file) の \(index + 1) 行目を読めない: \(line)")
+            guard fields.count >= 2, !fields[0].isEmpty, table[fields[0]] == nil else {
+                Unexpected.reached("\(file) の \(index + 1) 行目を読めない: \(line)", continuingWith: ())
+                continue
             }
+            table[fields[0]] = Array(fields.dropFirst())
         }
         return table
     }()

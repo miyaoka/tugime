@@ -288,6 +288,12 @@ public final class Segmenter {
         public var differsFromInput: Bool
         /// 最後の区間が英語の区間か。区切りの結果から作った表示だけが知る。変換の届いていない打鍵をつないだ表示と、Backspace で切った表示では nil
         public var endsInEnglish: Bool? = nil
+
+        public init(text: String, differsFromInput: Bool, endsInEnglish: Bool? = nil) {
+            self.text = text
+            self.differsFromInput = differsFromInput
+            self.endsInEnglish = endsInEnglish
+        }
     }
 
     /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま。末尾の単独の n は打ったまま見せる（keepingPendingN）。
@@ -484,7 +490,9 @@ public final class Segmenter {
     /// 残りの読みは区間の読みから末尾の「ん」を外したもので、綴りの表から読み直さない（数の区切りの 3-5 は 3ー5 にならない）
     func keepingPendingN(_ segments: [Segment]) -> (segments: [Segment], pendingN: Bool) {
         guard let last = segments.last, last.kind == .japanese, table.readingBeforePendingN(last.source) != nil else { return (segments, false) }
-        precondition(last.reading.last == "ん", "単独の n で終わる日本語区間の読みが「ん」で終わらない: \(last.source)")
+        guard last.reading.last == "ん" else {
+            return Unexpected.reached("単独の n で終わる日本語区間の読みが「ん」で終わらない: \(last.source)", continuingWith: (segments, false))
+        }
         let kana = String(last.reading.dropLast())
         let pending = englishSegment("n", context: last.context)
         guard !kana.isEmpty else { return (segments.dropLast() + [pending], true) }
@@ -591,7 +599,9 @@ public final class Segmenter {
             kind = cell.previousKind
         }
         // どの区間も、日本語として採れなければ英語として採れるので、空でない入力には必ず区切りがある
-        precondition(pos == 0 && !segments.isEmpty, "区切りが見つからない: \(input)")
+        guard pos == 0, !segments.isEmpty else {
+            return Unexpected.reached("区切りが見つからない: \(input)", continuingWith: [englishSegment(input, context: leading)])
+        }
         return mergeJapanese(segments.reversed())
     }
 
@@ -608,7 +618,9 @@ public final class Segmenter {
 
     /// 続く空白の区間。採点で比べないので点を持たない英語の区間にする。context は空白の後ろの日本語を評価する文脈
     static func spaceSegment(_ source: String, context: JapaneseContext) -> Segment {
-        precondition(!source.isEmpty && source.allSatisfy { $0 == " " }, "空白の区間が空白以外を含む: \(source)")
+        if source.isEmpty || !source.allSatisfy({ $0 == " " }) {
+            _ = Unexpected.reached("空白の区間が空白以外を含む: \(source)", continuingWith: ())
+        }
         return Segment(kind: .english, source: source, reading: source, output: source, score: 0, context: context)
     }
 
@@ -621,7 +633,7 @@ public final class Segmenter {
             guard let kana = Self.japaneseReading(table: table, of: source, before: preceding) else { return nil }
             return japaneseSegment(source, kana: kana, context: context, penalty: Self.japaneseSpanPenalty)
         case .punctuation, .word:
-            preconditionFailure("指定した言語で作る区間は日本語か英語だけ")
+            return Unexpected.reached("指定した言語で作る区間は日本語か英語だけ", continuingWith: nil)
         }
     }
 

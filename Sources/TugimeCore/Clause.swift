@@ -62,7 +62,7 @@ public struct Clause: Sendable, Equatable {
             index = (index + step + clauses.count) % clauses.count
             if !clauses[index].isSpace { return index }
         }
-        preconditionFailure("空白だけの文節しか無い: \(clauses.map(\.reading))")
+        return Unexpected.reached("空白だけの文節しか無い: \(clauses.map(\.reading))", continuingWith: focus)
     }
 
     /// 候補 text の番号。候補に無ければ末尾に足す
@@ -218,7 +218,7 @@ extension Segmenter {
         let fixed = wordIsEnglish ? [KeptClause(range: wordStart..<wordEnd, fixedRange: true, fixedValue: nil)] : []
         var clauses = clauses(of: before + [flipped, spaces], left: leading.text, firstIndex: 0, startsAtHead: true, endsInput: true, fixedKeys: fixed)
         guard let focus = clauses.firstIndex(where: { $0.span.index == before.count }) else {
-            preconditionFailure("入れ替えた語の文節が無い: \(input)")
+            return Unexpected.reached("入れ替えた語の文節が無い: \(input)", continuingWith: nil)
         }
         let flippedText = clauses[focus].candidates[0]
         clauses[focus].candidates = [flippedText] + [shown].filter { $0 != flippedText } + clauses[focus].candidates.dropFirst().filter { $0 != shown }
@@ -571,7 +571,7 @@ extension Segmenter {
             case .english:
                 part = ClausePart(kind: .english, source: source, reading: source)
             case .word, .whole:
-                preconditionFailure("利用者の辞書で日本語にした打鍵と全体の変換の区間は、伸縮の単位にならない（unitEnd、unitStart）")
+                return Unexpected.reached("利用者の辞書で日本語にした打鍵と全体の変換の区間は、伸縮の単位にならない（unitEnd、unitStart）", continuingWith: nil)
             }
             if let last = parts.last, last.kind == part.kind, part.kind != .mark {
                 parts[parts.count - 1].source += part.source
@@ -692,9 +692,9 @@ extension Segmenter {
         case .japanese, .word:
             return .afterWord
         case .punctuation:
-            preconditionFailure("句読点と記号の文節の後ろは continuation(afterMarkOf:) が決める")
+            return Unexpected.reached("句読点と記号の文節の後ろは continuation(afterMarkOf:) が決める", continuingWith: .start)
         case .whole:
-            preconditionFailure("全体の変換の文節は 1 つだけで、後ろに文節を持たない")
+            return Unexpected.reached("全体の変換の文節は 1 つだけで、後ろに文節を持たない", continuingWith: .start)
         }
     }
 
@@ -948,7 +948,7 @@ extension Segmenter {
         case .word:
             list += (typedJapaneseWords[segment.source] ?? []) + [segment.source] + typedForms(of: segment.source, context: segment.context)
         case .japanese:
-            preconditionFailure("日本語区間は japaneseClauses で文節に分ける")
+            return Unexpected.reached("日本語区間は japaneseClauses で文節に分ける", continuingWith: list)
         case .english:
             // 利用者の辞書で表記を替えたときは、打ったままの綴りをすぐ後に置く
             list.append(segment.source)
