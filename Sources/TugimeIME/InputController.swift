@@ -34,21 +34,21 @@ private enum KeyCode {
     ]
 }
 
-/// 区切りと変換はプロセスに 1 つだけ持つ。辞書・語表・モデルの読み込みが重いので、入力欄のコントローラごとに作らない
-let conversion: ConversionQueue = {
-    // 表示の変換のモデルはバンドルの Contents/Resources/model に、システム辞書は Contents/Resources/dictionary に同梱する
-    guard let resources = Bundle.main.resourceURL else { fatalError("tugime を初期化できない: バンドルの Contents/Resources が無い") }
-    let method = ConversionMethod.inputMethod(modelDirectory: resources.appendingPathComponent("model"))
-    guard let model = method.weight, FileManager.default.fileExists(atPath: model.path) else {
-        fatalError("tugime を初期化できない: 表示の変換のモデルが Contents/Resources/model に無い")
+/// 変換器を作れなかったときの入力欄のコントローラ。キーを受けず、すべてアプリに渡す（`runWithoutConversion`）
+@objc(TugimePassThroughInputController)
+final class PassThroughInputController: IMKInputController {
+    nonisolated override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
+        super.init(server: server, delegate: delegate, client: inputClient)
     }
-    do {
-        let dictionary = try SystemDictionary(url: resources.appendingPathComponent(SystemDictionary.directory).appendingPathComponent(SystemDictionary.fileName))
-        return ConversionQueue(segmenter: try method.makeSegmenter(dictionary: dictionary))
-    } catch {
-        fatalError("tugime を初期化できない: \(error)")
+
+    nonisolated override init() {
+        super.init()
     }
-}()
+
+    nonisolated override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
+        false
+    }
+}
 
 /// 利用者の辞書のファイル。区切りと同じくプロセスに 1 つ
 let userDictionaryFile = UserDictionaryFile.inputMethod()

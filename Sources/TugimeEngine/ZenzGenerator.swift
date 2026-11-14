@@ -24,6 +24,30 @@ final class ZenzGenerator: DirectDisplayGenerating {
 
     private static let backend: Void = llama_backend_init()
 
+    /// モデルを読めない
+    enum LoadError: Error, CustomStringConvertible {
+        case model(String)
+        case context(String)
+        case grammar
+        var description: String {
+            switch self {
+            case .model(let path): "モデルを読めない: \(path)"
+            case .context(let path): "llama.cpp のコンテキストを作れない: \(path)"
+            case .grammar: "出力の文法を作れない"
+            }
+        }
+    }
+
+    /// 生成の途中で llama.cpp が失敗した。その生成を取りやめる
+    private enum Failure: Error {
+        case memory
+        case decode
+        /// 計算が壊れて logits が有限でない。KV キャッシュの型と flash attention が原因になりうる
+        case nonFinite
+        case tokenize(String)
+        case detokenize([llama_token])
+    }
+
     private let resources: LlamaResources
     private var context: OpaquePointer { resources.context }
     private let vocab: OpaquePointer
@@ -42,12 +66,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
     /// 左の文脈ごとの、前に生成した出力
     private var drafts: [String: [llama_token]] = [:]
 
-    /// モデルを読む。読めなければ止める（make() は投げないので、受け止められない）
-    init(weight: URL) {
+    /// モデルを読む。読めなければ LoadError を投げる
+    init(weight: URL) throws {
         _ = Self.backend
         var modelParams = llama_model_default_params()
         modelParams.n_gpu_layers = Self.allLayersOnGPU
-        guard let model = llama_model_load_from_file(weight.path, modelParams) else { fatalError("モデルを読めない: \(weight.path)") }
+        guard let model = llama_model_load_from_file(weight.path, modelParams) else { throw LoadError.model(weight.path) }
         vocab = llama_model_get_vocab(model)!
         maxPositions = Int(llama_model_n_ctx_train(model))
         var contextParams = llama_context_default_params()
@@ -58,15 +82,22 @@ final class ZenzGenerator: DirectDisplayGenerating {
         contextParams.no_perf = true
         // flash attention は、genmai-310M の単精度の KV キャッシュでは出力を変えずに 1 打鍵の表示を遅くする
         contextParams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED
-        guard let context = llama_init_from_model(model, contextParams) else { fatalError("llama.cpp のコンテキストを作れない: \(weight.path)") }
+        guard let context = llama_init_from_model(model, contextParams) else {
+            llama_model_free(model)
+            throw LoadError.context(weight.path)
+        }
+        guard let grammar = llama_sampler_init_grammar(vocab, ZenzPrompt.outputGrammar, "root") else {
+            llama_free(context)
+            llama_model_free(model)
+            throw LoadError.grammar
+        }
+        self.grammar = grammar
         resources = LlamaResources(model: model, context: context)
         LiveLlamaResources.add(resources)
         batch = llama_batch_init(Int32(maxPositions), 0, 1)
         bos = llama_vocab_bos(vocab)
         eos = llama_vocab_eos(vocab)
         vocabularySize = Int(llama_vocab_n_tokens(vocab))
-        guard let grammar = llama_sampler_init_grammar(vocab, ZenzPrompt.outputGrammar, "root") else { fatalError("出力の文法を作れない") }
-        self.grammar = grammar
     }
 
     deinit {
@@ -76,28 +107,55 @@ final class ZenzGenerator: DirectDisplayGenerating {
         resources.release()
     }
 
+    /// llama.cpp が途中で失敗したら、想定外の状態として記録して空の出力を返す。失敗した生成の KV キャッシュと下書きは次に持ち越さない
     func generate(left: String, kana: String) -> String {
+        do {
+            return try generating(left: left, kana: kana)
+        } catch {
+            reset()
+            return switch error {
+            case .memory: Unexpected.reached("llama.cpp の KV キャッシュを消せない", continuingWith: "")
+            case .decode: Unexpected.reached("llama.cpp の decode が失敗した", continuingWith: "")
+            case .nonFinite: Unexpected.reached("モデルの計算が壊れた（logits が有限でない）", continuingWith: "")
+            case .tokenize(let text): Unexpected.reached("トークンにできない", detail: text, continuingWith: "")
+            case .detokenize(let tokens): Unexpected.reached("トークンを文字にできない", detail: "\(tokens)", continuingWith: "")
+            }
+        }
+    }
+
+    func reset() {
+        llama_memory_clear(llama_get_memory(context), true)
+        resident = []
+        next = []
+        drafts = [:]
+    }
+
+    private func generating(left: String, kana: String) throws(Failure) -> String {
         var output = ""
         var parts = ZenzPrompt.chunks(kana, maxLength: ZenzPrompt.maxChunkLength(positions: maxPositions))[...]
         while let part = parts.popFirst() {
             let contextText = left + output
             let limit = outputLimit(part)
-            guard let prompt = fittedPrompt(context: contextText, kana: part, limit: limit) else {
+            guard let prompt = try fittedPrompt(context: contextText, kana: part, limit: limit) else {
                 // 文脈を空にしても収まらない区切り（読みの字が複数のトークンになるとき）は、収まるまで半分に分ける。読みは削らない
-                let halves = ZenzPrompt.halving([part]) { fittedPrompt(context: "", kana: $0, limit: outputLimit($0)) != nil }
+                var failure: Failure?
+                let halves = ZenzPrompt.halving([part]) { piece in
+                    do throws(Failure) {
+                        return try fittedPrompt(context: "", kana: piece, limit: outputLimit(piece)) != nil
+                    } catch {
+                        failure = error
+                        return true
+                    }
+                }
+                if let failure { throw failure }
                 parts.insert(contentsOf: halves, at: parts.startIndex)
                 continue
             }
-            let tokens = greedy(prompt, limit: limit, draft: drafts[contextText] ?? [])
+            let tokens = try greedy(prompt, limit: limit, draft: drafts[contextText] ?? [])
             drafts[contextText] = tokens
-            output += ZenzPrompt.cutAtNewline(detokenize(tokens))
+            output += ZenzPrompt.cutAtNewline(try detokenize(tokens))
         }
         return ZenzPrompt.restoreSpaces(output)
-    }
-
-    func reset() {
-        truncate(0)
-        drafts = [:]
     }
 
     /// 1 つの区切りで生成するトークン数の上限。出力に位置の半分までを使い、残りに入力を収める
@@ -107,10 +165,10 @@ final class ZenzGenerator: DirectDisplayGenerating {
 
     /// 入力と limit 個の出力が位置の上限に収まるよう、左の文脈を前から削った入力。文脈の目印は残す。
     /// 文脈を空にしても収まらなければ nil
-    private func fittedPrompt(context: String, kana: String, limit: Int) -> [llama_token]? {
+    private func fittedPrompt(context: String, kana: String, limit: Int) throws(Failure) -> [llama_token]? {
         var scalars = Array(context.unicodeScalars.suffix(ZenzPrompt.maxContextLength))
         while true {
-            let prompt = tokenize(ZenzPrompt.text(left: String(String.UnicodeScalarView(scalars)), kana: kana))
+            let prompt = try tokenize(ZenzPrompt.text(left: String(String.UnicodeScalarView(scalars)), kana: kana))
             let over = prompt.count + limit - maxPositions
             if over <= 0 { return prompt }
             if scalars.isEmpty { return nil }
@@ -121,40 +179,40 @@ final class ZenzGenerator: DirectDisplayGenerating {
         }
     }
 
-    private func greedy(_ prompt: [llama_token], limit: Int, draft: [llama_token]) -> [llama_token] {
+    private func greedy(_ prompt: [llama_token], limit: Int, draft: [llama_token]) throws(Failure) -> [llama_token] {
         let sequence = prompt + draft.prefix(limit)
         let needFrom = prompt.count - 1
         var keep = 0
         while keep < min(resident.count, sequence.count), resident[keep] == sequence[keep] { keep += 1 }
         // 入力の最後から先は argmax が要る。持ち越す範囲で求めていない位置があれば、そこから計算し直す
         if let missing = (needFrom..<max(needFrom, keep)).first(where: { next[$0] == nil }) { keep = missing }
-        truncate(keep)
-        append(Array(sequence[keep...]), needFrom: needFrom)
+        try truncate(keep)
+        try append(Array(sequence[keep...]), needFrom: needFrom)
         var out: [llama_token] = []
         llama_sampler_reset(grammar)
         while out.count < limit {
-            let token = allowed(at: needFrom + out.count)
+            let token = try allowed(at: needFrom + out.count)
             if token == eos { break }
             llama_sampler_accept(grammar, token)
             out.append(token)
             let position = prompt.count + out.count - 1
             if position < resident.count, resident[position] == token { continue }
-            truncate(position)
-            append([token], needFrom: position)
+            try truncate(position)
+            try append([token], needFrom: position)
         }
         return out
     }
 
-    private func truncate(_ count: Int) {
+    private func truncate(_ count: Int) throws(Failure) {
         guard resident.count > count else { return }
-        guard llama_memory_seq_rm(llama_get_memory(context), 0, Int32(count), -1) else { fatalError("KV キャッシュを消せない") }
+        guard llama_memory_seq_rm(llama_get_memory(context), 0, Int32(count), -1) else { throw .memory }
         resident.removeLast(resident.count - count)
         next.removeLast(next.count - count)
     }
 
-    /// tokens を resident の後ろに decode し、位置 needFrom 以降の argmax を next に足す。decode が失敗したら止める。
-    /// 計算が壊れると logits が有限でなくなる。そのまま argmax を取るとエラーにならずに壊れた出力を返すので、止める
-    private func append(_ tokens: [llama_token], needFrom: Int) {
+    /// tokens を resident の後ろに decode し、位置 needFrom 以降の argmax を next に足す。
+    /// 計算が壊れると logits が有限でなくなる。そのまま argmax を取るとエラーにならずに壊れた出力を返すので、失敗にする
+    private func append(_ tokens: [llama_token], needFrom: Int) throws(Failure) {
         guard !tokens.isEmpty else { return }
         let start = resident.count
         batch.n_tokens = 0
@@ -166,7 +224,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
             batch.logits[i] = start + i >= needFrom ? 1 : 0
             batch.n_tokens += 1
         }
-        guard llama_decode(context, batch) == 0 else { fatalError("llama.cpp の decode が失敗した") }
+        guard llama_decode(context, batch) == 0 else { throw .decode }
         for i in 0..<tokens.count {
             guard start + i >= needFrom else {
                 next.append(nil)
@@ -179,7 +237,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
                 finite = finite && logits[v].isFinite
                 if logits[v] > logits[best] { best = v }
             }
-            guard finite else { fatalError("モデルの計算が壊れた（logits が有限でない）。KV キャッシュの型と flash attention を見直す") }
+            guard finite else { throw .nonFinite }
             next.append(llama_token(best))
         }
         resident += tokens
@@ -188,7 +246,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
     /// 位置 index の直後のトークン。argmax が文法に合えばそれを、合わなければその位置を decode し直し、文法が許すうちで logit が最大のものを返す。
     /// llama.cpp の common_sampler_sample と同じく、全トークンに文法を当てるのは argmax が外れたときだけにする。
     /// 位置ごとの logits は持たない（decode のたびに語彙全体を写すことになる）ので、外れた位置は decode し直す
-    private func allowed(at index: Int) -> llama_token {
+    private func allowed(at index: Int) throws(Failure) -> llama_token {
         let token = next[index]!
         var single = llama_token_data(id: token, logit: 1, p: 0)
         let fits = withUnsafeMutablePointer(to: &single) { pointer in
@@ -198,8 +256,8 @@ final class ZenzGenerator: DirectDisplayGenerating {
         }
         if fits { return token }
         let input = resident[index]
-        truncate(index)
-        append([input], needFrom: index)
+        try truncate(index)
+        try append([input], needFrom: index)
         let logits = llama_get_logits_ith(context, 0)!
         var data = (0..<vocabularySize).map { llama_token_data(id: llama_token($0), logit: logits[$0], p: 0) }
         return data.withUnsafeMutableBufferPointer { buffer in
@@ -209,16 +267,16 @@ final class ZenzGenerator: DirectDisplayGenerating {
         }
     }
 
-    private func tokenize(_ text: String) -> [llama_token] {
+    private func tokenize(_ text: String) throws(Failure) -> [llama_token] {
         let capacity = text.utf8.count + 1
         var buffer = [llama_token](repeating: 0, count: capacity)
         let count = llama_tokenize(vocab, text, Int32(text.utf8.count), &buffer, Int32(capacity), false, false)
-        guard count >= 0 else { fatalError("トークンにできない: \(text)") }
+        guard count >= 0 else { throw .tokenize(text) }
         return [bos] + buffer.prefix(Int(count))
     }
 
     /// トークンの列を文字にする。1 文字が 2 つのトークンに分かれていても、列のバイトを繋いでから文字にするので壊れない
-    private func detokenize(_ tokens: [llama_token]) -> String {
+    private func detokenize(_ tokens: [llama_token]) throws(Failure) -> String {
         var buffer = [CChar](repeating: 0, count: tokens.count * Self.bytesPerTokenGuess)
         var count = llama_detokenize(vocab, tokens, Int32(tokens.count), &buffer, Int32(buffer.count), false, false)
         // 領域が足りないと、要る大きさを負の数で返す
@@ -226,7 +284,7 @@ final class ZenzGenerator: DirectDisplayGenerating {
             buffer = [CChar](repeating: 0, count: Int(-count))
             count = llama_detokenize(vocab, tokens, Int32(tokens.count), &buffer, Int32(buffer.count), false, false)
         }
-        guard count >= 0 else { fatalError("トークンを文字にする領域が足りない: \(tokens)") }
+        guard count >= 0 else { throw .detokenize(tokens) }
         return String(decoding: ZenzPrompt.droppingIncompleteTail(buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }), as: UTF8.self)
     }
 }

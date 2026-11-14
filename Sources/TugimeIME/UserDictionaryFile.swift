@@ -19,10 +19,9 @@ final class UserDictionaryFile {
     }
 
     static func inputMethod() -> UserDictionaryFile {
-        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            fatalError("tugime を初期化できない: Application Support の場所が分からない")
-        }
-        return UserDictionaryFile(url: support.appendingPathComponent(UserDictionaryLayout.directory).appendingPathComponent(UserDictionaryLayout.fileName))
+        UserDictionaryFile(
+            url: URL.applicationSupportDirectory.appendingPathComponent(UserDictionaryLayout.directory).appendingPathComponent(UserDictionaryLayout.fileName)
+        )
     }
 
     /// ファイルが無いときに作る中身。書式と例をコメントの行に書く

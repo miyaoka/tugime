@@ -83,7 +83,7 @@ do {
     case "--span":
         // 区間ごとの評価値を見る診断用。英語の綴りと、英語に続くかなを並べて渡す
         let english = try EnglishModel.bundled()
-        let japanese = method.make(dictionary: system)
+        let japanese = try method.make(dictionary: system)
         try Segmenter(table: .bundled(), english: english, japanese: japanese).replaceUserDictionary(dictionary)
         for arg in args.dropFirst() {
             let isKana = arg.unicodeScalars.contains { $0.value > 0x3000 }
