@@ -429,16 +429,17 @@ extension Segmenter {
         let left = leading.text + before.map(\.output).joined()
         let fixedContext = context(after: before.last, keys: keys[..<range.lowerBound], leading: leading)
         // 文節の直前は、前の文節の打鍵と、前の文節の見えている文字。前の文節が無ければ入力欄の文字
-        let preceding = Preceding(key: keys[..<range.lowerBound].last ?? leading.text.last, shown: left.last)
+        let precedingKey = keys[..<range.lowerBound].last ?? leading.text.last
+        let preceding = Self.preceding(after: before.last, key: precedingKey, shown: left)
         // 句読点か記号をまたぐときだけ部分ごとに読む。またがなければ打鍵の全体を 1 区間として判定し、読めない打鍵は英語にする（singleSpan）
         let crossesMark = units.contains { $0.kind == .punctuation && $0.start < end && range.lowerBound < $0.end }
         var joinedParts: [ClausePart] = []
         let fixed: Segment
         if crossesMark {
             guard let parts = parts(in: range.lowerBound..<end, of: units, keys: keys, preceding: preceding) else {
-                let shownIsJapanese = preceding.shown.map(Self.isJapaneseLetter) ?? false
+                let lengthens = preceding.lengthens
                 Self.logger.notice(
-                    "文節の伸縮を取りやめた。句読点か記号をまたぐ日本語の部分を読めない（打鍵 \(end - range.lowerBound, privacy: .public) 字、直前に見えている文字は日本語か \(shownIsJapanese, privacy: .public)）"
+                    "文節の伸縮を取りやめた。句読点か記号をまたぐ日本語の部分を読めない（打鍵 \(end - range.lowerBound, privacy: .public) 字、直前の後ろで長音と読めるか \(lengthens, privacy: .public)）"
                 )
                 return nil
             }
@@ -489,12 +490,12 @@ extension Segmenter {
             self.clauses(
                 of: self.segment(
                     String(keys[end..<keyEnd]),
-                    // 数だけの文節の後ろは、数の前に見えている文字列で決める（API 404 の Not Found を 40 に縮めた後の 4, は I の側）
+                    // 数だけの文節の後ろは、数の前の文節で決める（API 404 の Not Found を 40 に縮めた後の 4, は API の側）
                     keepsPunctuationTyped: markContinuation.map { $0 == .afterEnglish }
-                        ?? (Self.isNumberSpan(fixed) ? Self.keepsPunctuationTyped(afterText: left + resized.output) : Self.keepsPunctuationTyped(after: fixed)),
+                        ?? (Self.isNumberSpan(fixed) ? Self.keepsPunctuationTyped(after: before, leading: leading) : Self.keepsPunctuationTyped(after: fixed)),
                     context: self.context(after: resized, keys: keys[..<end], leading: leading),
                     opened: Self.unclosedOpeners(in: left + resized.output),
-                    preceding: Segmenter.Preceding(key: keys[..<end].last ?? leading.text.last, shown: (left + resized.output).last)
+                    preceding: Self.preceding(after: resized, key: keys[..<end].last ?? leading.text.last, shown: left + resized.output)
                 ),
                 left: left + resized.output,
                 firstIndex: span.index + 1,
@@ -555,6 +556,35 @@ extension Segmenter {
             last = clause.span
             copy.span.index = index
             return copy
+        }
+    }
+
+    /// 文節 clause の後ろを読み直すときの直前。打鍵は key。後ろの - を長音と読めるかは、未確定の文字列の中なので文節の言語で決める。
+    /// 日本語として登録した語の後は読め、英語の文節の後は読めない。日本語の文節の後は、区切りと同じく読み（かな）の最後の字で決める（数や記号、読めない英字なら読めない）。
+    /// 利用者が候補で表記を選んだ文節（fixedValue。ら を ra に、cafe を カフェ に）と、句読点・全体の変換、文節が無いとき（入力欄の文字）は、
+    /// 見えている文字列 shown の最後の字で決める
+    static func preceding(after clause: Clause?, key: Character?, shown: String) -> Preceding {
+        guard let clause, clause.fixedValue == nil else { return Preceding(key: key, shown: shown.last) }
+        switch clause.kind {
+        case .word: return Preceding(key: key, lengthens: true)
+        case .english: return Preceding(key: key, lengthens: false)
+        case .japanese: return Preceding(key: key, shown: clause.reading.last)
+        case .punctuation, .whole: return Preceding(key: key, shown: shown.last)
+        }
+    }
+
+    /// 文節 clauses の後ろの句読点を打ったままにするか。空白だけの文節と、読みが数だけの日本語の文節を飛ばした最後の文節の言語で決め、英語なら打ったまま、
+    /// 日本語と日本語として登録した語なら日本語の記号にする。利用者が候補で表記を選んだ文節（fixedValue）と、句読点の文節・全体の変換は見えている形で決め、
+    /// 文節が無ければ入力欄の直前で決める
+    private static func keepsPunctuationTyped(after clauses: [Clause], leading: Leading) -> Bool {
+        guard let last = clauses.last(where: { !$0.output.allSatisfy { $0 == " " } && !($0.kind == .japanese && isNumber($0.reading)) }) else {
+            return leading.keepsPunctuationTyped
+        }
+        if last.fixedValue != nil { return keepsPunctuationTyped(afterText: last.output) }
+        switch last.kind {
+        case .english: return true
+        case .japanese, .word: return false
+        case .punctuation, .whole: return keepsPunctuationTyped(afterText: last.output)
         }
     }
 

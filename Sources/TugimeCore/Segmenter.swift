@@ -148,11 +148,10 @@ public final class Segmenter {
         var japaneseContext: JapaneseContext { self == .start ? .start : .afterCaret }
     }
 
-    /// 区間の後ろの句読点を打ったままにするか。入力欄の直前と変換が届く前の表示と同じく、表記を前の文字列として keepsPunctuationTyped(afterText:) で決める。
-    /// 英語の区間と利用者の辞書の語の区間は、登録した表記によって日本語の文字で終わることも英字で終わることもある（第2、PWD）。
-    /// 日本語区間は区切りの時点で表示の変換の表記が決まっていないので、日本語の側とする
+    /// 区間の後ろの句読点を打ったままにするか。区間の言語で決め、英語の区間なら打ったまま、日本語区間と日本語として登録した語の区間なら日本語の記号にする。
+    /// 登録した表記の字によらない（en で登録した jpy → 円 の後は打ったまま、ja で登録した pwd → PWD の後は日本語の記号）
     static func keepsPunctuationTyped(after segment: Segment) -> Bool {
-        segment.kind != .japanese && keepsPunctuationTyped(afterText: segment.output)
+        segment.kind == .english
     }
 
     /// segments のうち、数だけの日本語区間を除いた最後の区間。数は日本語でも英語でもないので、句読点の形は数の前の区間で決める。
@@ -242,15 +241,21 @@ public final class Segmenter {
         return (i > 0 ? chars[i - 1] : before).map(isDigit) == true
     }
 
-    /// 読む打鍵の直前。数の区切り（isNumberSeparator）は直前の打鍵 key で、長音（lengthensOnlyJapanese）は直前に見えている文字 shown で決める。
+    /// 読む打鍵の直前。数の区切り（isNumberSeparator）は直前の打鍵 key で、長音（lengthensOnlyJapanese）は lengthens で決める。
     /// 前の文節や届いた変換の後ろでは、打鍵（ASCII）と見えている文字（かなや漢字）が違う
     struct Preceding {
         let key: Character?
-        let shown: Character?
+        /// 後ろの - を長音と読めるか。日本語として登録した語の区間の後ろは、区間の言語で真。それ以外は直前に見えている文字が日本語の文字（isJapaneseLetter）か
+        let lengthens: Bool
 
-        init(key: Character?, shown: Character?) {
+        init(key: Character?, lengthens: Bool) {
             self.key = key
-            self.shown = shown
+            self.lengthens = lengthens
+        }
+
+        /// 直前に見えている文字 shown で長音を決めるとき
+        init(key: Character?, shown: Character?) {
+            self.init(key: key, lengthens: shown.map(Segmenter.isJapaneseLetter) ?? false)
         }
 
         /// 打鍵と見えている文字が同じとき（入力欄の文字、記号の打鍵）
@@ -260,12 +265,12 @@ public final class Segmenter {
     }
 
     /// 長音は直前の音を伸ばす記号なので、日本語の文字（isJapaneseLetter）の後ろでだけ読める。kana の長音がどれもそうなっているか。
-    /// shown は kana の直前に見えている文字
-    static func lengthensOnlyJapanese(_ kana: String, after shown: Character?) -> Bool {
-        var previous = shown
+    /// lengthens は kana の直前の後ろで長音と読めるか（Preceding.lengthens）
+    static func lengthensOnlyJapanese(_ kana: String, after lengthens: Bool) -> Bool {
+        var previous = lengthens
         for c in kana {
-            if c == "ー", previous.map(isJapaneseLetter) != true { return false }
-            previous = c
+            if c == "ー", !previous { return false }
+            previous = isJapaneseLetter(c)
         }
         return true
     }
@@ -297,7 +302,7 @@ public final class Segmenter {
         while let (position, prefix) = pending.popLast() {
             for reading in table.readings(from: position, in: chars) where found[reading.end] == nil {
                 let kana = prefix + reading.kana
-                guard lengthensOnlyJapanese(kana, after: preceding.shown) else { continue }
+                guard lengthensOnlyJapanese(kana, after: preceding.lengthens) else { continue }
                 found[reading.end] = kana
                 if reading.end < chars.count, isNumberSeparator(at: reading.end, in: chars, before: before.key) {
                     pending.append((reading.end + 1, kana + String(chars[reading.end])))
@@ -506,11 +511,10 @@ public final class Segmenter {
             // 数だけの区間の後ろは、その前の区間で決める（version 2. の 2 の後ろは version の側）
             let previousIsEnglish = Self.lastWord(in: before).map { Self.keepsPunctuationTyped(after: $0) } ?? runKeepsTyped
             // nil なら打ったまま直前の英語の区間に含める。空白の直後は含める英語の語が無いので、打ったままの形の句読点の区間にして入力を切る。
-            // 空白の直後の previousIsEnglish は、空白を飛ばした前の区間の表記で決めた runKeepsTyped
-            // 利用者の辞書の語の後ろも、含めると打鍵が語と一致しなくなるので、英字で終わる語の後ろは打ったままの形の句読点の区間にして入力を切る
+            // 空白の直後の previousIsEnglish は、空白を飛ばした前の区間の言語で決めた runKeepsTyped。
             let afterSpace = runAfterSpace && runStart == i
             // 数だけの区間を飛ばして英語の側に決めたとき（vue3.）も、含めると打鍵が語と一致しなくなるので切る
-            let keepsTyped = afterSpace || before.last.map { $0.kind == .word || Self.isNumberSpan($0) } ?? false
+            let keepsTyped = afterSpace || before.last.map(Self.isNumberSpan) ?? false
             let mark = symbol.map(\.mark)
                 ?? Self.punctuationMark(chars[i], opened: &opened, previousIsEnglish: previousIsEnglish)
                 ?? (keepsTyped ? String(chars[i]) : nil)
@@ -604,10 +608,10 @@ public final class Segmenter {
             let readings = readingsAt[start]
             // この位置から綴りの表で最後まで読める終端。英語区間の候補が読める綴りかを引くのに使う
             let readableEnds = Set(readings.map(\.end))
-            // 利用者の辞書の語の区間の後は、直前に見えている文字がその語の表示の最後の文字なので、長音をそれで判定し直す。
+            // 日本語として登録した語の区間の後は日本語の区間の後なので、表記の字によらず - を長音と読む（区間の言語で決める）。
             // ほかの区間の後は直前の打鍵で判定する（かなの後ろの - は、前のかなとまとめた区間の候補が読む）
-            let afterWord = best[start][.word].map { word in
-                Self.japaneseReadings(table: table, from: 0, in: Array(chars[start...]), before: Preceding(key: chars[start - 1], shown: word.segment.output.last))
+            let afterWord = best[start][.word].map { _ in
+                Self.japaneseReadings(table: table, from: 0, in: Array(chars[start...]), before: Preceding(key: chars[start - 1], lengthens: true))
                     .map { (end: start + $0.end, kana: $0.kana) }
             }
             for predecessor in predecessors {
