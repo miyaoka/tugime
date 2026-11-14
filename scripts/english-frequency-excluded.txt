@@ -1,4 +1,4 @@
-# make-english-frequency.py が語の表から外す綴り。日本語の文章に英字で出るが、英語の語ではないもの。
+# make-english-frequency.py が語の表から外す綴り。日本語の文章に英字で出るが、英語の語として扱わないもの。
 #
 # 序数の語尾。元データには数字と英字が混ざった語が無く（1st は 1 と st に分けて数えられる）、語尾だけが語として載る
 st
@@ -8,8 +8,9 @@ th
 #
 # 日本語の語・人名・地名・日本語の語から付けた名前をローマ字で書いたもの。
 # 既定の綴りの表で読んだかなが、そのままその語の読みになるものに限る（hee → へえ、sugoi → すごい）。
-# 長音を省いた綴り（tokyo osaka）は利用者がその語を打つ綴りではないので外さない。
-# 英語や他の言語の語としても主に使われる綴り（sake dame goto ore imo）も外さない。
+# 長音を省いた綴り（tokyo osaka）と、ん を単独の n で終える綴り（kan ken。ん は nn と打つ）は、利用者がその語を打つ綴りではないので外さない。
+# 英語や他の言語の語としても使われる綴りは、日本語の語として単独で打つことの方が多いと利用者が判断したものだけ外す
+# （ute ame sake goto）。
 naruto
 sakura
 akira
@@ -423,3 +424,17 @@ gaku
 kawai
 anime
 roppongi
+ume
+ura
+tera
+ani
+ute
+hage
+ota
+ise
+ada
+ame
+sake
+ore
+imo
+goto

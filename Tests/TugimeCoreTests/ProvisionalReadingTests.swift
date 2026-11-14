@@ -15,8 +15,8 @@ import Testing
     /// 変換が届く前の閉じ丸括弧は、区切りと同じく、届いた表示か入力欄の直前で閉じていない開き丸括弧と同じ形にする。
     /// 直前が英字でも全角の組なら全角、直前がかなでも半角の組なら半角。全角の閉じ丸括弧の後ろの句読点は、区切りと同じく日本語の記号
     @Test(arguments: [
-        ("kyou (ame)", "kyou (ame", "今日 （ame", "", "今日 （ame）"),
-        ("github (ame)", "github (ame", "github (ame", "", "github (ame)"),
+        ("kyou (git)", "kyou (git", "今日 （git", "", "今日 （git）"),
+        ("github (git)", "github (git", "github (git", "", "github (git)"),
         ("ame)", "", "", "Hello (", "あめ)"),
         ("kore(github),", "kore(github", "これ（github", "", "これ（github）、"),
     ])
