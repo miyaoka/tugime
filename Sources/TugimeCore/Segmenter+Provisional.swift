@@ -231,8 +231,8 @@ extension Segmenter {
         return rest.isEmpty ? kept : nil
     }
 
-    /// 表示 shown の後ろの句読点を日本語の記号にするか。入力欄の直前に表示をつないだものを前の文字列とみなし、区切りと確定してから打ったときと同じ
-    /// keepsPunctuationTyped(afterText:) で決める
+    /// 表示 shown の後ろの句読点を日本語の記号にするか。変換が届く前は区間の言語が分からないので、入力欄の直前に表示をつないだものを前の文字列とみなし、
+    /// 確定してから打ったときと同じ keepsPunctuationTyped(afterText:) で決める。変換が届くと区切りの結果（区間の言語）で決めた表示に置き換わる
     static func afterJapanese(_ shown: String, leading: Leading) -> Bool {
         !keepsPunctuationTyped(afterText: leading.text + shown)
     }

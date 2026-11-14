@@ -136,57 +136,72 @@ import Testing
 
     init() throws {
         segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten\njpy.dev\tCurrency API\ten\nvue\tVue\ten\n404\tNot Found\ten\n110\t警察\ten\npwd.x\tPWDX\tja"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten\njpy.dev\tCurrency API\ten\nvue\tVue\ten\n404\tNot Found\ten\n110\t警察\ten\npwd.x\tPWDX\tja\nnendo\t2026\tja"))
     }
 
-    /// 登録した語の後ろの句読点は、区間の種類（日本語か英語か）ではなく、語の見えている表記の最後の字で、確定済みの文字列の後と同じく形を決める。
-    /// 日本語の文字の後は日本語の記号、ラテン文字（é を含む）や記号の後は打ったまま。数で終われば数の前の文字で決める。続けて打っても、語まで確定してから打っても同じ形になる。
-    /// 変換が届く前の表示の句読点も同じ形になる。ただし登録した表記が打鍵と違う綴りで始まり、日本語の側の字で終わる語（qqx → 第2、jpy → 円）は、
-    /// 届く前は打鍵の全体を打ったまま読み直し（qqx,）、句読点の前の字が変わるので、届く前を比べない
+    /// 登録した語の後ろの句読点は、表記の字によらず登録した言語で決める。en の語の後は打ったまま、ja の語の後は日本語の記号。
+    /// 確定済みの入力欄の文字列は言語が分からないので、確定してから打った句読点は見えている字で決まる（leadingPunctuationFollowsTheTextBeforeTheCaret）
     @Test(arguments: [
-        ("pwd", "PWD", ",", true), ("resume", "résumé", ",", true), ("cafe", "Café", ",", true),
-        ("qqx", "第2", "、", false), ("yahoo", "Yahoo!", ",", true), ("jpy", "円", "、", false),
+        ("pwd", "PWD", "、"), ("cafe", "Café", "、"), ("qqx", "第2", "、"),
+        ("resume", "résumé", ","), ("yahoo", "Yahoo!", ","), ("jpy", "円", ","),
     ])
-    func punctuatesAfterAUserWordByItsShownLetter(keys: String, shown: String, mark: String, comparesProvisional: Bool) {
+    func punctuatesAfterAUserWordByItsLanguage(keys: String, shown: String, mark: String) {
         #expect(segmenter.liveText(keys + ",") == shown + mark)
-        if comparesProvisional {
-            let beforeConversion = Segmenter.liveDisplay(of: keys + ",", converted: [(keys, segmenter.liveDisplay(keys))], leading: .start, table: segmenter.table)
-            #expect(beforeConversion.text.last == mark.last, "変換が届く前")
-        }
-        #expect(segmenter.liveText(",", leading: Segmenter.Leading(shown)) == mark, "確定してから")
     }
 
     /// 登録した語の後ろの句読点で入力を切る前に、句読点をまたいで登録したもっと長い打鍵（jpy.dev、pwd.x）がそのまま打たれていれば、その語として読む
-    @Test(arguments: [("jpy.dev", "Currency API"), ("jpy.dev,", "Currency API,"), ("pwd.x", "PWDX"), ("jpy.", "円。"), ("pwd.", "PWD.")])
+    @Test(arguments: [("jpy.dev", "Currency API"), ("jpy.dev,", "Currency API,"), ("pwd.x", "PWDX"), ("jpy.", "円."), ("pwd.", "PWD。")])
     func readsARegisteredKeyAcrossPunctuation(keys: String, shown: String) {
         #expect(segmenter.liveText(keys) == shown)
     }
 
-    /// 登録した語の後ろの数の後ろの句読点は、数の前の語の表記で決める（Vue3. は e の側）。数字だけの打鍵で登録した語（404 → Not Found）は数ではなく語なので、その表記で決める
-    @Test(arguments: [("vue3.", "Vue3."), ("kyou 404,", "今日 Not Found,"), ("API 110,", "API 警察、")])
+    /// 登録した語の後ろの数の後ろの句読点は、数の前の語の言語で決める（en の vue の後の Vue3.）。数字だけの打鍵で登録した語（404 → Not Found）は数ではなく語なので、その言語で決める
+    @Test(arguments: [("vue3.", "Vue3."), ("kyou 404,", "今日 Not Found,"), ("API 110,", "API 警察,")])
     func punctuatesAfterANumberByTheUserWordBeforeIt(keys: String, shown: String) {
         #expect(segmenter.liveText(keys) == shown)
     }
 
-    /// 登録した語の文節を縮めて数だけの文節にしても、後ろの句読点は数の前に見えている文字列で決める（API 40 の後の 4, は I の側）
-    @Test func punctuatesAfterAUserWordResizedToANumber() throws {
-        let clauses = segmenter.clauses("API 404,")
+    /// 文節を縮めて数だけの文節にしたら、その後ろの句読点は数の前の文節の言語で決める（ja の PWD の後の 40 4 は 、、en の API の後は ,）
+    @Test(arguments: [("pwd 404,", "、"), ("API 404,", ",")])
+    func punctuatesAfterANumberResizedFromAWordByTheClauseBefore(keys: String, mark: String) throws {
+        let clauses = segmenter.clauses(keys)
         let word = try #require(clauses.firstIndex { $0.output.hasPrefix("Not Found") })
         let resized = segmenter.resize(segmenter.resize(clauses, at: word, by: -1), at: word, by: -1)
-        #expect(resized.map(\.output).joined().hasSuffix(","))
-        #expect(!resized.map(\.output).joined().contains("、"))
+        #expect(resized.last?.output == mark)
     }
 
-    /// 文節の伸縮で登録した語の文節に戻したときも、後ろの句読点は区間の種類ではなく語の表記で形を決める（英語として登録した 円 の後は 、）
-    @Test func punctuatesAfterAResizedUserWordByItsShownForm() {
+    /// 文節を伸縮して読み直すときも、語の後ろの - は語の言語で決める（en で登録した jpy → 円 の文節を縮めた後の - は打ったまま）
+    @Test func readsADashAfterAResizedEnglishUserWordAsTyped() {
+        let shown = segmenter.resize(segmenter.clauses("jpy-desu"), at: 0, by: -1).map(\.output).joined()
+        #expect(shown.contains("-") && !shown.contains("ー"))
+    }
+
+    /// 候補で表記を選んだ文節の後ろは、選んだ表記の字で句読点を決める。今日 を kyou にしてから後ろの Not Found を縮めて数だけの文節にすると、句読点は打ったまま
+    @Test func punctuatesAfterANumberByTheFormChosenBeforeIt() throws {
+        let clauses = Clause.selecting(text: "kyou", at: 0, in: segmenter.clauses("kyou 404,"))
+        let word = try #require(clauses.firstIndex { $0.output.hasPrefix("Not Found") })
+        let resized = segmenter.resize(segmenter.resize(clauses, at: word, by: -1), at: word, by: -1)
+        #expect(resized.last?.output == ",", "\(resized.map(\.output))")
+    }
+
+    /// 数の前の文節を探すとき、表記が数字でも読みが数でない日本語の文節（ja で登録した nendo → 2026）は数として飛ばさず、その言語で決める
+    @Test func punctuatesAfterAJapaneseWordShownAsANumber() throws {
+        let clauses = segmenter.clauses("API nendo 404,")
+        let word = try #require(clauses.firstIndex { $0.output.hasPrefix("Not Found") })
+        let resized = segmenter.resize(segmenter.resize(clauses, at: word, by: -1), at: word, by: -1)
+        #expect(resized.last?.output == "、", "\(clauses.map(\.output)) → \(resized.map(\.output))")
+    }
+
+    /// 文節の伸縮で登録した語の文節に戻したときも、後ろの句読点は語の言語で決める（en で登録した 円 の後は打ったまま）
+    @Test func punctuatesAfterAResizedUserWordByItsLanguage() {
         let resized = segmenter.resize(segmenter.resize(segmenter.clauses("jpy,"), at: 0, by: -1), at: 0, by: 1)
-        #expect(resized.map(\.output).joined() == "円、")
+        #expect(resized.map(\.output).joined() == "円,")
     }
 
-    /// 日本語として扱う語の区間の後ろの - は、その語の見えている最後の字で長音を判定する（すご の後ろは ー、Café の後ろは打ったまま）
-    @Test func readsADashAfterAUserWordByItsShownLetter() {
+    /// 日本語として扱う語の区間の後ろの - は、表記の字によらず長音と読める（すご の後ろも Café の後ろも ー）
+    @Test func readsADashAfterAJapaneseUserWordAsALongVowel() {
         #expect(segmenter.candidates("cwd-desu").contains { $0.after == .word && $0.segment.kind == .japanese && $0.segment.reading == "ーです" })
-        #expect(!segmenter.candidates("cafe-desu").contains { $0.after == .word && $0.segment.reading.hasPrefix("ー") })
+        #expect(segmenter.candidates("cafe-desu").contains { $0.after == .word && $0.segment.kind == .japanese && $0.segment.reading == "ーです" })
     }
 
     /// 綴りの表で読める打鍵は、そのかなの語になり、長い打鍵の途中でも効く
