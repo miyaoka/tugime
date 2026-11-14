@@ -107,7 +107,8 @@ import Testing
         #expect(try Self.isWrongFormat(Self.bytes(fields)))
     }
 
-    /// 品詞の数が UInt16 の ID で表せる数を超える辞書。区画の大きさ（品詞の数の 2 乗）を計算する前に弾く。中身は書けない大きさなので先頭だけにする
+    /// 品詞の数が、1 から UInt16 の ID で表せる数までの範囲の外にある辞書。区画の大きさ（品詞の数の 2 乗）を計算する前に弾くことを確かめるので、
+    /// 区画を書かずに先頭だけにする
     @Test(arguments: [UInt32(0), UInt32(UInt16.max) + 2, UInt32.max])
     func rejectsPartOfSpeechCountsOutsideTheIds(posCount: UInt32) throws {
         var header = Self.header(Fields())
