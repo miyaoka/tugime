@@ -136,16 +136,16 @@ import Testing
 
     init() throws {
         segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten"))
     }
 
     /// 登録した語の後ろの句読点は、区間の種類（日本語か英語か）ではなく、語の見えている表記の最後の字で、確定済みの文字列の後と同じく形を決める。
-    /// 数で終われば数の前の文字で決める。続けて打っても、語まで確定してから打っても同じ形になる。
-    /// 変換が届く前の表示の句読点も同じ形になる。ただし登録した表記が数で終わり打鍵と違う綴りで始まる語（qqx → 第2）は、
+    /// 日本語の文字の後は日本語の記号、ラテン文字（é を含む）や記号の後は打ったまま。数で終われば数の前の文字で決める。続けて打っても、語まで確定してから打っても同じ形になる。
+    /// 変換が届く前の表示の句読点も同じ形になる。ただし登録した表記が打鍵と違う綴りで始まり、日本語の側の字で終わる語（qqx → 第2、jpy → 円）は、
     /// 届く前は打鍵の全体を打ったまま読み直し（qqx,）、句読点の前の字が変わるので、届く前を比べない
     @Test(arguments: [
-        ("pwd", "PWD", ",", true), ("resume", "résumé", "、", true), ("cafe", "Café", "、", true),
-        ("qqx", "第2", "、", false), ("yahoo", "Yahoo!", ",", true),
+        ("pwd", "PWD", ",", true), ("resume", "résumé", ",", true), ("cafe", "Café", ",", true),
+        ("qqx", "第2", "、", false), ("yahoo", "Yahoo!", ",", true), ("jpy", "円", "、", false),
     ])
     func punctuatesAfterAUserWordByItsShownLetter(keys: String, shown: String, mark: String, comparesProvisional: Bool) {
         #expect(segmenter.liveText(keys + ",") == shown + mark)
@@ -156,10 +156,10 @@ import Testing
         #expect(segmenter.liveText(",", leading: Segmenter.Leading(shown)) == mark, "確定してから")
     }
 
-    /// 文節の伸縮で登録した語の文節に戻したときも、後ろの句読点は語の表記で形を決める（résumé の後は 、）
+    /// 文節の伸縮で登録した語の文節に戻したときも、後ろの句読点は区間の種類ではなく語の表記で形を決める（英語として登録した 円 の後は 、）
     @Test func punctuatesAfterAResizedUserWordByItsShownForm() {
-        let resized = segmenter.resize(segmenter.resize(segmenter.clauses("resume,"), at: 0, by: -1), at: 0, by: 1)
-        #expect(resized.map(\.output).joined() == "résumé、")
+        let resized = segmenter.resize(segmenter.resize(segmenter.clauses("jpy,"), at: 0, by: -1), at: 0, by: 1)
+        #expect(resized.map(\.output).joined() == "円、")
     }
 
     /// 日本語として扱う語の区間の後ろの - は、その語の見えている最後の字で長音を判定する（すご の後ろは ー、Café の後ろは打ったまま）

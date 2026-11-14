@@ -285,6 +285,10 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(output(".", leading: Segmenter.Leading("Hello\n")) == "。")
         #expect(output(".", leading: Segmenter.Leading("Hello.")) == ".")
         #expect(output(".", leading: Segmenter.Leading("今日。")) == "。")
+        #expect(output(",", leading: Segmenter.Leading("「")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("（")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("Café")) == ",")
+        #expect(output(",", leading: Segmenter.Leading("𠮷")) == "、")
         #expect(output("~", leading: Segmenter.Leading("今日")) == "〜")
         #expect(output("~", leading: Segmenter.Leading("API")) == "~")
     }

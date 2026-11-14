@@ -128,12 +128,11 @@ public final class Segmenter {
         case start
         /// 日本語の文の途中
         case afterJapanese
-        /// 英字・記号など ASCII の後
+        /// ラテン文字・ASCII の記号など、日本語でない文字の後
         case afterEnglish
 
-        /// 前の文字列の、末尾の空白を飛ばした最後の文字から決める。無い、改行などの空白、文末の記号の後なら文頭、それ以外の ASCII の後なら英語の後、
-        /// 残りは日本語の後。未確定の文字列の中の空白と同じく、空白をはさんでもその前の文字で決まる。
-        /// 数（numberLength）で終わるなら、未確定の文字列の中と同じく、数はその前の文字の側に付く。前が ASCII の英字や記号なら英語の後、それ以外は日本語の後
+        /// 前の文字列の、末尾の空白を飛ばした最後の文字から決める。無い、改行などの空白、文末の記号の後なら文頭、残りは句読点を打ったままにする側
+        /// （keepsPunctuationTyped(afterText:)）なら英語の後、日本語の記号にする側なら日本語の後。空白をはさんでも、数で終わっても、その前の文字で決まる
         init(after spaced: String) {
             let text = Segmenter.droppingTrailingSpaces(spaced)
             let startsSentence = Segmenter.numberLength(text.reversed()) == 0
@@ -150,21 +149,38 @@ public final class Segmenter {
     }
 
     /// 区間の後ろの句読点を打ったままにするか。入力欄の直前と変換が届く前の表示と同じく、表記を前の文字列として keepsPunctuationTyped(afterText:) で決める。
-    /// 英語の区間と利用者の辞書の語の区間は、登録した表記によって日本語の文字で終わることも英字で終わることもある（Café、Fiji）。
+    /// 英語の区間と利用者の辞書の語の区間は、登録した表記によって日本語の文字で終わることも英字で終わることもある（第2、PWD）。
     /// 日本語区間は区切りの時点で表示の変換の表記が決まっていないので、日本語の側とする
     static func keepsPunctuationTyped(after segment: Segment) -> Bool {
         segment.kind != .japanese && keepsPunctuationTyped(afterText: segment.output)
     }
 
-    /// text の後ろの句読点を打ったままにするか。末尾の空白を飛ばした最後の文字が、空白でない ASCII（英字・記号）なら打ったまま、それ以外
-    /// （日本語の文字、改行、何も無い）なら日本語の記号にする。数で終われば、数はその前の文字の側に付くので数の前の文字で決める。
+    /// text の後ろの句読点を打ったままにするか。末尾の空白を飛ばした最後の文字が、日本語の文字か日本語の記号（isJapaneseSide）、改行、
+    /// 何も無いなら日本語の記号にし、それ以外（ラテン文字・ASCII の記号など）なら打ったままにする。数で終われば、数はその前の文字の側に付くので数の前の文字で決める。
     /// 後ろが文の頭か（Continuation）とは別に決める。英語の文の途中の . ! ? の後ろ（wait... really?!）は文の頭ではなく英語の続き
     static func keepsPunctuationTyped(afterText spaced: String) -> Bool {
         let text = droppingTrailingSpaces(spaced)
         let number = numberLength(text.reversed())
         guard let last = number > 0 ? text.dropLast(number).last : text.last else { return false }
-        return last.isASCII && !last.isWhitespace
+        return !last.isWhitespace && !isJapaneseSide(last)
     }
+
+    /// 後ろの句読点を日本語の記号にする文字か。日本語の文字（isJapaneseLetter）と、日本語の記号。日本語の記号は、句読点と記号の打鍵が出す形と、
+    /// 全角の記号の区画（中黒、CJK の記号と句読点、全角形）の字
+    static func isJapaneseSide(_ c: Character) -> Bool {
+        if isJapaneseLetter(c) || japaneseMarks.contains(c) { return true }
+        guard let base = c.unicodeScalars.first else { return false }
+        return japaneseMarkRanges.contains { $0.contains(base.value) }
+    }
+
+    private static let japaneseMarks = Set((Array(punctuation.values) + Array(symbols.values)).joined())
+
+    private static let japaneseMarkRanges: [ClosedRange<UInt32>] = [
+        0x3000...0x303F, // CJK の記号と句読点（、。「」『』【】〜 など）
+        0x30FB...0x30FB, // 中黒
+        0xFF01...0xFF60, // 全角形（！？（）：＝ など）
+        0xFF61...0xFF65, // 半角の句読点と括弧（｡｢｣､･）
+    ]
 
     /// 末尾の空白（" "）を除いた文字列。改行は除かない
     static func droppingTrailingSpaces(_ text: String) -> String {
