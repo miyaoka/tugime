@@ -615,6 +615,16 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(cafe.contains("カフェ"))
         #expect(segmenter.clauses("github")[0].candidates == ["github", "ｇｉｔｈｕｂ"])
     }
+
+    /// 空白は入力を切るので、空白までの区切りは、空白を打った時点の区切りから後ろに打った分で変わらない
+    @Test(arguments: ["kyouha node wo sakujo suru", "sake wo nomu", "github ni push sita", "kore ha 3 ko desu"])
+    func keepsTheSegmentsBeforeASpace(input: String) {
+        let whole = segmenter.segment(input)
+        for (index, char) in input.enumerated() where char == " " {
+            let typed = segmenter.segment(String(input.prefix(index + 1)))
+            #expect(Array(whole.prefix(typed.count)) == typed, "\(input.prefix(index + 1))")
+        }
+    }
 }
 
 /// 本物の変換器に処理を任せ、表示の変換の末尾に読みに無いかなを足して、読みと合わない表示にする
