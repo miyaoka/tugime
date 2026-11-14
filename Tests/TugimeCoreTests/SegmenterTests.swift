@@ -146,6 +146,31 @@ private final class DisplayRecorder: JapaneseConverting {
         }
     }
 
+    /// 前の文節を英字にすると、後ろの文節の頭の - は長音と読めない。その文節を伸ばしても止まらず、日本語の文節に打鍵を流さない。
+    /// 句読点か記号をまたいで部分を読めない伸縮は取りやめ、文節を操作の前のまま残す
+    @Test func keepsTheClausesWhenAResizedPartCannotBeRead() throws {
+        var clauses = segmenter.clauses("ra-men.desu")
+        for _ in 0..<8 where clauses[0].reading != "ら" {
+            clauses = segmenter.resize(clauses, at: 0, by: -1)
+        }
+        try #require(clauses[0].reading == "ら", "\(clauses.map(\.reading))")
+        clauses = Clause.selecting(text: "ra", at: 0, in: clauses)
+        for _ in 0..<6 {
+            let before = clauses
+            clauses = segmenter.resize(clauses, at: 1, by: 1)
+            for clause in clauses where clause.kind == .japanese {
+                #expect(!clause.reading.contains { $0.isASCII && $0.isLetter }, "\(clauses.map(\.reading))")
+            }
+            if clauses == before {
+                // 取りやめたのは、伸ばすと句読点をまたぐところ（後ろの文節の次が句読点の文節）
+                #expect(clauses[1].reading == "ーめん", "\(clauses.map(\.reading))")
+                #expect(clauses.count > 2 && clauses[2].kind == .punctuation, "\(clauses.map(\.reading))")
+                return
+            }
+        }
+        Issue.record("句読点をまたぐ伸縮が取りやめにならなかった: \(clauses.map(\.reading))")
+    }
+
     @Test(arguments: ["-", "--", "-.", "xa", "kaki--", "binge-watch", ".", "a,b", "Hello."])
     func coversEveryKeystroke(input: String) {
         #expect(segmenter.segment(input).map(\.source).joined() == input)
