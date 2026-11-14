@@ -154,11 +154,11 @@ public final class Segmenter {
         var japaneseContext: JapaneseContext { self == .start ? .start : .afterCaret }
     }
 
-    /// 区間の後ろの句読点を打ったままにするか（区間が英語の側で終わるか）。入力欄の直前（Continuation）と変換が届く前の表示（afterJapanese）と同じく、
-    /// 表記の最後の文字が英字・記号（ASCII）かで決める。英語の区間と利用者の辞書の語の区間は、登録した表記によって日本語の文字で終わることも
-    /// 英字で終わることもある（Café、Fiji）。日本語区間は表示の変換で表記が決まるので、日本語の側とする
-    static func endsInEnglish(_ segment: Segment) -> Bool {
-        segment.kind != .japanese && segment.output.last?.isASCII != false
+    /// 区間の後ろの句読点を打ったままにするか。入力欄の直前と変換が届く前の表示と同じく、表記を前の文字列とみなした Continuation で決める
+    /// （数で終われば数の前の文字、文末の記号で終われば文の頭）。英語の区間と利用者の辞書の語の区間は、登録した表記によって日本語の文字で終わることも
+    /// 英字で終わることもある（Café、Fiji）。日本語区間は区切りの時点で表示の変換の表記が決まっていないので、日本語の側とする
+    static func keepsPunctuationTyped(after segment: Segment) -> Bool {
+        segment.kind != .japanese && Continuation(after: segment.output) == .afterEnglish
     }
 
     /// 末尾の空白（" "）を除いた文字列。改行は除かない
@@ -447,7 +447,7 @@ public final class Segmenter {
                 segments += before
                 if let last = before.last {
                     runContext = Self.context(after: chars[runStart..<i])
-                    runContinuation = Self.endsInEnglish(last) ? .afterEnglish : .afterJapanese
+                    runContinuation = Self.keepsPunctuationTyped(after: last) ? .afterEnglish : .afterJapanese
                 }
                 segments.append(Self.spaceSegment(String(chars[i..<(i + spaces)]), context: runContext))
                 i += spaces
@@ -464,7 +464,7 @@ public final class Segmenter {
             var runSpans: [ScoredSpan] = []
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, preceding: runStart == 0 ? preceding : Preceding(chars[runStart - 1]), spaced: runAfterSpace, observe: collect)
-            let previousIsEnglish = before.last.map(Self.endsInEnglish) ?? (runContinuation == .afterEnglish)
+            let previousIsEnglish = before.last.map { Self.keepsPunctuationTyped(after: $0) } ?? (runContinuation == .afterEnglish)
             // nil なら打ったまま直前の英語の区間に含める。空白の直後は含める英語の語が無いので、打ったままの形の句読点の区間にして入力を切る。
             // 空白の直後の previousIsEnglish は、空白を飛ばした前の区間の言語（runContinuation）
             // 利用者の辞書の語の後ろも、含めると打鍵が語と一致しなくなるので、英字で終わる語の後ろは打ったままの形の句読点の区間にして入力を切る

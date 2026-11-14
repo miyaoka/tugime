@@ -483,7 +483,7 @@ extension Segmenter {
             self.clauses(
                 of: self.segment(
                     String(keys[end..<keyEnd]),
-                    after: markContinuation ?? (Self.endsInEnglish(fixed) ? .afterEnglish : .afterJapanese),
+                    after: markContinuation ?? (Self.keepsPunctuationTyped(after: fixed) ? .afterEnglish : .afterJapanese),
                     context: self.context(after: resized, keys: keys[..<end], leading: leading),
                     opened: Self.unclosedOpeners(in: left + resized.output),
                     preceding: Segmenter.Preceding(key: keys[..<end].last ?? leading.text.last, shown: (left + resized.output).last)

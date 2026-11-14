@@ -229,13 +229,10 @@ extension Segmenter {
         return rest.isEmpty ? kept : nil
     }
 
-    /// 表示 shown の後ろの句読点を日本語の記号にするか。区切りと同じく、空白を飛ばした直前の文字が日本語か、未確定の文字列の先頭（空白だけを含む）では
-    /// 入力欄の直前（leading）で決める。数字で終わるなら、区切りと同じく数字の前の文字の側に付く（Continuation）
+    /// 表示 shown の後ろの句読点を日本語の記号にするか。入力欄の直前に表示をつないだものを前の文字列とみなし、確定してから打ったときと同じ
+    /// Continuation で決める（空白を飛ばした直前の文字。数で終われば数の前の文字、文末の記号で終われば文の頭）
     static func afterJapanese(_ shown: String, leading: Leading) -> Bool {
-        let shown = droppingTrailingSpaces(shown)
-        if shown.last.map(isDigit) == true { return Continuation(after: leading.text + shown) != .afterEnglish }
-        guard let last = shown.last else { return leading.continuation != .afterEnglish }
-        return !last.isASCII
+        Continuation(after: leading.text + shown) != .afterEnglish
     }
 
     /// 打鍵列 keys の変換の表示 shown を、後ろに読みをつないでも崩れない部分と、末尾の打ちかけの打鍵の数に分ける。
