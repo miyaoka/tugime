@@ -40,16 +40,17 @@ public struct RomajiTable: Sendable {
     /// contents は綴りの表、typedKana は打鍵をかなにするときだけ足して読む綴り。typedKana は綴りの行だけを持ち、同じ綴りは contents を使う
     public init(contents: String, typedKana: String) throws {
         let table = try Self.parse(contents, file: Self.tableFile, allowsDirectives: true)
-        // 綴りが無いと、打鍵を読む最長の綴りの長さが 0 になり、読む範囲を作れない
-        guard !table.entries.isEmpty else { throw ParseError.noSpellings(file: Self.tableFile) }
+        // 打鍵は 1 打鍵から最長の綴りの長さまでを読むので、綴りが 1 つも無い表では読めない
+        guard let maxKeyLength = table.entries.keys.map(\.count).max() else { throw ParseError.noSpellings(file: Self.tableFile) }
         let extra = try Self.parse(typedKana, file: Self.typedKanaFile, allowsDirectives: false)
         self.entries = table.entries
         self.rank = table.rank
-        self.maxKeyLength = table.entries.keys.map(\.count).max() ?? 0
+        self.maxKeyLength = maxKeyLength
         self.sokuonLetters = table.sokuon
         self.nBeforeLetters = table.nBefore
         self.typedKanaEntries = table.entries.merging(extra.entries) { own, _ in own }
-        self.typedKanaMaxKeyLength = typedKanaEntries.keys.map(\.count).max() ?? 0
+        // かなにするときだけ読む綴りは無くてよい
+        self.typedKanaMaxKeyLength = max(maxKeyLength, extra.entries.keys.map(\.count).max() ?? 0)
     }
 
     /// allowsDirectives が偽なら、@ で始まる行をエラーにする

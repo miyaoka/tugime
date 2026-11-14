@@ -197,7 +197,9 @@ final class TugimeInputController: IMKInputController {
     /// 窓の行をクリックしたとき。その候補を選んで窓を閉じる
     private func clickCandidate(_ index: Int) {
         guard let clauses, let client = client() else { return }
-        self.clauses = Clause.selecting(index, at: focus, in: clauses)
+        let focus = focus
+        guard let selected = Unexpected.guarded({ Clause.selecting(index, at: focus, in: clauses) }) else { return }
+        self.clauses = selected
         closeCandidates()
         showMarkedText(client)
     }
