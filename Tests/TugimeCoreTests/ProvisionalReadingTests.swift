@@ -32,19 +32,26 @@ import Testing
         ("nara3.", true, "なら3。"),
     ])
     func provisionalText(keys: String, afterJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, preceding: nil, table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, preceding: Segmenter.Preceding(nil), table: table) == expected)
     }
 
     /// 入力の先頭の数の区切りは、直前の文字（入力欄や前の表示）が数字かで決める
     @Test(arguments: [(".14", "3", ".14"), ("-11-03", "2026", "-11-03"), (".", "3", "。")])
     func readsANumberSeparatorAfterThePrecedingDigits(keys: String, preceding: String, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: preceding.last, table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: Segmenter.Preceding(preceding.last), table: table) == expected)
+    }
+
+    /// 届いた変換の後ろに打った - は、その変換の見えている最後の文字が日本語の文字（漢字を含む）なら ー、英字なら打ったまま
+    @Test(arguments: [("ninnki-", "ninnki", "人気", "人気ー"), ("ra-", "ra", "ら", "らー"), ("node-", "node", "node", "node-")])
+    func readsADashAfterTheConvertedDisplay(keys: String, base: String, shown: String, expected: String) {
+        let live = Segmenter.liveDisplay(of: keys, converted: [(base, display(shown))], leading: .start, table: table)
+        #expect(live.text == expected)
     }
 
     /// 末尾の単独の n は打ったまま。nn、後ろに打鍵が続く n、綴りの組の一部の n（xn）は読む
     @Test(arguments: [("n", "n"), ("bn", "bn"), ("ka,n", "か、n"), ("kon", "こn"), ("nn", "ん"), ("konnn", "こんn"), ("kona", "こな"), ("xn", "ん")])
     func keepsAPendingNAsTyped(keys: String, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: nil, table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: Segmenter.Preceding(nil), table: table) == expected)
     }
 
     @Test(arguments: [
@@ -155,7 +162,7 @@ import Testing
     /// 残した っ の後は、どの綴りを続けても っ に続けて読む
     @Test(arguments: [("toxtukyo", "とっきょ"), ("baxtusi", "ばっし"), ("baxtukinn", "ばっきん"), ("kannji", "かんじ")])
     func readsOnAfterAKeptSokuon(keys: String, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: nil, table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: Segmenter.Preceding(nil), table: table) == expected)
     }
 
     /// 表示の字に対応する打鍵が決まらなければ、表示を残せない

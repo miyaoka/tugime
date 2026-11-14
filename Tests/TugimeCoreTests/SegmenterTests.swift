@@ -69,7 +69,7 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(segments.map(\.reading) == ["3かも4かもやすむ"])
     }
 
-    /// 数字にはさまれた . , : と、数字の直後の - は、数の一部として打ったまま残す。ほかの記号は直前の区間に従う
+    /// 数字にはさまれた . , : - は、数の一部として打ったまま残す。ほかの記号は直前の区間に従う
     @Test(arguments: [
         ("3.14", "3.14"), ("1,000enn", "1,000えん"), ("10:30kara", "10:30から"), ("kakakuha1500.", "かかくは1500。"), ("kyouha3.14.", "きょうは3.14。"), ("dennwaha0120-345-678,ato", "でんわは0120-345-678、あと"),
         ("2026-11-03", "2026-11-03"), ("03-1234-5678", "03-1234-5678"), ("3-5ninn", "3-5にん"), ("3~5nichi", "3〜5にち"),
@@ -111,6 +111,64 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(clause.candidates.first == "き")
         // かなと打鍵のほかに、1 かなの語がある
         #expect(clause.candidates.contains { !["き", "キ", "ki"].contains($0) })
+    }
+
+    /// 長音は直前の音を伸ばす記号なので、英字・数字・句読点・入力の先頭の後ろの - は、どの日本語区間の候補でも ー と読まない
+    @Test(arguments: ["us-west-1nidepuroisita.", "3-", "-", "--", "kore,-"])
+    func readsNoDashAsALongVowelAfterANonJapaneseLetter(input: String) {
+        let longVowels = segmenter.candidates(input).filter { $0.segment.kind == .japanese && $0.segment.reading.contains("ー") }
+        #expect(longVowels.isEmpty, "\(longVowels.map(\.segment.reading))")
+    }
+
+    /// かなの後ろの - は、入力の中でも、入力欄の日本語の文字（漢字を含む）に続く入力の先頭でも、ー と読む候補に入る
+    @Test(arguments: [("kaki--", "", "かきーー"), ("-", "すご", "ー"), ("-", "人気", "ー"), ("-", "ｽｺﾞ", "ー"), ("-", "山﨑", "ー"), ("-", "𠮷", "ー")])
+    func readsADashAfterJapaneseAsALongVowel(input: String, field: String, expected: String) {
+        #expect(segmenter.candidates(input, leading: Segmenter.Leading(field)).contains { $0.segment.kind == .japanese && $0.segment.reading == expected })
+    }
+
+    /// 入力欄が英字や、かなの区画にある音を持たない記号（・）で終わるときは、入力の先頭の - を ー と読まない
+    @Test(arguments: ["A", "A・", "3"])
+    func readsNoDashAsALongVowelAfterANonJapaneseField(field: String) {
+        #expect(!segmenter.candidates("-", leading: Segmenter.Leading(field)).contains { $0.segment.reading.contains("ー") })
+    }
+
+    /// 文節を縮めて分けた後ろの文節も、伸ばした文節も、前の文節の見えている文字がかななら、先頭の - を ー と読む
+    @Test func readsADashAfterAResizedClauseAsALongVowel() throws {
+        var clauses = segmenter.clauses("ra-men.desu")
+        for _ in 0..<8 where clauses[0].reading != "ら" {
+            clauses = segmenter.resize(clauses, at: 0, by: -1)
+        }
+        try #require(clauses[0].reading == "ら", "\(clauses.map(\.reading))")
+        #expect(clauses[1].reading.hasPrefix("ー"), "\(clauses.map(\.reading))")
+        for _ in 0..<5 {
+            clauses = segmenter.resize(clauses, at: 1, by: 1)
+            #expect(clauses[1].reading.hasPrefix("ー"), "\(clauses.map(\.reading))")
+        }
+    }
+
+    /// 前の文節を英字にすると、後ろの文節の頭の - は長音と読めない。その文節を伸ばしても止まらず、日本語の文節に打鍵を流さない。
+    /// 句読点か記号をまたいで部分を読めない伸縮は取りやめ、文節を操作の前のまま残す
+    @Test func keepsTheClausesWhenAResizedPartCannotBeRead() throws {
+        var clauses = segmenter.clauses("ra-men.desu")
+        for _ in 0..<8 where clauses[0].reading != "ら" {
+            clauses = segmenter.resize(clauses, at: 0, by: -1)
+        }
+        try #require(clauses[0].reading == "ら", "\(clauses.map(\.reading))")
+        clauses = Clause.selecting(text: "ra", at: 0, in: clauses)
+        for _ in 0..<6 {
+            let before = clauses
+            clauses = segmenter.resize(clauses, at: 1, by: 1)
+            for clause in clauses where clause.kind == .japanese {
+                #expect(!clause.reading.contains { $0.isASCII && $0.isLetter }, "\(clauses.map(\.reading))")
+            }
+            if clauses == before {
+                // 取りやめたのは、伸ばすと句読点をまたぐところ（後ろの文節の次が句読点の文節）
+                #expect(clauses[1].reading == "ーめん", "\(clauses.map(\.reading))")
+                #expect(clauses.count > 2 && clauses[2].kind == .punctuation, "\(clauses.map(\.reading))")
+                return
+            }
+        }
+        Issue.record("句読点をまたぐ伸縮が取りやめにならなかった: \(clauses.map(\.reading))")
     }
 
     @Test(arguments: ["-", "--", "-.", "xa", "kaki--", "binge-watch", ".", "a,b", "Hello."])

@@ -82,7 +82,7 @@ extension Segmenter {
         var converted: [UserWord] = []
         var typed: [String: [String]] = [:]
         for (keys, words) in dictionary.words(of: .japanese) {
-            guard let kana = Self.japaneseReading(table: table, of: keys, before: nil), Self.canBeJapanese(kana) else {
+            guard let kana = Self.japaneseReading(table: table, of: keys, before: Preceding(nil)) else {
                 typed[keys] = words
                 continue
             }
