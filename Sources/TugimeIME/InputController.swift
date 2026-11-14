@@ -171,7 +171,12 @@ final class TugimeInputController: IMKInputController {
 
     /// 文節 clauses の focus 番目の候補を選び始めるときの窓の範囲。想定外の状態に当たれば nil
     private static func candidatePage(of clauses: [Clause], at focus: Int) -> CandidatePage? {
-        Unexpected.guarded { CandidatePage(count: clauses[focus].candidates.count, selected: clauses[focus].selected) }
+        Unexpected.guarded {
+            guard clauses.indices.contains(focus) else {
+                return Unexpected.reached("候補の窓を開く文節が文節の範囲の外（文節、文節の数）", numbers: [focus, clauses.count], continuingWith: nil)
+            }
+            return CandidatePage(count: clauses[focus].candidates.count, selected: clauses[focus].selected)
+        } ?? nil
     }
 
     /// 候補を選び始め、窓を選んでいる文節の下に置く。窓を置くのはここだけで、候補を進めても置き直さない。
@@ -413,9 +418,12 @@ final class TugimeInputController: IMKInputController {
 
     private func moveCandidate(by delta: Int, clauses: [Clause], client: IMKTextInput) {
         let (focus, page) = (focus, candidatePage)
-        let count = clauses[focus].candidates.count
-        let index = (clauses[focus].selected + delta + count) % count
         guard let moved = Unexpected.guarded({ () -> (clauses: [Clause], page: CandidatePage?) in
+            guard clauses.indices.contains(focus), !clauses[focus].candidates.isEmpty else {
+                return Unexpected.reached("候補を送る文節が無いか、候補が無い（文節、文節の数）", numbers: [focus, clauses.count], continuingWith: (clauses, page))
+            }
+            let count = clauses[focus].candidates.count
+            let index = (clauses[focus].selected + delta + count) % count
             var page = page
             page?.select(index)
             return (Clause.selecting(index, at: focus, in: clauses), page)

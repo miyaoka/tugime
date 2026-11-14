@@ -58,8 +58,17 @@ public final class SystemDictionary: @unchecked Sendable {
         guard let mapped = mmap(nil, length, PROT_READ, MAP_PRIVATE, fd, 0), mapped != MAP_FAILED else { throw LoadError.cannotOpen(url.path) }
         typealias F = SystemDictionaryLayout.Field
         let header = Array(UnsafeBufferPointer(start: mapped.assumingMemoryBound(to: UInt32.self), count: SystemDictionaryLayout.headerCount))
+        // 品詞 ID は UInt16 で持つ。品詞の数を先に確かめておくと、区画の大きさ（品詞の数の 2 乗）の計算もあふれない
+        let pos = Int(header[F.posCount.rawValue])
+        let ids = [F.numberId, .nounId, .properNounId, .periodId].map { Int(header[$0.rawValue]) }
+        guard header[F.magic.rawValue] == SystemDictionaryLayout.magic, header[F.version.rawValue] == SystemDictionaryLayout.version,
+              (1...Int(UInt16.max) + 1).contains(pos), ids.allSatisfy({ $0 < pos }), header[F.maxReadingChars.rawValue] >= 1
+        else {
+            munmap(mapped, length)
+            throw LoadError.wrongFormat(url.path)
+        }
         let layout = SystemDictionaryLayout.offsets(header: header)
-        guard header[F.magic.rawValue] == SystemDictionaryLayout.magic, header[F.version.rawValue] == SystemDictionaryLayout.version, layout.total == length else {
+        guard layout.total == length else {
             munmap(mapped, length)
             throw LoadError.wrongFormat(url.path)
         }
@@ -80,6 +89,25 @@ public final class SystemDictionary: @unchecked Sendable {
         entries = section(.entries)
         readingBytes = section(.readingBytes).assumingMemoryBound(to: UInt8.self)
         surfaceBytes = section(.surfaceBytes).assumingMemoryBound(to: UInt8.self)
+        guard isWellFormed(entryCount: Int(header[F.entryCount.rawValue]), readingByteCount: Int(header[F.readingBytes.rawValue]), surfaceByteCount: Int(header[F.surfaceBytes.rawValue])) else {
+            throw LoadError.wrongFormat(url.path)
+        }
+    }
+
+    /// 引くときに範囲を確かめない値（読みと語の範囲、品詞 ID、表記の位置）が、どれも区画の中を指すか。
+    /// 外を指すと、引くときに止まらずに区画の外を読む
+    private func isWellFormed(entryCount: Int, readingByteCount: Int, surfaceByteCount: Int) -> Bool {
+        guard readingOffsets[0] == 0, Int(readingOffsets[readingCount]) == readingByteCount,
+              entryStarts[0] == 0, Int(entryStarts[readingCount]) == entryCount
+        else { return false }
+        for i in 0..<readingCount where readingOffsets[i] > readingOffsets[i + 1] || entryStarts[i] > entryStarts[i + 1] {
+            return false
+        }
+        for index in 0..<entryCount {
+            let e = entry(index)
+            guard Int(e.lid) < posCount, Int(e.rid) < posCount, e.surfaceOffset + e.surfaceLength <= surfaceByteCount else { return false }
+        }
+        return true
     }
 
     deinit {

@@ -39,6 +39,9 @@ extension Segmenter {
     /// index の文節だけを指定の文字種にした文字列。英字にするには文節に当たる打鍵が要り、
     /// 文節の境目が 1 つの綴りの途中にあって打鍵を切り出せなければ nil
     public func convertClause(_ clauses: [Clause], at index: Int, to form: CharacterForm) -> String? {
+        guard clauses.indices.contains(index) else {
+            return Unexpected.reached("文字種を変える文節が文節の範囲の外（文節、文節の数）", numbers: [index, clauses.count], continuingWith: nil)
+        }
         let clause = clauses[index]
         guard form.usesKeystrokes else {
             let kana = clause.kind == .english || clause.kind == .word ? table.typedKana(of: clause.span.source).kana : clause.reading

@@ -10,6 +10,7 @@ public struct RomajiTable: Sendable {
         case duplicateSpelling(file: String, Int, String)
         case directiveNotAllowed(file: String, Int, String)
         case missingResource(String)
+        case noSpellings(file: String)
 
         public var description: String {
             switch self {
@@ -18,6 +19,7 @@ public struct RomajiTable: Sendable {
             case .duplicateSpelling(let file, let n, let key): "\(file) \(n) 行目の綴り \(key) は前の行にもある"
             case .directiveNotAllowed(let file, let n, let line): "\(file) \(n) 行目に @ の指定は書けない: \(line)"
             case .missingResource(let file): "既定の \(file) がバンドルに無い"
+            case .noSpellings(let file): "\(file) に綴りが 1 行も無い"
             }
         }
     }
@@ -38,6 +40,8 @@ public struct RomajiTable: Sendable {
     /// contents は綴りの表、typedKana は打鍵をかなにするときだけ足して読む綴り。typedKana は綴りの行だけを持ち、同じ綴りは contents を使う
     public init(contents: String, typedKana: String) throws {
         let table = try Self.parse(contents, file: Self.tableFile, allowsDirectives: true)
+        // 綴りが無いと、打鍵を読む最長の綴りの長さが 0 になり、読む範囲を作れない
+        guard !table.entries.isEmpty else { throw ParseError.noSpellings(file: Self.tableFile) }
         let extra = try Self.parse(typedKana, file: Self.typedKanaFile, allowsDirectives: false)
         self.entries = table.entries
         self.rank = table.rank
