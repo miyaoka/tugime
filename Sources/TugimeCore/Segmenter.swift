@@ -553,6 +553,19 @@ public final class Segmenter {
         return prefersJapanese(source, readable: true) || japanese.score >= english.score ? japanese : english
     }
 
+    /// source の全体を、採点で比べずに kind の 1 区間にする。日本語にするのに綴りの表で読み切れなければ nil。preceding は source の直前の文字
+    func span(_ source: String, as kind: Segment.Kind, context: JapaneseContext, preceding: Character?) -> Segment? {
+        switch kind {
+        case .english:
+            return englishSegment(source, context: context)
+        case .japanese:
+            guard let kana = Self.japaneseReading(table: table, of: source, before: preceding), Self.canBeJapanese(kana) else { return nil }
+            return japaneseSegment(source, kana: kana, context: context, penalty: Self.japaneseSpanPenalty)
+        case .punctuation, .word:
+            preconditionFailure("指定した言語で作る区間は日本語か英語だけ")
+        }
+    }
+
     /// 1 つのかなになる綴り（ga to de no）、読める 2 文字以下の綴り（ie）、読めて英語の語でない綴り（utte deno matte）は、
     /// 日本語として採れるなら英語にしない。数だけの綴り（1500 3.14）も同じく英語にしない。数字と英字が混ざる綴り（3i 3a i18n）は、
     /// どれにも当たらず、日本語の読みと英語の綴りのもっともらしさを点で比べる。利用者の辞書で英語として扱う打鍵は、どれにも当たらない

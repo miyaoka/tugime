@@ -19,6 +19,8 @@ let usage = """
       tugime-cli --lattice <打鍵列>...        区切りを決めた部分の採点で比べた区間の候補を出す。打鍵列ごとに == 打鍵列 の行の後、
                                               1 候補 1 行のタブ区切りで 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点
       tugime-cli --clauses <打鍵列>...        文節ごとの候補を出す
+      tugime-cli --flip <打鍵列>...           空白で終わる打鍵列で Space を押したときの文節を出す。選ぶ文節を [ ] で囲み、その候補を続ける。
+                                              反対の言語にできなければ「Space は空白を足す」と出す
       tugime-cli --resize <打鍵列> <操作>     文節を操作した結果を出す。操作は + で伸ばす、- で縮める、> と < で選ぶ文節を移す（端では反対の端へ回る）、
                                               1〜9 で選んでいる文節のその番号の候補（先頭は 0 番）を選ぶ
       tugime-cli --whole <打鍵列>...          F6〜F10 の全体の変換を出す
@@ -107,6 +109,16 @@ do {
             for clause in segmenter.clauses(input, leading: leading) {
                 print("\(clauseTag[clause.kind]!) \(clause.reading)\t\(clause.candidates.joined(separator: " / "))")
             }
+        }
+    case "--flip":
+        let segmenter = try makeSegmenter()
+        for input in args.dropFirst() {
+            guard let (clauses, focus) = segmenter.clausesFlippingLastWord(input, leading: leading) else {
+                print("\(input)\tSpace は空白を足す")
+                continue
+            }
+            let marked = clauses.enumerated().map { $0.offset == focus ? "[\($0.element.output)]" : $0.element.output }
+            print("\(input)\t\(marked.joined(separator: "|"))\t\(clauses[focus].candidates.joined(separator: " / "))")
         }
     case "--resize":
         guard args.count == 3 else {

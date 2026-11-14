@@ -625,6 +625,38 @@ private final class DisplayRecorder: JapaneseConverting {
             #expect(Array(whole.prefix(typed.count)) == typed, "\(input.prefix(index + 1))")
         }
     }
+
+    /// 空白の後の Space は、末尾の空白の前の 1 語を、今の区切りと反対の言語の 1 文節にする。どちらの言語に読まれるかは点で決まるので、
+    /// 今の区切りの種類を読んでから、その反対になることを確かめる。元の言語の表記は 2 番目の候補に置き、語より前は語の手前までを入力として区切る
+    @Test(arguments: ["kyouha make ", "kyou ", "kono hide  "])
+    func flipsTheLastWordBeforeTheSpaceToTheOtherLanguage(input: String) throws {
+        let word = input.trimmingCharacters(in: .whitespaces).split(separator: " ").last.map(String.init)!
+        let wordStart = input.reversed().drop { $0 == " " }.count - word.count
+        var position = 0
+        let wasEnglish = segmenter.segment(input).allSatisfy { segment in
+            defer { position += segment.source.count }
+            return position + segment.source.count <= wordStart || segment.kind == .english
+        }
+        let (clauses, focus) = try #require(segmenter.clausesFlippingLastWord(input))
+        let flipped = clauses[focus]
+        #expect(flipped.span.source == word)
+        #expect(flipped.kind == (wasEnglish ? .japanese : .english))
+        if wasEnglish {
+            #expect(flipped.candidates[1] == word)
+        } else {
+            #expect(flipped.output == word)
+            #expect(!flipped.candidates[1].contains { $0.isASCII && $0.isLetter })
+        }
+        let before = String(input.prefix(wordStart))
+        #expect(clauses[..<focus].map(\.output).joined() == segmenter.clauses(before).map(\.output).joined())
+        #expect(clauses[(focus + 1)...].map(\.output).joined() == String(repeating: " ", count: input.count - wordStart - word.count))
+    }
+
+    /// 空白で終わらない、空白しか無い、語が句読点か記号を含む、英語の語が日本語に読み切れないときは、反対の言語にしない（Space は空白を足す）
+    @Test(arguments: ["make", " ", "kyou, ", "kore[ ", "github "])
+    func keepsTheWordWhenItCannotFlip(input: String) {
+        #expect(segmenter.clausesFlippingLastWord(input) == nil)
+    }
 }
 
 /// 本物の変換器に処理を任せ、表示の変換の末尾に読みに無いかなを足して、読みと合わない表示にする
