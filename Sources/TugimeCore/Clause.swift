@@ -799,7 +799,9 @@ extension Segmenter {
             let pieces = clauses.indices.flatMap { i -> [JapaneseClause] in
                 let inside = cuts.filter { bounds[i] < $0 && $0 < bounds[i + 1] }.map { $0 - bounds[i] }
                 guard !inside.isEmpty else { return [clauses[i]] }
-                guard let alignment = ReadingAlignment(text: clauses[i].text, reading: clauses[i].reading) else {
+                guard let alignment = ReadingAlignment(text: clauses[i].text, reading: clauses[i].reading),
+                      inside.allSatisfy(alignment.canCut(atReading:))
+                else {
                     return Unexpected.reached("canCut で切れない位置で文節を切ろうとした", detail: "\(clauses[i].reading) \(clauses[i].text)", continuingWith: [clauses[i]])
                 }
                 return alignment.clauses(cutAt: inside)
