@@ -52,7 +52,10 @@ extension Segmenter {
             let before = shown.dropLast()
             // 日本語の区間の句読点と記号の前の単独の n は ん と読まれ、消すと次のかなを待つ n に戻るので、綴りの表の ん の綴りにする
             // （日本。 の 。 を消した 日本 は nihonn）。英語の区間の n（kotlin「 の kotlin）は打ったまま
-            let typing = Typing(keys: kept, afterJapanese: afterJapanese("", leading: leading), preceding: Preceding(leading.text.last), table: table)
+            let typing = Typing(
+                keys: kept, afterJapanese: afterJapanese("", leading: leading), preceding: Preceding(leading.text.last), table: table,
+                opened: unclosedOpeners(in: leading.text)
+            )
             guard before.last?.isASCII == false, typing.reading.last == "n", let n = table.spelling(of: "ん") else { return (String(kept), String(before)) }
             return (kept.dropLast() + n.map(\.keys).joined(), String(before))
         }
@@ -77,7 +80,10 @@ extension Segmenter {
         }
         for start in starts {
             let preceding = Preceding(key: start > keys.startIndex ? keys[keys.index(before: start)] : leading.text.last, shown: head.last ?? leading.text.last)
-            let typing = Typing(keys: keys[start...], afterJapanese: afterJapanese(String(head), leading: leading), preceding: preceding, table: table)
+            let typing = Typing(
+                keys: keys[start...], afterJapanese: afterJapanese(String(head), leading: leading), preceding: preceding, table: table,
+                opened: unclosedOpeners(in: leading.text + head)
+            )
             guard let kept = typing.deletingLast(of: tail) else { continue }
             return (String(keys[..<start]) + kept.keys, String(head) + kept.text)
         }
@@ -90,7 +96,10 @@ extension Segmenter {
     static func deletingLastTyped(of keys: String, shown: String, endsInEnglish: Bool?, leading: Leading, table: RomajiTable) -> String {
         let typed = String(shown.reversed().prefix(while: \.isASCII).reversed()).lowercased()
         if endsInEnglish ?? (!typed.isEmpty && keys.lowercased().hasSuffix(typed)) { return String(keys.dropLast()) }
-        let typing = Typing(keys: keys[...], afterJapanese: afterJapanese("", leading: leading), preceding: Preceding(leading.text.last), table: table)
+        let typing = Typing(
+            keys: keys[...], afterJapanese: afterJapanese("", leading: leading), preceding: Preceding(leading.text.last), table: table,
+            opened: unclosedOpeners(in: leading.text)
+        )
         guard typing.reading.last?.isASCII == false, let kept = typing.keys(droppingReading: kanaUnitLength(typing.reading)) else {
             return String(keys.dropLast())
         }
@@ -103,18 +112,21 @@ extension Segmenter {
         let afterJapanese: Bool
         let preceding: Preceding
         let table: RomajiTable
+        /// keys より前の閉じていない開き丸括弧
+        let opened: [Character]
         let reading: String
 
-        init(keys: Substring, afterJapanese: Bool, preceding: Preceding, table: RomajiTable) {
+        init(keys: Substring, afterJapanese: Bool, preceding: Preceding, table: RomajiTable, opened: [Character]) {
             self.keys = keys
             self.afterJapanese = afterJapanese
             self.preceding = preceding
             self.table = table
-            reading = Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, preceding: preceding, table: table)
+            self.opened = opened
+            reading = Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, preceding: preceding, table: table, opened: opened)
         }
 
         private func read(_ typed: Substring) -> String {
-            Segmenter.provisionalText(of: typed, afterJapanese: afterJapanese, preceding: preceding, table: table)
+            Segmenter.provisionalText(of: typed, afterJapanese: afterJapanese, preceding: preceding, table: table, opened: opened)
         }
 
         /// 読みを末尾から count 文字落とした読みを打つ打鍵列。打鍵列の頭のうち、読みがその読みの頭になる最も長いものに、残りのかなを綴りの表で打つ綴りを足す。
@@ -250,7 +262,7 @@ extension Segmenter {
     /// 数の区切り（isNumberSeparator）と、日本語の文字の後ろにない -（lengthensOnlyJapanese）も区切りと同じく打ったまま残す。preceding は keys の直前。
     /// opened は keys より前の閉じていない開き丸括弧で、閉じ丸括弧は区切りと同じく組の開き丸括弧の形にする（punctuationMark）
     static func provisionalText(
-        of keys: some StringProtocol, afterJapanese startsAfterJapanese: Bool, preceding: Preceding, table: RomajiTable, opened: [Character] = []
+        of keys: some StringProtocol, afterJapanese startsAfterJapanese: Bool, preceding: Preceding, table: RomajiTable, opened: [Character]
     ) -> String {
         let input = Array(keys)
         var text = ""
@@ -269,8 +281,8 @@ extension Segmenter {
             } else if punctuation[input[position]] != nil,
                       let mark = punctuationMark(input[position], opened: &opened, previousIsEnglish: !afterJapanese) {
                 text += mark
-                // 組に合わせて半角にした閉じ丸括弧の後ろは、区切りと同じく英語の後
-                if mark.allSatisfy(\.isASCII) { afterJapanese = false }
+                // 記号の後ろは区切りと同じく、日本語の記号の後なら日本語の側、組に合わせて半角にした閉じ丸括弧の後なら英語の側
+                afterJapanese = continuation(after: String(input[position]), mark: mark) != .afterEnglish
                 position += 1
             } else if let longest = japaneseReadings(table: table, from: position, in: input, before: preceding).last(where: {
                 $0.end < input.count || table.readingBeforePendingN(String(input[position...])) == nil
