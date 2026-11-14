@@ -110,6 +110,9 @@ public final class Segmenter {
         /// 入力が前の文字列のどこに続くか
         var continuation: Continuation { Continuation(after: text) }
 
+        /// 入力の先頭の句読点の側。句読点の形は、後ろが文の頭かとは別に、前の文字列の直前の文字で決める（keepsPunctuationTyped(afterText:)）
+        var punctuationContinuation: Continuation { Segmenter.keepsPunctuationTyped(afterText: text) ? .afterEnglish : .afterJapanese }
+
         /// 入力の最初の日本語区間の評価のしかた。前の文字列が、末尾の空白を飛ばして数字で終わるなら、未確定の文字列の中の数字の後と同じく、その数字に続く形にする。
         /// 確定してから続きを打っても、まとめて打ったときと同じ評価になる
         var japaneseContext: JapaneseContext {
@@ -154,11 +157,21 @@ public final class Segmenter {
         var japaneseContext: JapaneseContext { self == .start ? .start : .afterCaret }
     }
 
-    /// 区間の後ろの句読点を打ったままにするか。入力欄の直前と変換が届く前の表示と同じく、表記を前の文字列とみなした Continuation で決める
-    /// （数で終われば数の前の文字、文末の記号で終われば文の頭）。英語の区間と利用者の辞書の語の区間は、登録した表記によって日本語の文字で終わることも
-    /// 英字で終わることもある（Café、Fiji）。日本語区間は区切りの時点で表示の変換の表記が決まっていないので、日本語の側とする
+    /// 区間の後ろの句読点を打ったままにするか。入力欄の直前と変換が届く前の表示と同じく、表記を前の文字列として keepsPunctuationTyped(afterText:) で決める。
+    /// 英語の区間と利用者の辞書の語の区間は、登録した表記によって日本語の文字で終わることも英字で終わることもある（Café、Fiji）。
+    /// 日本語区間は区切りの時点で表示の変換の表記が決まっていないので、日本語の側とする
     static func keepsPunctuationTyped(after segment: Segment) -> Bool {
-        segment.kind != .japanese && Continuation(after: segment.output) == .afterEnglish
+        segment.kind != .japanese && keepsPunctuationTyped(afterText: segment.output)
+    }
+
+    /// text の後ろの句読点を打ったままにするか。末尾の空白を飛ばした最後の文字が、空白でない ASCII（英字・記号）なら打ったまま、それ以外
+    /// （日本語の文字、改行、何も無い）なら日本語の記号にする。数で終われば、数はその前の文字の側に付くので数の前の文字で決める。
+    /// 後ろが文の頭か（Continuation）とは別に決める。英語の文の途中の . ! ? の後ろ（wait... really?!）は文の頭ではなく英語の続き
+    static func keepsPunctuationTyped(afterText spaced: String) -> Bool {
+        let text = droppingTrailingSpaces(spaced)
+        let number = numberLength(text.reversed())
+        guard let last = number > 0 ? text.dropLast(number).last : text.last else { return false }
+        return last.isASCII && !last.isWhitespace
     }
 
     /// 末尾の空白（" "）を除いた文字列。改行は除かない
@@ -405,14 +418,14 @@ public final class Segmenter {
     /// 記号の打鍵は、前後によらず記号にする。入力の先頭の句読点は、入力欄の直前（leading）で決める。
     /// 句読点と記号の打鍵を英語の区間に含めないときは、その位置で入力を切り、後ろは continuation(after:mark:) で評価する
     public func segment(_ input: String, leading: Leading = .start) -> [Segment] {
-        segment(input, after: leading.continuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text), preceding: Preceding(leading.text.last))
+        segment(input, after: leading.punctuationContinuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text), preceding: Preceding(leading.text.last))
     }
 
     /// 区切りを決めた部分の採点で比べた区間の候補を返す。句読点の前で英語に続くと分かって採点し直す部分の候補は含めない。診断用
     public func candidates(_ input: String, leading: Leading = .start) -> [ScoredSpan] {
         var spans: [ScoredSpan] = []
         _ = segment(
-            input, after: leading.continuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text), preceding: Preceding(leading.text.last)
+            input, after: leading.punctuationContinuation, context: leading.japaneseContext, opened: Self.unclosedOpeners(in: leading.text), preceding: Preceding(leading.text.last)
         ) { spans.append($0) }
         return spans
     }

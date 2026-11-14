@@ -229,10 +229,10 @@ extension Segmenter {
         return rest.isEmpty ? kept : nil
     }
 
-    /// 表示 shown の後ろの句読点を日本語の記号にするか。入力欄の直前に表示をつないだものを前の文字列とみなし、確定してから打ったときと同じ
-    /// Continuation で決める（空白を飛ばした直前の文字。数で終われば数の前の文字、文末の記号で終われば文の頭）
+    /// 表示 shown の後ろの句読点を日本語の記号にするか。入力欄の直前に表示をつないだものを前の文字列とみなし、区切りと確定してから打ったときと同じ
+    /// keepsPunctuationTyped(afterText:) で決める
     static func afterJapanese(_ shown: String, leading: Leading) -> Bool {
-        Continuation(after: leading.text + shown) != .afterEnglish
+        !keepsPunctuationTyped(afterText: leading.text + shown)
     }
 
     /// 打鍵列 keys の変換の表示 shown を、後ろに読みをつないでも崩れない部分と、末尾の打ちかけの打鍵の数に分ける。

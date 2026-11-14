@@ -139,17 +139,18 @@ import Testing
         segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten"))
     }
 
-    /// 登録した語の後ろの句読点は、区間の種類（日本語か英語か）ではなく、語の見えている表記で、確定済みの文字列の後と同じく形を決める。
-    /// 数で終われば数の前の文字、文末の記号で終われば文の頭として決める。
-    /// 続けて打っても、変換が届く前の表示でも、語まで確定してから打っても同じ形になる
+    /// 登録した語の後ろの句読点は、区間の種類（日本語か英語か）ではなく、語の見えている表記の最後の字で、確定済みの文字列の後と同じく形を決める。
+    /// 数で終われば数の前の文字で決める。続けて打っても、語まで確定してから打っても同じ形になる。
+    /// 変換が届く前は見えている表示の最後の字で決める。登録した表記が打鍵と違う綴りで始まる語（pwd → PWD、qqx → 第2）は、
+    /// 届く前は打鍵の全体を打ったまま読み直すので、打ったままの綴りの後として決まる
     @Test(arguments: [
-        ("pwd", "PWD", ","), ("resume", "résumé", "、"), ("cafe", "Café", "、"), ("qqx", "第2", "、"), ("yahoo", "Yahoo!", "、"),
+        ("pwd", "PWD", ",", "pwd,"), ("resume", "résumé", "、", "résumé、"), ("cafe", "Café", "、", "Café、"),
+        ("qqx", "第2", "、", "qqx,"), ("yahoo", "Yahoo!", ",", "Yahoo!,"),
     ])
-    func punctuatesAfterAUserWordByItsShownLetter(keys: String, shown: String, mark: String) {
+    func punctuatesAfterAUserWordByItsShownLetter(keys: String, shown: String, mark: String, provisional: String) {
         #expect(segmenter.liveText(keys + ",") == shown + mark)
-        // 変換が届く前は、登録した表記が届いた表示の末尾に打鍵と同じ綴りで残る語だけ、その表記に続けて読む。残らない語（pwd → PWD）は打鍵の全体を読み直す
-        let provisional = Segmenter.liveDisplay(of: keys + ",", converted: [(keys, segmenter.liveDisplay(keys))], leading: .start, table: segmenter.table)
-        if provisional.text.hasPrefix(shown) { #expect(provisional.text == shown + mark, "変換が届く前") }
+        let beforeConversion = Segmenter.liveDisplay(of: keys + ",", converted: [(keys, segmenter.liveDisplay(keys))], leading: .start, table: segmenter.table)
+        #expect(beforeConversion.text == provisional, "変換が届く前")
         #expect(segmenter.liveText(",", leading: Segmenter.Leading(shown)) == mark, "確定してから")
     }
 
