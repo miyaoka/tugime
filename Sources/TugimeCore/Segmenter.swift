@@ -425,7 +425,7 @@ public final class Segmenter {
             runStart = end
             runContinuation = Self.continuation(after: key, mark: mark)
             runContext = runContinuation.japaneseContext
-            // 空白の直後の句読点の後ろ（空白で区切った括弧の中の語）も、空白で区切った語として読む
+            // 空白の直後の句読点か記号の後ろ（空白で区切った括弧の中の語）も、空白で区切った語として読む
             runAfterSpace = afterSpace
         }
         return segments + segmentRun(String(chars[runStart...]), leading: runContext, offset: runStart, preceding: runStart == 0 ? preceding : chars[runStart - 1], spaced: runAfterSpace, observe: observe)
