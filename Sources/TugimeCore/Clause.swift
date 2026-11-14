@@ -483,7 +483,9 @@ extension Segmenter {
             self.clauses(
                 of: self.segment(
                     String(keys[end..<keyEnd]),
-                    keepsPunctuationTyped: markContinuation.map { $0 == .afterEnglish } ?? Self.keepsPunctuationTyped(after: fixed),
+                    // 数だけの文節の後ろは、数の前に見えている文字列で決める（API 404 の Not Found を 40 に縮めた後の 4, は I の側）
+                    keepsPunctuationTyped: markContinuation.map { $0 == .afterEnglish }
+                        ?? (Self.isNumberSpan(fixed) ? Self.keepsPunctuationTyped(afterText: left + resized.output) : Self.keepsPunctuationTyped(after: fixed)),
                     context: self.context(after: resized, keys: keys[..<end], leading: leading),
                     opened: Self.unclosedOpeners(in: left + resized.output),
                     preceding: Segmenter.Preceding(key: keys[..<end].last ?? leading.text.last, shown: (left + resized.output).last)

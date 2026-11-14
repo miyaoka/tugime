@@ -285,6 +285,9 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(output(".", leading: Segmenter.Leading("Hello\n")) == "。")
         #expect(output(".", leading: Segmenter.Leading("Hello.")) == ".")
         #expect(output(".", leading: Segmenter.Leading("今日。")) == "。")
+        #expect(output(",", leading: Segmenter.Leading("API 5")) == ",")
+        #expect(output(",", leading: Segmenter.Leading("今日 3")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("今日 3 5")) == "、")
         #expect(output(",", leading: Segmenter.Leading("「")) == "、")
         #expect(output(",", leading: Segmenter.Leading("（")) == "、")
         #expect(output(",", leading: Segmenter.Leading("Café")) == ",")
@@ -299,6 +302,12 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(output(",", leading: Segmenter.Leading("手順1️⃣")) == "、")
         #expect(output("~", leading: Segmenter.Leading("今日")) == "〜")
         #expect(output("~", leading: Segmenter.Leading("API")) == "~")
+    }
+
+    /// 数だけの区間は日本語でも英語でもないので、その後ろの句読点は数の前（空白を飛ばす）の区間で決める
+    @Test(arguments: [("version 2.", "version 2."), ("API 5,", "API 5,"), ("kyou 3.", "今日 3。"), ("API 5 ,", "API 5 ,"), ("kyou 3 5,", "今日 3 5、")])
+    func punctuatesAfterANumberByTheSpanBeforeIt(keys: String, shown: String) {
+        #expect(segmenter.liveText(keys) == shown)
     }
 
     /// 英語の後に続けて打つ記号（wait... really?! wow!!）は、続けて打っても、変換が届く前の表示でも、
