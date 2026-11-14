@@ -50,7 +50,7 @@ public struct Clause: Sendable, Equatable {
     var kept: Bool { fixedRange || fixedValue != nil }
 
     /// 空白だけの文節か。空白は語を区切る印で、変換して選ぶ対象ではない
-    public var isSpace: Bool { kind == .english && reading.allSatisfy { $0 == " " } }
+    var isSpace: Bool { kind == .english && reading.allSatisfy { $0 == " " } }
 
     /// 選ぶ文節を focus から step（-1 で左、1 で右）の向きに、空白だけの文節を飛ばして次の文節へ移した位置。
     /// 端から先へ移すと反対の端から数える。打鍵列は空白で始まらず、文節までの確定も空白だけを残さない（`Segmenter.commit(_:through:)`）ので、

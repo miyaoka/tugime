@@ -535,11 +535,10 @@ final class TugimeInputController: IMKInputController {
         return conversion.sync { $0.clauses(keys, leading: leading) }
     }
 
-    /// 選んでいる文節までを確定し、残りの文節は変換したまま、次の文節を選んだ状態で残す。
-    /// 選んでいるのが最後の文節なら全体を確定する。切る位置に当たる打鍵が決まらなければ何もしない
+    /// 選んでいる文節とその直後の空白までを確定し、残りの文節は変換したまま、次の文節を選んだ状態で残す。
+    /// 残りが無ければ全体を確定する。切る位置に当たる打鍵が決まらなければ何もしない
     private func commitThroughFocus(_ clauses: [Clause], client: IMKTextInput) {
-        // 後ろが空白だけなら、空白ごと全体を確定する（`Segmenter.commit(_:through:)` は空白だけを残さない）
-        guard clauses[(focus + 1)...].contains(where: { !$0.isSpace }) else {
+        guard focus < clauses.count - 1 else {
             commit(client)
             return
         }
@@ -547,6 +546,11 @@ final class TugimeInputController: IMKInputController {
         guard let result = conversion.sync({ $0.commit(clauses, through: focus) }) else {
             // 確定しないときも、文節の選択に入った表示にそろえる。打っている途中から入ったときはまだ描いていない
             showMarkedText(client)
+            return
+        }
+        // 直後の空白も一緒に確定するので、後ろが空白だけなら何も残らない。全体の確定と同じにする
+        guard !result.rest.isEmpty else {
+            commit(client)
             return
         }
         closeCandidates()
