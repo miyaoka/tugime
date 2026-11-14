@@ -13,10 +13,16 @@ extension Segmenter {
             guard let split = splitPending(base.display.text, typed: base.keys, table: table) else { continue }
             let rest = keys.dropFirst(base.keys.count - split.pending)
             let preceding = Preceding(split.kept.last ?? leading.text.last)
-            let text = split.kept + provisionalText(of: rest, afterJapanese: afterJapanese(split.kept, leading: leading), preceding: preceding, table: table)
+            let text = split.kept + provisionalText(
+                of: rest, afterJapanese: afterJapanese(split.kept, leading: leading), preceding: preceding, table: table,
+                opened: unclosedOpeners(in: leading.text + split.kept)
+            )
             return LiveDisplay(text: text, differsFromInput: base.display.differsFromInput)
         }
-        let text = provisionalText(of: keys, afterJapanese: afterJapanese("", leading: leading), preceding: Preceding(leading.text.last), table: table)
+        let text = provisionalText(
+            of: keys, afterJapanese: afterJapanese("", leading: leading), preceding: Preceding(leading.text.last), table: table,
+            opened: unclosedOpeners(in: leading.text)
+        )
         return LiveDisplay(text: text, differsFromInput: false)
     }
 
@@ -241,11 +247,15 @@ extension Segmenter {
     /// 変換が届く前に見せる keys の読み。区切りと同じく、記号の打鍵は記号にし、句読点は直前が日本語なら日本語の記号にする。
     /// それ以外は前から、読める所は最も長く読んでかなにし、読めない打鍵は打ったまま残す（kar → かr）。
     /// 打っている途中の表示と同じく、末尾の単独の n（RomajiTable.readingBeforePendingN）は次の打鍵まで決めないので打ったまま残す。
-    /// 数の区切り（isNumberSeparator）と、日本語の文字の後ろにない -（lengthensOnlyJapanese）も区切りと同じく打ったまま残す。preceding は keys の直前
-    static func provisionalText(of keys: some StringProtocol, afterJapanese startsAfterJapanese: Bool, preceding: Preceding, table: RomajiTable) -> String {
+    /// 数の区切り（isNumberSeparator）と、日本語の文字の後ろにない -（lengthensOnlyJapanese）も区切りと同じく打ったまま残す。preceding は keys の直前。
+    /// opened は keys より前の閉じていない開き丸括弧で、閉じ丸括弧は区切りと同じく組の開き丸括弧の形にする（punctuationMark）
+    static func provisionalText(
+        of keys: some StringProtocol, afterJapanese startsAfterJapanese: Bool, preceding: Preceding, table: RomajiTable, opened: [Character] = []
+    ) -> String {
         let input = Array(keys)
         var text = ""
         var afterJapanese = startsAfterJapanese
+        var opened = opened
         var position = 0
         while position < input.count {
             if let symbol = symbol(at: position, in: input) {
@@ -256,8 +266,11 @@ extension Segmenter {
                 // 空白は句読点の形を決める直前の側を変えない
                 text.append(input[position])
                 position += 1
-            } else if afterJapanese, let mark = punctuation[input[position]] {
+            } else if punctuation[input[position]] != nil,
+                      let mark = punctuationMark(input[position], opened: &opened, previousIsEnglish: !afterJapanese) {
                 text += mark
+                // 組に合わせて半角にした閉じ丸括弧の後ろは、区切りと同じく英語の後
+                if mark.allSatisfy(\.isASCII) { afterJapanese = false }
                 position += 1
             } else if let longest = japaneseReadings(table: table, from: position, in: input, before: preceding).last(where: {
                 $0.end < input.count || table.readingBeforePendingN(String(input[position...])) == nil

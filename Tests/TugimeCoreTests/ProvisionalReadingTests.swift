@@ -12,6 +12,17 @@ import Testing
         Segmenter.LiveDisplay(text: text, differsFromInput: false)
     }
 
+    /// 変換が届く前の閉じ丸括弧は、区切りと同じく、届いた表示か入力欄の直前で閉じていない開き丸括弧と同じ形にする。直前が英字でも全角の組なら全角
+    @Test(arguments: [
+        ("kyou (ame)", "kyou (ame", "今日 （ame", "", "今日 （ame）"),
+        ("github (ame)", "github (ame", "github (ame", "", "github (ame)"),
+        ("ame)", "", "", "今日 （", "あめ）"),
+    ])
+    func closesABracketInTheShapeOfItsPartner(keys: String, convertedKeys: String, shown: String, leading: String, expected: String) {
+        let converted = convertedKeys.isEmpty ? [] : [(keys: convertedKeys, display: display(shown))]
+        #expect(Segmenter.liveDisplay(of: keys, converted: converted, leading: Segmenter.Leading(leading), table: table).text == expected)
+    }
+
     @Test(arguments: [
         ("kar", true, "かr"),
         ("tyokk", true, "ちょkk"),
