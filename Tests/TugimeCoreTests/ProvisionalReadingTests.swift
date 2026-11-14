@@ -12,6 +12,19 @@ import Testing
         Segmenter.LiveDisplay(text: text, differsFromInput: false)
     }
 
+    /// 変換が届く前の閉じ丸括弧は、区切りと同じく、届いた表示か入力欄の直前で閉じていない開き丸括弧と同じ形にする。
+    /// 直前が英字でも全角の組なら全角、直前がかなでも半角の組なら半角。全角の閉じ丸括弧の後ろの句読点は、区切りと同じく日本語の記号
+    @Test(arguments: [
+        ("kyou (ame)", "kyou (ame", "今日 （ame", "", "今日 （ame）"),
+        ("github (ame)", "github (ame", "github (ame", "", "github (ame)"),
+        ("ame)", "", "", "Hello (", "あめ)"),
+        ("kore(github),", "kore(github", "これ（github", "", "これ（github）、"),
+    ])
+    func closesABracketInTheShapeOfItsPartner(keys: String, convertedKeys: String, shown: String, leading: String, expected: String) {
+        let converted = convertedKeys.isEmpty ? [] : [(keys: convertedKeys, display: display(shown))]
+        #expect(Segmenter.liveDisplay(of: keys, converted: converted, leading: Segmenter.Leading(leading), table: table).text == expected)
+    }
+
     @Test(arguments: [
         ("kar", true, "かr"),
         ("tyokk", true, "ちょkk"),
@@ -20,6 +33,10 @@ import Testing
         ("nara,", true, "なら、"),
         (",", true, "、"),
         (",", false, ","),
+        // 空白は直前の側を変えないので、空白の後の句読点は空白を飛ばした前で決まる
+        (" (", true, " （"),
+        (" (", false, " ("),
+        ("nara (", true, "なら （"),
         // 記号の打鍵は前によらず記号
         ("[", false, "「"),
         ("shsi", false, "shし"),
@@ -32,13 +49,13 @@ import Testing
         ("nara3.", true, "なら3。"),
     ])
     func provisionalText(keys: String, afterJapanese: Bool, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, preceding: Segmenter.Preceding(nil), table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: afterJapanese, preceding: Segmenter.Preceding(nil), table: table, opened: []) == expected)
     }
 
     /// 入力の先頭の数の区切りは、直前の文字（入力欄や前の表示）が数字かで決める
     @Test(arguments: [(".14", "3", ".14"), ("-11-03", "2026", "-11-03"), (".", "3", "。")])
     func readsANumberSeparatorAfterThePrecedingDigits(keys: String, preceding: String, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: Segmenter.Preceding(preceding.last), table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: Segmenter.Preceding(preceding.last), table: table, opened: []) == expected)
     }
 
     /// 届いた変換の後ろに打った - は、その変換の見えている最後の文字が日本語の文字（漢字を含む）なら ー、英字なら打ったまま
@@ -51,7 +68,7 @@ import Testing
     /// 末尾の単独の n は打ったまま。nn、後ろに打鍵が続く n、綴りの組の一部の n（xn）は読む
     @Test(arguments: [("n", "n"), ("bn", "bn"), ("ka,n", "か、n"), ("kon", "こn"), ("nn", "ん"), ("konnn", "こんn"), ("kona", "こな"), ("xn", "ん")])
     func keepsAPendingNAsTyped(keys: String, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: Segmenter.Preceding(nil), table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: Segmenter.Preceding(nil), table: table, opened: []) == expected)
     }
 
     @Test(arguments: [
@@ -162,7 +179,7 @@ import Testing
     /// 残した っ の後は、どの綴りを続けても っ に続けて読む
     @Test(arguments: [("toxtukyo", "とっきょ"), ("baxtusi", "ばっし"), ("baxtukinn", "ばっきん"), ("kannji", "かんじ")])
     func readsOnAfterAKeptSokuon(keys: String, expected: String) {
-        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: Segmenter.Preceding(nil), table: table) == expected)
+        #expect(Segmenter.provisionalText(of: keys, afterJapanese: true, preceding: Segmenter.Preceding(nil), table: table, opened: []) == expected)
     }
 
     /// 表示の字に対応する打鍵が決まらなければ、表示を残せない
