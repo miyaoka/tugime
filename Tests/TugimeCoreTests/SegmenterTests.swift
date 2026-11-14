@@ -616,6 +616,14 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(segmenter.clauses("github")[0].candidates == ["github", "ｇｉｔｈｕｂ"])
     }
 
+    /// 空白は英語の区間なので、空白の直後の句読点と開き丸括弧は、空白の前の語によらず打ったままにする
+    @Test(arguments: ["kyou ,", "make ,", "kyouha (tesuto"])
+    func keepsPunctuationAfterASpaceAsTyped(input: String) {
+        let mark = segmenter.segment(input).first { $0.source.contains { Segmenter.punctuation[$0] != nil } }
+        #expect(mark?.kind == .english)
+        #expect(mark.map { $0.output.contains(",") || $0.output.contains("(") } == true)
+    }
+
     /// 空白は入力を切るので、空白までの区切りは、空白を打った時点の区切りから後ろに打った分で変わらない
     @Test(arguments: ["kyouha node wo sakujo suru", "sake wo nomu", "github ni push sita", "kore ha 3 ko desu"])
     func keepsTheSegmentsBeforeASpace(input: String) {

@@ -60,8 +60,7 @@ public final class Segmenter {
     static let continuingJapanesePenalty = 2.0
     /// 英語の区間を 1 つ増やすごとに引く値。負なので、英語の区間は増やすほど点が上がる
     static let englishSpanPenalty = -2.0
-    /// 空白で区切って打った語の全体を英語区間にするときに足す値。空白が入力を切る前は、空白に囲まれた語を英語と読むと空白と 1 つの英語区間に
-    /// まとまり、日本語と読むと区間が 1 つ増えた。その差と同じだけ英語に寄せる
+    /// 空白で区切って打った語の全体を英語区間にする候補に足す値
     static let spacedEnglishBonus = japaneseSpanPenalty
     /// 英字が 1 文字だけの英語の区間で、さらに引く値
     static let singleLetterEnglishPenalty = 3.0
@@ -391,16 +390,14 @@ public final class Segmenter {
         while i < chars.count {
             if chars[i] == " " {
                 // 空白も入力を切る。空白より前は、空白を打つ前と同じ打鍵列だけで区切るので、後ろに打った分で変わらない。
-                // 続く空白は 1 つの英語の区間にする。空白の後ろは、前の区間に続く形で評価する
+                // 空白は英語の区間なので、空白の後ろは英語の区間に続く形で評価する。日本語は前の語に続く形（空白の前が数字なら助数詞）、
+                // 空白の直後の句読点は打ったまま
                 let spaces = chars[i...].prefix { $0 == " " }.count
                 let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, preceding: runStart == 0 ? preceding : chars[runStart - 1], spaced: true, observe: observe)
                 segments += before
-                if let last = before.last {
-                    runContinuation = last.kind == .english ? .afterEnglish : .afterJapanese
-                    runContext = last.kind == .english ? Self.context(after: chars[runStart..<i]) : runContinuation.japaneseContext
-                }
-                let source = String(chars[i..<(i + spaces)])
-                segments.append(Segment(kind: .english, source: source, reading: source, output: source, score: 0, context: runContext))
+                if !before.isEmpty { runContext = Self.context(after: chars[runStart..<i]) }
+                runContinuation = .afterEnglish
+                segments.append(Self.spaceSegment(String(chars[i..<(i + spaces)]), context: runContext))
                 i += spaces
                 runStart = i
                 runAfterSpace = true
@@ -551,6 +548,12 @@ public final class Segmenter {
         guard let kana = Self.japaneseReading(table: table, of: source, before: preceding), Self.canBeJapanese(kana) else { return english }
         let japanese = japaneseSegment(source, kana: kana, context: context, penalty: Self.japaneseSpanPenalty)
         return prefersJapanese(source, readable: true) || japanese.score >= english.score ? japanese : english
+    }
+
+    /// 続く空白の区間。採点で比べないので点を持たない英語の区間にする。context は空白の後ろの日本語を評価する文脈
+    static func spaceSegment(_ source: String, context: JapaneseContext) -> Segment {
+        precondition(!source.isEmpty && source.allSatisfy { $0 == " " }, "空白の区間が空白以外を含む: \(source)")
+        return Segment(kind: .english, source: source, reading: source, output: source, score: 0, context: context)
     }
 
     /// source の全体を、採点で比べずに kind の 1 区間にする。日本語にするのに綴りの表で読み切れなければ nil。preceding は source の直前の文字
