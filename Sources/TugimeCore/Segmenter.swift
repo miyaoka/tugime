@@ -113,7 +113,7 @@ public final class Segmenter {
         /// 入力の最初の日本語区間の評価のしかた。前の文字列が数字で終わるなら、未確定の文字列の中の数字の後と同じく、その数字に続く形にする。
         /// 確定してから続きを打っても、まとめて打ったときと同じ評価になる
         var japaneseContext: JapaneseContext {
-            let afterText = Segmenter.context(after: text)
+            let afterText = Segmenter.context(after: Segmenter.droppingTrailingSpaces(text))
             if case .afterNumber = afterText { return afterText }
             return continuation.japaneseContext
         }
@@ -128,9 +128,11 @@ public final class Segmenter {
         /// 英字・記号など ASCII の後
         case afterEnglish
 
-        /// 前の文字列の最後の文字から決める。無い、空白・改行、文末の記号の後なら文頭、それ以外の ASCII の後なら英語の後、残りは日本語の後。
+        /// 前の文字列の、末尾の空白を飛ばした最後の文字から決める。無い、改行などの空白、文末の記号の後なら文頭、それ以外の ASCII の後なら英語の後、
+        /// 残りは日本語の後。未確定の文字列の中の空白と同じく、空白をはさんでもその前の文字で決まる。
         /// 数（numberLength）で終わるなら、未確定の文字列の中と同じく、数はその前の文字の側に付く。前が ASCII の英字や記号なら英語の後、それ以外は日本語の後
-        init(after text: String) {
+        init(after spaced: String) {
+            let text = Segmenter.droppingTrailingSpaces(spaced)
             let number = Segmenter.numberLength(text.reversed())
             guard number > 0 else {
                 self.init(last: text.last)
@@ -150,6 +152,11 @@ public final class Segmenter {
 
         /// 最初の日本語区間の評価のしかた
         var japaneseContext: JapaneseContext { self == .start ? .start : .afterCaret }
+    }
+
+    /// 末尾の空白（" "）を除いた文字列。改行は除かない
+    static func droppingTrailingSpaces(_ text: String) -> String {
+        String(text.reversed().drop { $0 == " " }.reversed())
     }
 
     /// 英語区間に続く日本語区間の評価のしかた。英語区間が数（numberLength）で終わるなら、その数に続く形（1500 円、3.5 倍）にする
@@ -426,13 +433,15 @@ public final class Segmenter {
         while i < chars.count {
             if chars[i] == " " {
                 // 空白も入力を切る。空白より前は、空白を打つ前と同じ打鍵列だけで区切るので、後ろに打った分で変わらない。
-                // 空白は英語の区間なので、空白の後ろは英語の区間に続く形で評価する。日本語は前の語に続く形（空白の前が数字なら助数詞）、
-                // 空白の直後の句読点は打ったまま
+                // 空白の後ろの日本語は前の語に続く形（空白の前が数字なら助数詞）で評価する。
+                // 空白の直後の句読点は、空白を飛ばした前の区間が日本語なら日本語の記号、英語なら打ったままにする
                 let spaces = chars[i...].prefix { $0 == " " }.count
                 let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, preceding: runStart == 0 ? preceding : Preceding(chars[runStart - 1]), spaced: true, observe: observe)
                 segments += before
-                if !before.isEmpty { runContext = Self.context(after: chars[runStart..<i]) }
-                runContinuation = .afterEnglish
+                if let last = before.last {
+                    runContext = Self.context(after: chars[runStart..<i])
+                    runContinuation = last.kind == .english ? .afterEnglish : .afterJapanese
+                }
                 segments.append(Self.spaceSegment(String(chars[i..<(i + spaces)]), context: runContext))
                 i += spaces
                 runStart = i
@@ -449,7 +458,8 @@ public final class Segmenter {
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, preceding: runStart == 0 ? preceding : Preceding(chars[runStart - 1]), spaced: runAfterSpace, observe: collect)
             let previousIsEnglish = before.last.map { $0.kind == .english } ?? (runContinuation == .afterEnglish)
-            // nil なら打ったまま直前の英語の区間に含める。空白の直後は含める英語の語が無いので、打ったままの形の句読点の区間にして入力を切る
+            // nil なら打ったまま直前の英語の区間に含める。空白の直後は含める英語の語が無いので、打ったままの形の句読点の区間にして入力を切る。
+            // 空白の直後の previousIsEnglish は、空白を飛ばした前の区間の言語（runContinuation）
             let afterSpace = runAfterSpace && runStart == i
             let mark = symbol.map(\.mark)
                 ?? Self.punctuationMark(chars[i], opened: &opened, previousIsEnglish: previousIsEnglish)

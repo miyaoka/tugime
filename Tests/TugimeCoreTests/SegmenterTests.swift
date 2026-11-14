@@ -280,7 +280,9 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(output(".", leading: Segmenter.Leading("API")) == ".")
         #expect(output(".", leading: Segmenter.Leading("今日")) == "。")
         #expect(output(".", leading: .start) == "。")
-        #expect(output(".", leading: Segmenter.Leading("Hello ")) == "。")
+        #expect(output(".", leading: Segmenter.Leading("Hello ")) == ".")
+        #expect(output(".", leading: Segmenter.Leading("今日 ")) == "。")
+        #expect(output(".", leading: Segmenter.Leading("Hello\n")) == "。")
         #expect(output(".", leading: Segmenter.Leading("Hello.")) == "。")
         #expect(output("~", leading: Segmenter.Leading("今日")) == "〜")
         #expect(output("~", leading: Segmenter.Leading("API")) == "~")
@@ -674,10 +676,16 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(segmenter.clauses("github")[0].candidates == ["github", "ｇｉｔｈｕｂ"])
     }
 
-    /// 空白は英語の区間なので、空白の直後の句読点と開き丸括弧は、空白の前の語によらず打ったままにする
-    @Test(arguments: [("kyou ,", ","), ("make ,", ","), ("kyouha (tesuto", "(")])
-    func keepsPunctuationAfterASpaceAsTyped(input: String, mark: String) {
-        #expect(segmenter.liveText(input).contains(mark))
+    /// 空白の直後の句読点と開き丸括弧は、空白を飛ばした前の区間が日本語なら日本語の記号、英語なら打ったままにする。
+    /// 変換が届く前の表示も同じ形にし、空白の前まで確定してから打っても同じ形にする
+    @Test(arguments: [("kyou ", ",", "、"), ("make ", ",", ","), ("kyouha ", "(tesuto", "（"), ("github ", "(tesuto", "(")])
+    func decidesPunctuationAfterASpaceByTheTextBeforeIt(before: String, typed: String, mark: String) {
+        let input = before + typed
+        #expect(segmenter.liveText(input).contains(mark), "\(input)")
+        let provisional = Segmenter.liveDisplay(of: input, converted: [(before, segmenter.liveDisplay(before))], leading: .start, table: segmenter.table)
+        #expect(provisional.text.contains(mark), "変換が届く前: \(input)")
+        let committed = segmenter.liveText(typed, leading: Segmenter.Leading(segmenter.liveText(before)))
+        #expect(committed.contains(mark), "確定してから: \(input)")
     }
 
     /// 空白の直後の句読点も入力を切るので、その後ろの語は句読点を含めずに読む。英語の語でない読める綴り（tesu）は日本語になる

@@ -211,9 +211,10 @@ extension Segmenter {
         return rest.isEmpty ? kept : nil
     }
 
-    /// 表示 shown の後ろの句読点を日本語の記号にするか。区切りと同じく、未確定の文字列の中では直前が日本語か、先頭では入力欄の直前（leading）で決める。
-    /// 数字で終わるなら、区切りと同じく数字の前の文字の側に付く（Continuation）
+    /// 表示 shown の後ろの句読点を日本語の記号にするか。区切りと同じく、空白を飛ばした直前の文字が日本語か、未確定の文字列の先頭（空白だけを含む）では
+    /// 入力欄の直前（leading）で決める。数字で終わるなら、区切りと同じく数字の前の文字の側に付く（Continuation）
     static func afterJapanese(_ shown: String, leading: Leading) -> Bool {
+        let shown = droppingTrailingSpaces(shown)
         if shown.last.map(isDigit) == true { return Continuation(after: leading.text + shown) != .afterEnglish }
         guard let last = shown.last else { return leading.continuation != .afterEnglish }
         return !last.isASCII
@@ -251,7 +252,8 @@ extension Segmenter {
                 text += symbol.mark
                 afterJapanese = true
                 position += symbol.key.count
-            } else if isNumberSeparator(at: position, in: input, before: preceding.key) {
+            } else if isNumberSeparator(at: position, in: input, before: preceding.key) || input[position] == " " {
+                // 空白は句読点の形を決める直前の側を変えない
                 text.append(input[position])
                 position += 1
             } else if afterJapanese, let mark = punctuation[input[position]] {
