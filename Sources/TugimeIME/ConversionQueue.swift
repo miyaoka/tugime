@@ -15,24 +15,16 @@ nonisolated final class ConversionQueue: @unchecked Sendable {
         table = segmenter.table
     }
 
-    /// バンドルに同梱したものを読めない
-    enum LoadError: Error, CustomStringConvertible {
-        case resources
-        case model(String)
-        var description: String {
-            switch self {
-            case .resources: "バンドルの Contents/Resources が無い"
-            case .model(let path): "表示の変換のモデルが無い: \(path)"
-            }
-        }
+    /// バンドルの Contents/Resources が無い
+    struct MissingResources: Error, CustomStringConvertible {
+        var description: String { "バンドルの Contents/Resources が無い" }
     }
 
     /// 入力メソッドの区切りと変換。表示の変換のモデルはバンドルの Contents/Resources/model に、システム辞書は Contents/Resources/dictionary に同梱する。
     /// 辞書・語表・モデルの読み込みが重いので、プロセスに 1 つだけ作る
     static func inputMethod() throws -> ConversionQueue {
-        guard let resources = Bundle.main.resourceURL else { throw LoadError.resources }
+        guard let resources = Bundle.main.resourceURL else { throw MissingResources() }
         let method = ConversionMethod.inputMethod(modelDirectory: resources.appendingPathComponent("model"))
-        if let model = method.weight, !FileManager.default.fileExists(atPath: model.path) { throw LoadError.model(model.path) }
         let dictionary = try SystemDictionary(url: resources.appendingPathComponent(SystemDictionary.directory).appendingPathComponent(SystemDictionary.fileName))
         return ConversionQueue(segmenter: try method.makeSegmenter(dictionary: dictionary))
     }

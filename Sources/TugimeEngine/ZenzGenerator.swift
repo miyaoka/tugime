@@ -112,7 +112,8 @@ final class ZenzGenerator: DirectDisplayGenerating {
         do {
             return try generating(left: left, kana: kana)
         } catch {
-            reset()
+            // 失敗した計算の値をバッファに残さないよう、データまで消す
+            clear(data: true)
             return switch error {
             case .memory: Unexpected.reached("llama.cpp の KV キャッシュを消せない", continuingWith: "")
             case .decode: Unexpected.reached("llama.cpp の decode が失敗した", continuingWith: "")
@@ -124,7 +125,12 @@ final class ZenzGenerator: DirectDisplayGenerating {
     }
 
     func reset() {
-        llama_memory_clear(llama_get_memory(context), true)
+        clear(data: false)
+    }
+
+    /// KV キャッシュと、その中身を表す resident・next と、下書きを捨てる。data が偽なら KV キャッシュは管理情報だけを消し、バッファは次の decode が上書きする
+    private func clear(data: Bool) {
+        llama_memory_clear(llama_get_memory(context), data)
         resident = []
         next = []
         drafts = [:]
@@ -138,16 +144,9 @@ final class ZenzGenerator: DirectDisplayGenerating {
             let limit = outputLimit(part)
             guard let prompt = try fittedPrompt(context: contextText, kana: part, limit: limit) else {
                 // 文脈を空にしても収まらない区切り（読みの字が複数のトークンになるとき）は、収まるまで半分に分ける。読みは削らない
-                var failure: Failure?
-                let halves = ZenzPrompt.halving([part]) { piece in
-                    do throws(Failure) {
-                        return try fittedPrompt(context: "", kana: piece, limit: outputLimit(piece)) != nil
-                    } catch {
-                        failure = error
-                        return true
-                    }
+                let halves = try ZenzPrompt.halving([part]) { piece throws(Failure) in
+                    try fittedPrompt(context: "", kana: piece, limit: outputLimit(piece)) != nil
                 }
-                if let failure { throw failure }
                 parts.insert(contentsOf: halves, at: parts.startIndex)
                 continue
             }

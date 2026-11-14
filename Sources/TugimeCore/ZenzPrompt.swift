@@ -95,15 +95,23 @@ package enum ZenzPrompt {
     }
 
     /// fits が偽を返す区切りを、真を返すまで半分ずつに分ける。読みは削らないので、繋ぐと元の区切りの並びになる。
-    /// 1 字でも収まらない区切りは想定外の状態で、分けずに落とす（呼び出し元が同じ区切りを分け直し続けないように）
-    package static func halving(_ parts: [String], until fits: (String) -> Bool) -> [String] {
-        parts.flatMap { part -> [String] in
-            if fits(part) { return [part] }
+    /// 1 字でも収まらない区切りは想定外の状態で、分けずに落とす（呼び出し元が同じ区切りを分け直し続けないように）。fits が投げたら、そのまま投げる
+    package static func halving<E: Error>(_ parts: [String], until fits: (String) throws(E) -> Bool) throws(E) -> [String] {
+        var result: [String] = []
+        for part in parts {
+            if try fits(part) {
+                result.append(part)
+                continue
+            }
             let scalars = part.unicodeScalars
-            guard scalars.count > 1 else { return Unexpected.reached("1 字の読みが収まらない", detail: part, continuingWith: []) }
+            guard scalars.count > 1 else {
+                Unexpected.reached("1 字の読みが収まらない", detail: part, continuingWith: ())
+                continue
+            }
             let half = scalars.count / 2
-            return halving([String(String.UnicodeScalarView(scalars.prefix(half))), String(String.UnicodeScalarView(scalars.dropFirst(half)))], until: fits)
+            result += try halving([String(String.UnicodeScalarView(scalars.prefix(half))), String(String.UnicodeScalarView(scalars.dropFirst(half)))], until: fits)
         }
+        return result
     }
 
     private static func preprocess(_ s: String) -> String {

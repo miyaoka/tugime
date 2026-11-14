@@ -5,7 +5,7 @@ import TugimeCore
 import TugimeEngine
 
 /// Carbon の仮想キーコード。NSEvent.keyCode と同じ UInt16 にそろえる
-private enum KeyCode {
+private nonisolated enum KeyCode {
     static let returnKey = UInt16(kVK_Return)
     static let enter = UInt16(kVK_ANSI_KeypadEnter)
     static let space = UInt16(kVK_Space)
@@ -13,6 +13,10 @@ private enum KeyCode {
     static let escape = UInt16(kVK_Escape)
     static let eisu = UInt16(kVK_JIS_Eisu)
     static let kana = UInt16(kVK_JIS_Kana)
+    /// 入力ソースを切り替えるキー（英数・かな）。切り替えは OS が行い、アプリに渡すと空白を入れるアプリがあるので、入力メソッドが受け取る
+    static func switchesInputSource(_ keyCode: UInt16) -> Bool {
+        keyCode == eisu || keyCode == kana
+    }
     static let left = UInt16(kVK_LeftArrow)
     static let right = UInt16(kVK_RightArrow)
     static let down = UInt16(kVK_DownArrow)
@@ -34,7 +38,7 @@ private enum KeyCode {
     ]
 }
 
-/// 変換器を作れなかったときの入力欄のコントローラ。キーを受けず、すべてアプリに渡す（`runWithoutConversion`）
+/// 変換器を作れなかったときの入力欄のコントローラ。入力ソースを切り替えるキーだけを受け取り、ほかのキーはすべてアプリに渡す（`runWithoutConversion`）
 @objc(TugimePassThroughInputController)
 final class PassThroughInputController: IMKInputController {
     nonisolated override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
@@ -46,7 +50,8 @@ final class PassThroughInputController: IMKInputController {
     }
 
     nonisolated override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
-        false
+        guard let event, event.type == .keyDown else { return false }
+        return KeyCode.switchesInputSource(event.keyCode)
     }
 }
 
@@ -209,15 +214,10 @@ final class TugimeInputController: IMKInputController {
     // MARK: キー入力
 
     private func handleKeyDown(_ event: NSEvent, client: IMKTextInput) -> Bool {
-        // 英数・かなキーでの入力ソースの切り替えは OS が行う。アプリに渡すと空白を入れるアプリがあるので受け取る
-        switch event.keyCode {
-        case KeyCode.eisu:
-            commit(client)
+        if KeyCode.switchesInputSource(event.keyCode) {
+            // 英数キーで入力ソースを移る前に、未確定の文字列を確定する
+            if event.keyCode == KeyCode.eisu { commit(client) }
             return true
-        case KeyCode.kana:
-            return true
-        default:
-            break
         }
         if !keys.isEmpty, let arrow = arrowEvent(aliasedBy: event) {
             return handleKeyDown(arrow, client: client)
