@@ -186,17 +186,19 @@ extension Segmenter {
     /// 日本語区間を変換し直さずに text から作る（文節の選択に入っても、見えていた表記のまま）。
     /// text を input の区間に割り当てられなければ、何も覚えずに nil を返す
     public func keepDisplay(_ text: String, for input: String, leading: Leading) -> LiveDisplay? {
-        let segments = segment(input, leading: leading)
-        var kept: [KeptDisplayKey: JapaneseDisplay] = [:]
-        // 打っている途中の表示は末尾の単独の n を外した区切り（keepingPendingN）、文節は外さない区切りで作るので、両方に割り当てる
-        for spans in [segments, keepingPendingN(segments).segments] {
-            guard let pieces = keptPieces(text, over: spans, leading: leading) else { return nil }
-            kept.merge(pieces) { $1 }
-        }
         let previous = keptDisplays
-        keptDisplays.merge(kept) { $1 }
-        let shown = liveDisplay(input, leading: leading)
-        guard shown.text == text else {
+        let (shown, reached) = Unexpected.watching { () -> LiveDisplay? in
+            let segments = segment(input, leading: leading)
+            var kept: [KeptDisplayKey: JapaneseDisplay] = [:]
+            // 打っている途中の表示は末尾の単独の n を外した区切り（keepingPendingN）、文節は外さない区切りで作るので、両方に割り当てる
+            for spans in [segments, keepingPendingN(segments).segments] {
+                guard let pieces = keptPieces(text, over: spans, leading: leading) else { return nil }
+                kept.merge(pieces) { $1 }
+            }
+            keptDisplays.merge(kept) { $1 }
+            return liveDisplay(input, leading: leading)
+        }
+        guard !reached, let shown, shown.text == text else {
             keptDisplays = previous
             return nil
         }

@@ -99,9 +99,12 @@ public enum KeystrokeBench {
     public enum Failure: Error, CustomStringConvertible {
         /// 測る文が 1 つも無い。時間の分布を作れないので、変換器を作る前に止める
         case noScripts(skipped: Int)
+        /// 打つ途中で想定外の状態に当たった。入力メソッドは止まらずに結果を捨てるが、測る側は数えずに止める
+        case unexpectedState(item: String)
         public var description: String {
             switch self {
             case .noScripts(let skipped): "測る文が無い（綴りで書けず外した文 \(skipped) 件）"
+            case .unexpectedState(let item): "\(item) で想定外の状態に当たった"
             }
         }
     }
@@ -135,10 +138,13 @@ public enum KeystrokeBench {
             var last = ""
             var slowest = 0.0
             for i in 1...keys.count {
-                watchdog.arm(item: "\(script.id) の \(i) 打鍵目")
+                let item = "\(script.id) の \(i) 打鍵目"
+                watchdog.arm(item: item)
                 let start = clock.now
-                last = segmenter.liveText(String(keys[..<i]), leading: script.leading)
+                let text = Unexpected.guarded { segmenter.liveText(String(keys[..<i]), leading: script.leading) }
                 let elapsed = seconds(clock.now - start)
+                guard let text else { throw Failure.unexpectedState(item: item) }
+                last = text
                 slowest = max(slowest, elapsed)
                 samples.append(Sample(scriptID: script.id, keystroke: i, kanaCount: kanaCounts[i - 1], context: script.context, hasLeft: !script.leading.text.isEmpty, seconds: elapsed))
             }

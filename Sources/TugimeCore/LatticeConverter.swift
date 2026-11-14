@@ -90,7 +90,7 @@ final class LatticeConverter: JapaneseConverting {
         case .start: dictionary.periodId
         case .afterWord: dictionary.nounId
         case .afterNumber: dictionary.numberId
-        case .afterCaret: preconditionFailure("afterCaret は convert で文頭か前の語に続く形に決めてから渡す")
+        case .afterCaret: Unexpected.reached("afterCaret は convert で文頭か前の語に続く形に決めてから渡す", continuingWith: dictionary.periodId)
         }
     }
 
@@ -176,14 +176,15 @@ final class LatticeConverter: JapaneseConverting {
         var unknown = false
     }
 
-    private func backtrack(_ positions: [Position], rid: UInt16, rank: Int, kana: [Character]) -> [Word] {
+    /// 最良の道を後ろからたどった語の並び。道が途切れていれば想定外の状態で nil
+    private func backtrack(_ positions: [Position], rid: UInt16, rank: Int, kana: [Character]) -> [Word]? {
         var words: [Word] = []
         var end = positions.count - 1
         var rid = rid
         var rank = rank
         while true {
             let position = positions[end]
-            guard let slot = position.rids.firstIndex(of: rid) else { preconditionFailure("格子の道が途切れた") }
+            guard let slot = position.rids.firstIndex(of: rid) else { return Unexpected.reached("格子の道が途切れた", continuingWith: nil) }
             let path = position.paths[slot][rank]
             let start = Int(path.start)
             switch path.kind {
@@ -316,15 +317,18 @@ final class LatticeConverter: JapaneseConverting {
         return clauses
     }
 
-    /// どの位置にも辞書に無い 1 文字を通す道があるので、空でない読みには必ず最良の道がある
+    /// どの位置にも辞書に無い 1 文字を通す道があるので、空でない読みには必ず最良の道がある。
+    /// 想定外の状態（空の読み、途切れた道）では、読みのままの結果を返し、覚えない
     private func reading(_ kana: String, startRid: UInt16, context: JapaneseContext) -> JapaneseReading {
-        precondition(!kana.isEmpty, "空の読みは変換しない")
+        let unconverted = JapaneseReading(text: kana, value: 0, clauses: [], context: context)
+        guard !kana.isEmpty else { return Unexpected.reached("空の読みは変換しない", continuingWith: unconverted) }
         let key = ReadingKey(kana: kana, context: context)
         if let cached = readings[key] { return cached }
         let (chars, bytes, offsets) = Self.layout(kana)
         let positions = table(chars, bytes: bytes, offsets: offsets, startRid: startRid)
         let final = finals(positions, k: 1)[0]
-        let words = preferringUserWords(backtrack(positions, rid: final.rid, rank: final.rank, kana: chars), kana: chars, startRid: startRid)
+        guard let path = backtrack(positions, rid: final.rid, rank: final.rank, kana: chars) else { return unconverted }
+        let words = preferringUserWords(path, kana: chars, startRid: startRid)
         let result = JapaneseReading(text: words.map(\.text).joined(), value: -Double(final.cost) / Self.scale, clauses: clauses(words, kana: chars), context: context)
         readings[key] = result
         return result
@@ -347,7 +351,7 @@ final class LatticeConverter: JapaneseConverting {
         }
         var seen: Set<String> = []
         return finals(positions, k: Self.listingBest)
-            .map { backtrack(positions, rid: $0.rid, rank: $0.rank, kana: chars).map(\.text).joined() }
+            .compactMap { backtrack(positions, rid: $0.rid, rank: $0.rank, kana: chars)?.map(\.text).joined() }
             .filter { seen.insert($0).inserted }
     }
 

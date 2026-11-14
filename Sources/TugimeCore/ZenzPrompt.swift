@@ -26,7 +26,7 @@ package enum ZenzPrompt {
         switch context {
         case .afterNumber(let digits): return digits
         case .start, .afterWord: return ""
-        case .afterCaret: preconditionFailure("afterCaret は convert で文頭か前の語に続く形に決めてから渡す")
+        case .afterCaret: return Unexpected.reached("afterCaret は convert で文頭か前の語に続く形に決めてから渡す", continuingWith: "")
         }
     }
 
@@ -94,12 +94,13 @@ package enum ZenzPrompt {
         return parts.map { String(String.UnicodeScalarView($0)) }
     }
 
-    /// fits が偽を返す区切りを、真を返すまで半分ずつに分ける。読みは削らないので、繋ぐと元の区切りの並びになる
+    /// fits が偽を返す区切りを、真を返すまで半分ずつに分ける。読みは削らないので、繋ぐと元の区切りの並びになる。
+    /// 1 字でも収まらない区切りは想定外の状態で、分けずに落とす（呼び出し元が同じ区切りを分け直し続けないように）
     package static func halving(_ parts: [String], until fits: (String) -> Bool) -> [String] {
         parts.flatMap { part -> [String] in
             if fits(part) { return [part] }
             let scalars = part.unicodeScalars
-            precondition(scalars.count > 1, "1 字の読みが収まらない: \(part)")
+            guard scalars.count > 1 else { return Unexpected.reached("1 字の読みが収まらない", detail: part, continuingWith: []) }
             let half = scalars.count / 2
             return halving([String(String.UnicodeScalarView(scalars.prefix(half))), String(String.UnicodeScalarView(scalars.dropFirst(half)))], until: fits)
         }

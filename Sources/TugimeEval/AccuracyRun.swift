@@ -181,11 +181,14 @@ public enum AccuracyRun {
         case noTypableProblems(count: Int)
         /// モデルを使う方式の出力が、基準と打てた問題の全件で一致した
         case modelHadNoEffect(method: String, count: Int, record: URL)
+        /// 打つ途中で想定外の状態に当たった。入力メソッドは止まらずに結果を捨てるが、測る側は数えずに止める
+        case unexpectedState(problem: String)
         public var description: String {
             switch self {
             case .noTypableProblems(let count): "綴りで打てる問題が無い（問題 \(count) 件）"
             case .modelHadNoEffect(let method, let count, let record):
                 "\(method) の出力が基準の方式と \(count) 件すべてで一致した。モデルが効いていない。記録は \(record.path)"
+            case .unexpectedState(let problem): "\(problem) を打つ途中で想定外の状態に当たった"
             }
         }
     }
@@ -236,8 +239,8 @@ public enum AccuracyRun {
                 continue
             }
             let leading = Segmenter.Leading(field: problem.left)
-            let (output, outputSeconds) = type(keys, leading: leading, with: targetSegmenter, clock: clock)
-            let (baselineOutput, baselineSeconds) = baselineSegmenter.map { type(keys, leading: leading, with: $0, clock: clock) } ?? (output, outputSeconds)
+            let (output, outputSeconds) = try type(keys, leading: leading, with: targetSegmenter, clock: clock, problem: problem.id)
+            let (baselineOutput, baselineSeconds) = try baselineSegmenter.map { try type(keys, leading: leading, with: $0, clock: clock, problem: problem.id) } ?? (output, outputSeconds)
             let result = AccuracyRecord.Result(problem: problem, outcome: .typed(AccuracyRecord.Typed(
                 keys: keys, output: output, baselineOutput: baselineOutput, seconds: outputSeconds, baselineSeconds: baselineSeconds
             )))
@@ -263,11 +266,12 @@ public enum AccuracyRun {
     }
 
     /// 打鍵列を打ち、Enter で確定する文字列と時間を返す。後の問題に覚えを持ち越さないよう endComposition まで呼ぶ
-    private static func type(_ keys: String, leading: Segmenter.Leading, with segmenter: Segmenter, clock: ContinuousClock) -> (String, Double) {
+    private static func type(_ keys: String, leading: Segmenter.Leading, with segmenter: Segmenter, clock: ContinuousClock, problem: String) throws -> (String, Double) {
         let start = clock.now
-        let text = segmenter.liveText(keys, leading: leading)
+        let text = Unexpected.guarded { segmenter.liveText(keys, leading: leading) }
         let elapsed = seconds(clock.now - start)
         segmenter.endComposition()
+        guard let text else { throw Failure.unexpectedState(problem: problem) }
         return (text, elapsed)
     }
 }

@@ -4,19 +4,19 @@ import Foundation
 /// 表（symbol-candidates.tsv）は scripts/make-symbol-candidates.ts が Mozc の記号辞書から作る。1 行が「読み<TAB>記号<TAB>記号…」。
 /// 読みの書き換え（全角の英数記号を半角に）は表を作るときに済ませてあるので、引くときは書き換えない
 enum SymbolCandidates {
-    static let file = "symbol-candidates.tsv"
-
-    /// 読みごとの記号。並びは表の順
+    /// 読みごとの記号。並びは表の順。表を読めなければ、読めない行（読めなければ表の全体）の記号を候補に足さない
     static let byKey: [String: [String]] = {
         guard let url = Bundle.module.url(forResource: "symbol-candidates", withExtension: "tsv", subdirectory: "Resources"),
               let contents = try? String(contentsOf: url, encoding: .utf8)
-        else { preconditionFailure("\(file) をバンドルから読めない") }
+        else { return Unexpected.reached("symbol-candidates.tsv をバンドルから読めない", continuingWith: [:]) }
         var table: [String: [String]] = [:]
         for (index, line) in contents.split(separator: "\n").enumerated() {
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-            guard fields.count >= 2, !fields[0].isEmpty, table.updateValue(Array(fields.dropFirst()), forKey: fields[0]) == nil else {
-                preconditionFailure("\(file) の \(index + 1) 行目を読めない: \(line)")
+            guard fields.count >= 2, !fields[0].isEmpty, table[fields[0]] == nil else {
+                Unexpected.reached("symbol-candidates.tsv の行を読めない（行番号）", numbers: [index + 1], detail: String(line), continuingWith: ())
+                continue
             }
+            table[fields[0]] = Array(fields.dropFirst())
         }
         return table
     }()
