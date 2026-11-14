@@ -136,7 +136,7 @@ import Testing
 
     init() throws {
         segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten\njpy.dev\tCurrency API\ten\npwd.x\tPWDX\tja"))
     }
 
     /// 登録した語の後ろの句読点は、区間の種類（日本語か英語か）ではなく、語の見えている表記の最後の字で、確定済みの文字列の後と同じく形を決める。
@@ -154,6 +154,12 @@ import Testing
             #expect(beforeConversion.text.last == mark.last, "変換が届く前")
         }
         #expect(segmenter.liveText(",", leading: Segmenter.Leading(shown)) == mark, "確定してから")
+    }
+
+    /// 登録した語の後ろの句読点で入力を切る前に、句読点をまたいで登録したもっと長い打鍵（jpy.dev、pwd.x）がそのまま打たれていれば、その語として読む
+    @Test(arguments: [("jpy.dev", "Currency API"), ("pwd.x", "PWDX"), ("jpy.", "円。"), ("pwd.", "PWD.")])
+    func readsARegisteredKeyAcrossPunctuation(keys: String, shown: String) {
+        #expect(segmenter.liveText(keys) == shown)
     }
 
     /// 文節の伸縮で登録した語の文節に戻したときも、後ろの句読点は区間の種類ではなく語の表記で形を決める（英語として登録した 円 の後は 、）

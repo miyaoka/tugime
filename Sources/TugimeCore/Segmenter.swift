@@ -485,6 +485,9 @@ public final class Segmenter {
             var runSpans: [ScoredSpan] = []
             let collect: ((ScoredSpan) -> Void)? = observe.map { _ in { runSpans.append($0) } }
             let before = segmentRun(String(chars[runStart..<i]), leading: runContext, offset: runStart, preceding: runStart == 0 ? preceding : Preceding(chars[runStart - 1]), spaced: runAfterSpace, observe: collect)
+            // 直前の英語の区間か利用者の辞書の語の区間から、句読点をまたいで登録した打鍵どおりに打たれていれば（jpy.dev）、ここで切らずに語として読む
+            if symbol == nil, let last = before.last, last.kind != .japanese,
+               typesRegisteredKeys(from: i - last.source.count, across: i, in: chars) { continue }
             let previousIsEnglish = before.last.map { Self.keepsPunctuationTyped(after: $0) } ?? runKeepsTyped
             // nil なら打ったまま直前の英語の区間に含める。空白の直後は含める英語の語が無いので、打ったままの形の句読点の区間にして入力を切る。
             // 空白の直後の previousIsEnglish は、空白を飛ばした前の区間の表記で決めた runKeepsTyped
@@ -702,6 +705,13 @@ public final class Segmenter {
             rest = rest.dropFirst(spelling.count)
         }
         return score
+    }
+
+    /// chars の start から、位置 i をまたぐ長さの利用者の辞書の打鍵（英語の語と、かなに読めない日本語の語）がそのまま打たれているか
+    private func typesRegisteredKeys(from start: Int, across i: Int, in chars: [Character]) -> Bool {
+        [typedWords.keys, typedJapaneseWords.keys].joined().contains { keys in
+            start + keys.count > i && start + keys.count <= chars.count && chars[start..<(start + keys.count)].elementsEqual(keys)
+        }
     }
 
     /// 英語区間の表記。空白で区切った綴りのうち、利用者の辞書で英語として扱う打鍵と一致するものを、最初に登録した表記にする
