@@ -283,9 +283,32 @@ private final class DisplayRecorder: JapaneseConverting {
         #expect(output(".", leading: Segmenter.Leading("Hello ")) == ".")
         #expect(output(".", leading: Segmenter.Leading("今日 ")) == "。")
         #expect(output(".", leading: Segmenter.Leading("Hello\n")) == "。")
-        #expect(output(".", leading: Segmenter.Leading("Hello.")) == "。")
+        #expect(output(".", leading: Segmenter.Leading("Hello.")) == ".")
+        #expect(output(".", leading: Segmenter.Leading("今日。")) == "。")
+        #expect(output(",", leading: Segmenter.Leading("「")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("（")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("Café")) == ",")
+        #expect(output(",", leading: Segmenter.Leading("𠮷")) == "、")
+        #expect(output(".", leading: Segmenter.Leading("気温は30℃")) == "。")
+        #expect(output(",", leading: Segmenter.Leading("※")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("了解😊")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("ＡＢＣ")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("Straße")) == ",")
+        #expect(output(",", leading: Segmenter.Leading("cafe\u{301}")) == ",")
+        #expect(output(",", leading: Segmenter.Leading("ドラゴンクエストⅢ")) == "、")
+        #expect(output(",", leading: Segmenter.Leading("手順1️⃣")) == "、")
         #expect(output("~", leading: Segmenter.Leading("今日")) == "〜")
         #expect(output("~", leading: Segmenter.Leading("API")) == "~")
+    }
+
+    /// 英語の後に続けて打つ記号（wait... really?! wow!!）は、続けて打っても、変換が届く前の表示でも、
+    /// 前まで確定してから打っても、どれも打ったまま残る。直前の記号を文の頭として日本語の記号にしない
+    @Test(arguments: [("wait", "..."), ("really", "?!"), ("wow", "!!")])
+    func keepsMarksTypedAfterEnglishMarks(word: String, marks: String) {
+        #expect(segmenter.liveText(word + marks) == word + marks)
+        let provisional = Segmenter.liveDisplay(of: word + marks, converted: [(word, segmenter.liveDisplay(word))], leading: .start, table: segmenter.table)
+        #expect(provisional.text == word + marks, "変換が届く前")
+        #expect(segmenter.liveText(String(marks.dropFirst()), leading: Segmenter.Leading(word + String(marks.first!))) == String(marks.dropFirst()), "確定してから")
     }
 
     /// 入力欄のカーソルより前は UTF-16 で上限まで読み、途中から読んだときは割れうる先頭の 1 文字を捨てる
