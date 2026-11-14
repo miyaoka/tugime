@@ -190,7 +190,7 @@ final class TugimeInputController: IMKInputController {
     private func selectCandidate(numbered number: Int, clauses: [Clause], client: IMKTextInput) {
         guard let index = candidatePage?.index(forNumber: number) else { return }
         self.clauses = Clause.selecting(index, at: focus, in: clauses)
-        focus = Clause.focus(focus, movedBy: 1, count: clauses.count)
+        focus = Clause.focus(focus, movedBy: 1, in: clauses)
         closeCandidates()
         showMarkedText(client)
     }
@@ -254,6 +254,7 @@ final class TugimeInputController: IMKInputController {
     /// 打っている途中は、選んでいる文節が無い。文節に分けて選ぶ文節を決めるのは、文節の選択に入るときが初めて。
     /// カーソルを末尾に置くのはターミナルへの対処で（`showMarkedText`）、選んでいる文節を表さない。
     /// 向きを持つ ← → は、選んでいる文節が無いところから 1 つ進んだ文節を選ぶ。→ は 0 番目の最初の文節、← は -1 番目で、端から回って最後の文節。
+    /// どちらも空白だけの文節は飛ばす（`Clause.focus`）。打鍵列は空白で始まらないので、最初の文節は空白だけにならない。
     /// Shift+← → は、同じ向きで選んだ文節を伸縮する。向きを持たないキー（Shift+Space・↑ ↓・Shift+Enter）は、最初の文節を選ぶ
     private func handleComposing(_ event: NSEvent, client: IMKTextInput) -> Bool {
         switch event.keyCode {
@@ -299,7 +300,7 @@ final class TugimeInputController: IMKInputController {
             guard !keys.isEmpty else { return false }
             let clauses = segmentedClauses()
             self.clauses = clauses
-            focus = event.keyCode == KeyCode.left ? clauses.count - 1 : 0
+            focus = event.keyCode == KeyCode.left ? Clause.focus(0, movedBy: -1, in: clauses) : 0
             // ↑ ↓ は文節の表示を描き直さないので、先に文節の選択の表示にしておく
             showMarkedText(client)
             // Shift 無しの ← → は、文節を選ぶところまでがそのキーの動き
@@ -356,7 +357,7 @@ final class TugimeInputController: IMKInputController {
                 let (focus, leading) = (focus, leading)
                 self.clauses = conversion.sync { $0.resize(clauses, at: focus, by: step, leading: leading) }
             } else {
-                focus = Clause.focus(focus, movedBy: step, count: clauses.count)
+                focus = Clause.focus(focus, movedBy: step, in: clauses)
             }
             closeCandidates()
             showMarkedText(client)

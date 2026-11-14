@@ -142,8 +142,8 @@ do {
             switch op {
             case "+": clauses = segmenter.resize(clauses, at: focus, by: 1, leading: leading)
             case "-": clauses = segmenter.resize(clauses, at: focus, by: -1, leading: leading)
-            case ">": focus = Clause.focus(focus, movedBy: 1, count: clauses.count)
-            case "<": focus = Clause.focus(focus, movedBy: -1, count: clauses.count)
+            case ">": focus = Clause.focus(focus, movedBy: 1, in: clauses)
+            case "<": focus = Clause.focus(focus, movedBy: -1, in: clauses)
             case "1"..."9":
                 let index = Int(String(op))!
                 guard index < clauses[focus].candidates.count else {
