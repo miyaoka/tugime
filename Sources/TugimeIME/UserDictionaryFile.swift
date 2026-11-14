@@ -12,7 +12,7 @@ final class UserDictionaryFile {
     /// 最後に見たファイルの更新時刻。ファイルが無ければ内側が nil、まだ見ていなければ外側が nil
     private var seen: Date??
     /// 読めずに飛ばした行と、読めなかった理由を書く。利用者には表示しない（librime・Mozc の変換エンジンと同じ）
-    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "tugime", category: "dictionary")
+    private let logger = Logger(subsystem: logSubsystem, category: "dictionary")
 
     init(url: URL) {
         self.url = url

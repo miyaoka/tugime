@@ -62,7 +62,7 @@ public struct Clause: Sendable, Equatable {
             index = (index + step + clauses.count) % clauses.count
             if !clauses[index].isSpace { return index }
         }
-        return Unexpected.reached("空白だけの文節しか無い: \(clauses.map(\.reading))", continuingWith: focus)
+        return Unexpected.reached("空白だけの文節しか無い", detail: "\(clauses.map(\.reading))", continuingWith: focus)
     }
 
     /// 候補 text の番号。候補に無ければ末尾に足す
@@ -163,7 +163,7 @@ public struct ClausePart: Sendable, Equatable {
 
 extension Segmenter {
     /// 文節の操作を取りやめた理由を残す
-    static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "tugime", category: "clause")
+    static let logger = Logger(subsystem: logSubsystem, category: "clause")
 
     /// 区切りを選び、日本語区間を文節に分けて、文節ごとに候補の一覧を付ける。
     /// 日本語区間は、前の文字列と前の区間の表示を左の文脈にして表示の変換で文節に分ける
@@ -218,7 +218,7 @@ extension Segmenter {
         let fixed = wordIsEnglish ? [KeptClause(range: wordStart..<wordEnd, fixedRange: true, fixedValue: nil)] : []
         var clauses = clauses(of: before + [flipped, spaces], left: leading.text, firstIndex: 0, startsAtHead: true, endsInput: true, fixedKeys: fixed)
         guard let focus = clauses.firstIndex(where: { $0.span.index == before.count }) else {
-            return Unexpected.reached("入れ替えた語の文節が無い: \(input)", continuingWith: nil)
+            return Unexpected.reached("入れ替えた語の文節が無い", detail: input, continuingWith: nil)
         }
         let flippedText = clauses[focus].candidates[0]
         clauses[focus].candidates = [flippedText] + [shown].filter { $0 != flippedText } + clauses[focus].candidates.dropFirst().filter { $0 != shown }

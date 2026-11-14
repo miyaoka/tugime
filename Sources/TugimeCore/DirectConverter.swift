@@ -47,11 +47,13 @@ final class DirectConverter: JapaneseConverting {
     func display(kana: String, context: JapaneseContext, left: String) -> JapaneseDisplay {
         let key = DisplayKey(kana: kana, context: context, left: left)
         if let cached = displays[key] { return cached }
-        let scored = scorer.convert(kana: kana, context: context)
-        let text = generator.generate(left: ZenzPrompt.leftContext(context: context, left: left), kana: kana)
-        let clauses = Self.keepingUserWords(Self.clauses(of: text, kana: kana, scored: scored.clauses), scored: scored.clauses)
-        let shown = JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses, userWords: scored.clauses.flatMap(\.userWords))
-        displays[key] = shown
+        let (shown, reached) = Unexpected.watching { () -> JapaneseDisplay in
+            let scored = scorer.convert(kana: kana, context: context)
+            let text = generator.generate(left: ZenzPrompt.leftContext(context: context, left: left), kana: kana)
+            let clauses = Self.keepingUserWords(Self.clauses(of: text, kana: kana, scored: scored.clauses), scored: scored.clauses)
+            return JapaneseDisplay(text: clauses.map(\.text).joined(), clauses: clauses, userWords: scored.clauses.flatMap(\.userWords))
+        }
+        if !reached { displays[key] = shown }
         return shown
     }
 
@@ -75,7 +77,7 @@ final class DirectConverter: JapaneseConverting {
                 reading += next.clause.reading
             }
             guard reading == clause.reading else {
-                return Unexpected.reached("表示の文節が採点の文節の境目で切られていない: \(clause.reading) \(reading)", continuingWith: clause)
+                return Unexpected.reached("表示の文節が採点の文節の境目で切られていない", detail: "\(clause.reading) \(reading)", continuingWith: clause)
             }
             let words = covered.flatMap(\.userWords)
             guard !words.allSatisfy({ word in word.spellings.contains { clause.text.contains($0) } }) else { return clause }

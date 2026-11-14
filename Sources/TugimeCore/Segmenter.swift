@@ -288,12 +288,6 @@ public final class Segmenter {
         public var differsFromInput: Bool
         /// 最後の区間が英語の区間か。区切りの結果から作った表示だけが知る。変換の届いていない打鍵をつないだ表示と、Backspace で切った表示では nil
         public var endsInEnglish: Bool? = nil
-
-        public init(text: String, differsFromInput: Bool, endsInEnglish: Bool? = nil) {
-            self.text = text
-            self.differsFromInput = differsFromInput
-            self.endsInEnglish = endsInEnglish
-        }
     }
 
     /// 打っている途中に見せる文字列。日本語区間は変換し、英語区間は打ったまま。末尾の単独の n は打ったまま見せる（keepingPendingN）。
@@ -491,7 +485,7 @@ public final class Segmenter {
     func keepingPendingN(_ segments: [Segment]) -> (segments: [Segment], pendingN: Bool) {
         guard let last = segments.last, last.kind == .japanese, table.readingBeforePendingN(last.source) != nil else { return (segments, false) }
         guard last.reading.last == "ん" else {
-            return Unexpected.reached("単独の n で終わる日本語区間の読みが「ん」で終わらない: \(last.source)", continuingWith: (segments, false))
+            return Unexpected.reached("単独の n で終わる日本語区間の読みが「ん」で終わらない", detail: last.source, continuingWith: (segments, false))
         }
         let kana = String(last.reading.dropLast())
         let pending = englishSegment("n", context: last.context)
@@ -600,7 +594,7 @@ public final class Segmenter {
         }
         // どの区間も、日本語として採れなければ英語として採れるので、空でない入力には必ず区切りがある
         guard pos == 0, !segments.isEmpty else {
-            return Unexpected.reached("区切りが見つからない: \(input)", continuingWith: [englishSegment(input, context: leading)])
+            return Unexpected.reached("区切りが見つからない", detail: input, continuingWith: [englishSegment(input, context: leading)])
         }
         return mergeJapanese(segments.reversed())
     }
@@ -619,7 +613,7 @@ public final class Segmenter {
     /// 続く空白の区間。採点で比べないので点を持たない英語の区間にする。context は空白の後ろの日本語を評価する文脈
     static func spaceSegment(_ source: String, context: JapaneseContext) -> Segment {
         if source.isEmpty || !source.allSatisfy({ $0 == " " }) {
-            _ = Unexpected.reached("空白の区間が空白以外を含む: \(source)", continuingWith: ())
+            Unexpected.reached("空白の区間が空白以外を含む", detail: source, continuingWith: ())
         }
         return Segment(kind: .english, source: source, reading: source, output: source, score: 0, context: context)
     }

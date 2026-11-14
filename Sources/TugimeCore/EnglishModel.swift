@@ -8,10 +8,12 @@ public struct EnglishModel: Sendable {
     public enum LoadError: Error, CustomStringConvertible {
         case missingResource(String)
         case malformedLine(String, Int, String)
+        case unboundedLength(Int)
         public var description: String {
             switch self {
             case .missingResource(let name): "英語の語表がバンドルに無い: \(name)"
             case .malformedLine(let name, let line, let text): "英語の語表 \(name) の \(line) 行目を読めない: \(text)"
+            case .unboundedLength(let limit): "綴りらしさの長さごとの確率が \(limit) 文字までに収まらない"
             }
         }
     }
@@ -53,7 +55,7 @@ public struct EnglishModel: Sendable {
     private var lengthLogCorrection: [Double] = []
 
     /// spellings は綴りらしさを数える語、zipf は日本語の文章での語ごとの頻度
-    public init(spellings: some Sequence<Substring>, zipf: [String: Double]) {
+    public init(spellings: some Sequence<Substring>, zipf: [String: Double]) throws {
         let n = Self.symbolCount
         trigram = Array(repeating: 0, count: n * n * n)
         bigram = Array(repeating: 0, count: n * n)
@@ -83,7 +85,7 @@ public struct EnglishModel: Sendable {
         }
         lengthCounts[0] = 0
         let lengthTotal = lengthCounts.reduce(0, +)
-        let mass = lengthMass()
+        let mass = try lengthMass()
         lengthLogCorrection = (0...Self.maxLength).map { length in
             guard length > 0 else { return 0 }
             return min(0, log(lengthCounts[length] / lengthTotal) - log(mass[length]))
@@ -91,7 +93,7 @@ public struct EnglishModel: Sendable {
     }
 
     /// 綴りらしさが長さごとの並び全体に割り振る確率。添字は長さで、maxLength はそれ以上の長さすべての和
-    private func lengthMass() -> [Double] {
+    private func lengthMass() throws -> [Double] {
         let n = Self.symbolCount
         var mass = Array(repeating: 0.0, count: Self.maxLength + 1)
         var state = Array(repeating: 0.0, count: n * n)
@@ -100,9 +102,7 @@ public struct EnglishModel: Sendable {
         // 並びがまだ続く確率が十分小さくなるまで伸ばし、maxLength 以上の長さの分はまとめて足す
         while state.reduce(0, +) > Self.lengthMassTolerance {
             length += 1
-            guard length <= Self.lengthMassIterations else {
-                return Unexpected.reached("綴りらしさの長さごとの確率が \(Self.lengthMassIterations) 文字までに収まらない", continuingWith: mass)
-            }
+            guard length <= Self.lengthMassIterations else { throw LoadError.unboundedLength(Self.lengthMassIterations) }
             var next = Array(repeating: 0.0, count: n * n)
             for a in 0..<n {
                 for b in 0..<n where state[a * n + b] > 0 {
@@ -140,7 +140,7 @@ public struct EnglishModel: Sendable {
             }
             zipf[String(fields[0])] = value
         }
-        return EnglishModel(spellings: spellings, zipf: zipf)
+        return try EnglishModel(spellings: spellings, zipf: zipf)
     }
 
     private static func resource(_ name: String, _ ext: String) throws -> String {

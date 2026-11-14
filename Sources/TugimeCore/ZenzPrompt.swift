@@ -100,7 +100,7 @@ package enum ZenzPrompt {
         parts.flatMap { part -> [String] in
             if fits(part) { return [part] }
             let scalars = part.unicodeScalars
-            guard scalars.count > 1 else { return Unexpected.reached("1 字の読みが収まらない: \(part)", continuingWith: []) }
+            guard scalars.count > 1 else { return Unexpected.reached("1 字の読みが収まらない", detail: part, continuingWith: []) }
             let half = scalars.count / 2
             return halving([String(String.UnicodeScalarView(scalars.prefix(half))), String(String.UnicodeScalarView(scalars.dropFirst(half)))], until: fits)
         }
