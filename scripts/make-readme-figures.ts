@@ -199,8 +199,9 @@ const contextRows = await step("自動変換の文の表示", async () => {
   return contextInputs.map((input, i) => {
     const s = shown[i];
     assert(s !== undefined, `${input} の表示が無い`);
-    const typedWord = input.slice(0, input.indexOf("wo"));
-    if (!typedWord) throw new Error(`${input} に前の語の打鍵が無い`);
+    const at = input.indexOf("wo");
+    if (at <= 0) throw new Error(`${input} に前の語の打鍵が無い`);
+    const typedWord = input.slice(0, at);
     return { input, typedWord, ...splitContext(s.shown) };
   });
 });
