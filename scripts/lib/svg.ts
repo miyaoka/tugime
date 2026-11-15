@@ -162,7 +162,7 @@ export async function readExplains(inputs: string[]): Promise<Segment[][]> {
     );
   return lines.map((l) => {
     const [, described, ...rest] = l.split("\t");
-    if (described === undefined || rest.length > 0)
+    if (!described || rest.length > 0)
       throw new Error(`--explain の行を読めない: ${l}`);
     return parseSegments(described);
   });
@@ -193,7 +193,7 @@ export async function readLattices(
       kind === undefined ||
       output === undefined ||
       score === undefined ||
-      !Number.isFinite(+score) ||
+      !/^-?\d+(\.\d+)?(e-?\d+)?$/.test(score) ||
       rest.length > 0
     )
       throw new Error(`--lattice の候補の行を読めない: ${line}`);
