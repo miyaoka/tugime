@@ -1,19 +1,13 @@
-// README と docs の表に載せた変換の結果が、今の tugime-cli の出力と合うかを確かめる。
-// 表は手で書くので、変換が変わると黙って古くなる。合わない行を並べて終了コード 1 で終わる。
-// 確かめるのは、1 列目が打鍵列（`...`）の表のうち、見出しが次の列だけである。
-//   tugime / 表示                       … 入力メソッドと同じ方式の表示（--live）
-//   英語を見分けて辞書と統計で変換       … --method lattice の表示
-//   続けて打つと                         … 「`打鍵` で 表示」。打鍵列に続けて打ったときの表示
-// ほかの列（人間が打って確かめた他の入力方式の結果、期待する表記、打った読み）は確かめない。
+// README と docs の表に載せた変換の結果を、今の tugime-cli の出力と突き合わせる。合わない行があれば終了コード 1 で終わる。
 // 使い方: bun scripts/check-doc-examples.ts
 import { join } from "node:path";
-import { genmai } from "./fetch-genmai";
 import { root } from "./lib/root";
-import { cli, readLive, run, step } from "./lib/svg";
+import { cli, prepareCli, readLive, run, step } from "./lib/svg";
 
 const DOCS = ["README.md", "docs/how-it-works.md", "docs/limitations.md"];
 
-type Method = "live" | "lattice";
+/// live は入力メソッドと同じ方式の表示、lattice は --method lattice の表示、reading は綴りの表による読み（F6）
+type Method = "live" | "lattice" | "reading";
 type Check = {
   doc: string;
   line: number;
@@ -27,8 +21,12 @@ const METHOD_OF_COLUMN = new Map<string, Method>([
   ["tugime", "live"],
   ["表示", "live"],
   ["英語を見分けて辞書と統計で変換", "lattice"],
+  ["打った読み", "reading"],
 ]);
+/// 「`打鍵` で 表示」。打鍵列に続けて打ったときの表示
 const CONTINUED = "続けて打つと";
+/// 突き合わせない列。人が打って確かめた他の入力方式の結果と、期待する表記
+const UNCHECKED = new Set(["日本語モードのライブ変換", "期待"]);
 const KEYS = /^`([^`]+)`$/;
 
 const cells = (line: string) =>
@@ -38,12 +36,12 @@ const cells = (line: string) =>
     .split("|")
     .map((c) => c.trim());
 
-/// 文書の表から、確かめる行を取り出す
+/// 文書の表から、突き合わせる行を取り出す
 function collect(doc: string, text: string): Check[] {
   const checks: Check[] = [];
-  const lines = text.split("\n");
   let header: string[] | undefined;
-  lines.forEach((line, i) => {
+  text.split("\n").forEach((line, i) => {
+    const at = `${doc}:${i + 1}`;
     if (!line.startsWith("|")) {
       header = undefined;
       return;
@@ -57,10 +55,10 @@ function collect(doc: string, text: string): Check[] {
     const input = row[0]?.match(KEYS)?.[1];
     if (input === undefined) return;
     if (row.length !== header.length)
-      throw new Error(`${doc}:${i + 1} の列の数が見出しと合わない`);
+      throw new Error(`${at} の列の数が見出しと合わない`);
     header.forEach((column, j) => {
       const cell = row[j];
-      if (j === 0 || cell === undefined) return;
+      if (j === 0 || cell === undefined || UNCHECKED.has(column)) return;
       const method = METHOD_OF_COLUMN.get(column);
       if (method) {
         checks.push({
@@ -73,21 +71,23 @@ function collect(doc: string, text: string): Check[] {
         });
         return;
       }
-      if (column === CONTINUED) {
-        const m = cell.match(/^`([^`]+)` で (.+)$/);
-        if (!m?.[1] || !m[2])
-          throw new Error(
-            `${doc}:${i + 1} の「${CONTINUED}」が「\`打鍵\` で 表示」の形でない: ${cell}`,
-          );
-        checks.push({
-          doc,
-          line: i + 1,
-          column,
-          method: "live",
-          input: input + m[1],
-          expected: m[2],
-        });
-      }
+      if (column !== CONTINUED)
+        throw new Error(
+          `${at} の列「${column}」を突き合わせるか決まっていない。METHOD_OF_COLUMN か UNCHECKED に足す`,
+        );
+      const m = cell.match(/^`([^`]+)` で (.+)$/);
+      if (!m?.[1] || !m[2])
+        throw new Error(
+          `${at} の「${CONTINUED}」が「\`打鍵\` で 表示」の形でない: ${cell}`,
+        );
+      checks.push({
+        doc,
+        line: i + 1,
+        column,
+        method: "live",
+        input: input + m[1],
+        expected: m[2],
+      });
     });
   });
   return checks;
@@ -100,32 +100,54 @@ const checks = (
     ),
   )
 ).flat();
-if (checks.length === 0) throw new Error("確かめる行が 1 つも無い");
+if (checks.length === 0) throw new Error("突き合わせる行が 1 つも無い");
 
-const model = await step("表示の変換のモデルの用意", genmai);
-await step("tugime-cli の組み立て", () =>
-  run(["swift", "build", "-c", "release", "--product", "tugime-cli"]),
+await prepareCli();
+const inputsOf = (method: Method) => [
+  ...new Set(checks.filter((c) => c.method === method).map((c) => c.input)),
+];
+const results = new Map<string, string>();
+const put = (method: Method, input: string, value: string) =>
+  results.set(`${method}\t${input}`, value);
+
+// 表示の変換は前の打鍵列の生成を覚えて使うことがあるので、入力メソッドと同じく打鍵列ごとに別の実行にする
+const liveInputs = inputsOf("live");
+await step(
+  `入力メソッドと同じ方式の表示（${liveInputs.length} 件）`,
+  async () => {
+    for (const input of liveInputs) {
+      const [r] = readLive(await run([cli, "--live", input]), [input]);
+      if (r) put("live", input, r.shown);
+    }
+  },
 );
-const shown = new Map<string, string>();
-for (const [method, args] of [
-  ["live", ["--method", `direct:${model}`]],
-  ["lattice", ["--method", "lattice"]],
-] as const) {
-  const inputs = [
-    ...new Set(checks.filter((c) => c.method === method).map((c) => c.input)),
-  ];
-  if (inputs.length === 0) continue;
-  const results = await step(
-    `${method} の表示（${inputs.length} 件）`,
+const latticeInputs = inputsOf("lattice");
+if (latticeInputs.length > 0)
+  for (const r of await step(
+    `--method lattice の表示（${latticeInputs.length} 件）`,
     async () =>
-      readLive(await run([cli, ...args, "--live", ...inputs]), inputs),
-  );
-  for (const r of results) shown.set(`${method}\t${r.input}`, r.shown);
-}
+      readLive(
+        await run([cli, "--method", "lattice", "--live", ...latticeInputs]),
+        latticeInputs,
+      ),
+  ))
+    put("lattice", r.input, r.shown);
+const readingInputs = inputsOf("reading");
+if (readingInputs.length > 0)
+  for (const r of await step(
+    `綴りの表による読み（${readingInputs.length} 件）`,
+    async () =>
+      readLive(await run([cli, "--whole", ...readingInputs]), readingInputs),
+  )) {
+    const hiragana = r.shown.split(" / ")[0];
+    if (hiragana === undefined)
+      throw new Error(`--whole の結果が無い: ${r.input}`);
+    put("reading", r.input, hiragana);
+  }
 
 let failed = 0;
 for (const c of checks) {
-  const actual = shown.get(`${c.method}\t${c.input}`);
+  const actual = results.get(`${c.method}\t${c.input}`);
   const ok = actual === c.expected;
   if (!ok) failed++;
   console.log(
