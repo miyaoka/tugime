@@ -3,7 +3,7 @@
 import {
   Glyphs,
   assertAlt,
-  kindOf,
+  inputField,
   loadFonts,
   svgDocument,
   writeImage,
@@ -15,7 +15,7 @@ const TITLE = "打った文字は、入力欄にしか届かない";
 const SUBTITLE =
   "tugime は打った文字を変換して返すだけで、外へ送らず、残さない";
 const SHOWN = "zipを解凍した。";
-/// 外へ出ない先。名前と、出ない理由（2 行）
+/// 届かない先。名前と、届かない理由（2 行）
 const BLOCKED: [string, [string, string]][] = [
   ["インターネット", ["通信しない。Sandbox が", "通信を許していない"]],
   ["保存・学習", ["打った内容を保存せず、", "打ち方を学習しない"]],
@@ -28,25 +28,31 @@ const WIDTH = 1100;
 const HEIGHT = 440;
 const LEFT = 48;
 
-/// 入力欄、tugime の枠、外へ出ない先の線と枠の色。共有の配色に無いものだけを足す
+/// tugime の枠と、届かない先の線と枠の色。共有の配色に無いものだけを足す
 const STYLE = `
-  .field { fill: #ffffff; stroke: #d0d7de; } .dash { stroke: #9ca3af; stroke-width: 2; stroke-dasharray: 6 5; }
   .tbox { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; } .blue { fill: #1d4ed8; }
   .xline { stroke: #dc2626; stroke-width: 3; stroke-dasharray: 6 5; } .xmark { stroke: #dc2626; stroke-width: 3; stroke-linecap: round; }
   .outbox { fill: none; stroke: #d1d5db; stroke-dasharray: 4 4; }
   @media (prefers-color-scheme: dark) {
-    .field { fill: #0d1117; stroke: #30363d; } .dash { stroke: #6b7280; }
     .tbox { fill: #0f1d33; stroke: #3b82f6; } .blue { fill: #93c5fd; }
     .xline { stroke: #f87171; } .xmark { stroke: #f87171; } .outbox { stroke: #4b5563; }
   }`;
 
 const g = new Glyphs(await loadFonts());
 const label = `${TITLE}。入力欄で打った文字は tugime が変換して入力欄に返す。tugime は macOS の Sandbox の中で動く。届かない先は ${BLOCKED.map(([name, why]) => `${name}（${why.join("")}）`).join("、")}。${PASSWORD}: ${PASSWORD_NOTE}`;
-await assertAlt("README.md", "safety.svg", [
-  TITLE,
-  ...BLOCKED.map(([name]) => name),
-  PASSWORD,
-]);
+await assertAlt("README.md", "safety.svg", [label]);
+
+/// text を x から並べたとき、right を越えるなら止める
+const fits = (
+  text: string,
+  font: "bold" | "regular",
+  size: number,
+  x: number,
+  right: number,
+) => {
+  if (x + g.width(text, font, size) > right)
+    throw new Error(`${text} がはみ出す`);
+};
 
 const parts: string[] = [];
 parts.push(
@@ -61,24 +67,17 @@ const arrow = (from: number, to: number, y: number) => {
 };
 
 // 入力欄
-const field = { x: LEFT, y: 140, w: 300, h: 110 };
+const field = { x: LEFT, y: 140, w: 300 };
 parts.push(
-  `<rect class="field" x="${field.x}" y="${field.y}" width="${field.w}" height="${field.h}" rx="12"/>`,
-  `<path class="panel" d="M${field.x + 1} ${field.y + 30} V${field.y + 12} a11 11 0 0 1 11 -11 H${field.x + field.w - 12} a11 11 0 0 1 11 11 V${field.y + 30} Z"/>`,
-  ...[0, 1, 2].map(
-    (k) =>
-      `<circle class="sub" cx="${field.x + 18 + k * 18}" cy="${field.y + 16}" r="5"/>`,
-  ),
-  g.draw(
+  ...inputField(
+    g,
+    field.x,
+    field.y,
+    field.w,
     "どのアプリの入力欄でも",
-    "regular",
-    field.x + 74,
-    field.y + 21,
-    13,
-    "sub",
-  ),
-  g.draw(SHOWN, "bold", field.x + 26, field.y + 76, 26, kindOf),
-  `<line class="dash" x1="${field.x + 14}" y1="${field.y + 88}" x2="${field.x + field.w - 14}" y2="${field.y + 88}"/>`,
+    SHOWN,
+    26,
+  ).parts,
 );
 
 // tugime の枠と、入力欄との往復
@@ -102,8 +101,18 @@ parts.push(
   g.draw("辞書と変換モデルは", "regular", box.x + 20, box.y + 104, 14, "sub"),
   g.draw("手元にある", "regular", box.x + 20, box.y + 128, 14, "sub"),
 );
+fits(
+  "macOS の Sandbox の中で動く",
+  "regular",
+  13,
+  box.x + 20,
+  box.x + box.w - 12,
+);
+fits("辞書と変換モデルは", "regular", 14, box.x + 20, box.x + box.w - 12);
+fits(TITLE, "bold", 22, LEFT, WIDTH - LEFT);
+fits(SUBTITLE, "regular", 15, LEFT, WIDTH - LEFT);
 
-// 外へ出ない先
+// 届かない先
 const out = { x: 820, w: WIDTH - LEFT - 820, h: 96 };
 BLOCKED.forEach(([name, why], i) => {
   const top = 112 + i * 110;
@@ -117,12 +126,9 @@ BLOCKED.forEach(([name, why], i) => {
       g.draw(line, "regular", out.x + 16, top + 56 + k * 20, 13, "sub"),
     ),
   );
-  const widest = Math.max(
-    out.x + 36 + g.width(name, "bold", 17),
-    ...why.map((line) => out.x + 16 + g.width(line, "regular", 13)),
-  );
-  if (widest > out.x + out.w - 12)
-    throw new Error(`${name} の枠の文字がはみ出す`);
+  fits(name, "bold", 17, out.x + 36, out.x + out.w - 12);
+  for (const line of why)
+    fits(line, "regular", 13, out.x + 16, out.x + out.w - 12);
 });
 
 // パスワード欄
@@ -140,8 +146,7 @@ parts.push(
   g.draw(PASSWORD, "bold", noteX, pw.y + 39, 15, "ink"),
   g.draw(PASSWORD_NOTE, "regular", noteRest, pw.y + 39, 15, "ink"),
 );
-if (noteRest + g.width(PASSWORD_NOTE, "regular", 15) > WIDTH - LEFT - 18)
-  throw new Error("パスワード欄の説明がはみ出す");
+fits(PASSWORD_NOTE, "regular", 15, noteRest, WIDTH - LEFT - 18);
 
 await writeImage(
   "safety.svg",

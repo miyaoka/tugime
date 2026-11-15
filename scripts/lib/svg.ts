@@ -378,13 +378,46 @@ export class Glyphs {
 const LIGHT = `
   .bg { fill: #ffffff; } .panel { fill: #f6f8fa; } .sub { fill: #6b7280; } .ink { fill: #111827; } .en { fill: #c2410c; } .key { fill: #4b5563; }
   .bad { fill: #dc2626; } .good { fill: #15803d; } .line { fill: #9ca3af; } .chip { fill: #e5e7eb; }
-  .jtint { fill: #e7ecf4; } .etint { fill: #fbe7d8; }`;
+  .jtint { fill: #e7ecf4; } .etint { fill: #fbe7d8; }
+  .field { fill: #ffffff; stroke: #d0d7de; } .dash { stroke: #9ca3af; stroke-width: 2; stroke-dasharray: 6 5; }`;
 const DARK = `
   @media (prefers-color-scheme: dark) {
     .bg { fill: #0d1117; } .panel { fill: #161b22; } .sub { fill: #9ca3af; } .ink { fill: #f3f4f6; } .en { fill: #fb923c; } .key { fill: #d1d5db; }
     .bad { fill: #f87171; } .good { fill: #4ade80; } .line { fill: #6b7280; } .chip { fill: #30363d; }
     .jtint { fill: #1f2937; } .etint { fill: #3b2414; }
+    .field { fill: #0d1117; stroke: #30363d; } .dash { stroke: #6b7280; }
   }`;
+
+/// アプリの入力欄。上端の帯に caption、未確定の文字列 text と下線、あれば下に foot を描く。描いた要素と下端を返す
+export function inputField(
+  g: Glyphs,
+  x: number,
+  top: number,
+  width: number,
+  caption: string,
+  text: string,
+  size: number,
+  foot?: string,
+): { parts: string[]; bottom: number } {
+  const textY = top + 48 + size;
+  const lineY = textY + 12;
+  const bottom = foot ? lineY + 30 : lineY + 22;
+  if (x + 26 + g.width(text, "bold", size) > x + width - 14)
+    throw new Error(`入力欄の文 ${text} がはみ出す`);
+  const parts = [
+    `<rect class="field" x="${x}" y="${top}" width="${width}" height="${bottom - top}" rx="12"/>`,
+    `<path class="panel" d="M${x + 1} ${top + 30} V${top + 12} a11 11 0 0 1 11 -11 H${x + width - 12} a11 11 0 0 1 11 11 V${top + 30} Z"/>`,
+    ...[0, 1, 2].map(
+      (k) =>
+        `<circle class="sub" cx="${x + 18 + k * 18}" cy="${top + 16}" r="5"/>`,
+    ),
+    g.draw(caption, "regular", x + 74, top + 21, 13, "sub"),
+    g.draw(text, "bold", x + 26, textY, size, kindOf),
+    `<line class="dash" x1="${x + 14}" y1="${lineY}" x2="${x + width - 14}" y2="${lineY}"/>`,
+  ];
+  if (foot) parts.push(g.draw(foot, "regular", x + 14, lineY + 20, 12, "sub"));
+  return { parts, bottom };
+}
 
 /// auto は見る人の設定でライトとダークを切り替え、light はダークでもライトの配色のまま描く
 export type Scheme = "auto" | "light";
