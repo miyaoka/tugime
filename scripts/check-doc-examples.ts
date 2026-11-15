@@ -119,7 +119,7 @@ await step(
       const [r] = readPerInput("--live", await run([cli, "--live", input]), [
         input,
       ]);
-      if (r) put("live", input, r.shown);
+      if (r) put("live", input, r.result);
     }
   },
 );
@@ -134,7 +134,7 @@ if (latticeInputs.length > 0)
         latticeInputs,
       ),
   ))
-    put("lattice", r.input, r.shown);
+    put("lattice", r.input, r.result);
 const readingInputs = inputsOf("reading");
 if (readingInputs.length > 0)
   for (const r of await step(
@@ -146,7 +146,7 @@ if (readingInputs.length > 0)
         readingInputs,
       ),
   )) {
-    const hiragana = r.shown.split(" / ")[0];
+    const hiragana = r.result.split(" / ")[0];
     if (hiragana === undefined)
       throw new Error(`--whole の結果が無い: ${r.input}`);
     put("reading", r.input, hiragana);

@@ -64,8 +64,8 @@ async function readValues(model: string) {
     await run([cli, "--method", `direct:${model}`, "--live", INPUT]),
     [INPUT],
   );
-  if (shown?.shown !== SHOWN)
-    throw new Error(`表示 ${shown?.shown} が ${SHOWN} と違う`);
+  if (shown?.result !== SHOWN)
+    throw new Error(`表示 ${shown?.result} が ${SHOWN} と違う`);
   const [en, ja, punct] = SCORED;
   if (!SHOWN.startsWith(en) || !SHOWN.endsWith(punct))
     throw new Error(`表示 ${SHOWN} が ${en} で始まり ${punct} で終わらない`);

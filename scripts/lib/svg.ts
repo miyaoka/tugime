@@ -87,7 +87,7 @@ export function readPerInput(
   option: "--live" | "--whole",
   stdout: string,
   inputs: string[],
-): { input: string; shown: string }[] {
+): { input: string; result: string }[] {
   const lines = new Map<string, string>();
   for (const line of outputLines(stdout, option)) {
     const tab = line.indexOf("\t");
@@ -97,10 +97,10 @@ export function readPerInput(
     lines.set(input, line.slice(tab + 1));
   }
   return inputs.map((input) => {
-    const shown = lines.get(input);
-    if (shown === undefined)
+    const result = lines.get(input);
+    if (result === undefined)
       throw new Error(`${option} の結果が無い: ${input}`);
-    return { input, shown };
+    return { input, result };
   });
 }
 

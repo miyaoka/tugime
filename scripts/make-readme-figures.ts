@@ -135,7 +135,7 @@ async function readSteps(prefixes: string[], model: string) {
     prefixes,
   );
   // readExplains は渡した打鍵列と同じ順に、同じ数の区切りを返す
-  return shown.map(({ input: prefix, shown }, i) => {
+  return shown.map(({ input: prefix, result: shown }, i) => {
     const s = segments[i];
     assert(s !== undefined, `${prefix} の区切りが無い`);
     return { prefix, segments: s, shown };
@@ -189,7 +189,7 @@ const [intro] = await step("紹介の文の表示", async () =>
     [introInput],
   ),
 );
-const introShown = intro?.shown;
+const introShown = intro?.result;
 if (introShown !== introExpected)
   throw new Error(`紹介の文の表示 ${introShown} が ${introExpected} と違う`);
 
@@ -205,7 +205,7 @@ const contextRows = await step("自動変換の文の表示", async () => {
     const at = input.indexOf("wo");
     if (at <= 0) throw new Error(`${input} に前の語の打鍵が無い`);
     const typedWord = input.slice(0, at);
-    return { input, typedWord, ...splitContext(s.shown) };
+    return { input, typedWord, ...splitContext(s.result) };
   });
 });
 // 図の筋書き: 同じ ひいて が、前の語ごとに違う表記になる
