@@ -72,14 +72,23 @@ export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
   return { model, fonts: await loadFonts() };
 }
 
-/// --live の出力から、打鍵列ごとの表示を読む。1 打鍵列に 1 行「打鍵列<TAB>表示」
+/// tugime-cli の標準出力を行に分ける。出力は改行で終わり、途中に空行を含まない
+export function outputLines(stdout: string, option: string): string[] {
+  if (stdout === "") return [];
+  if (!stdout.endsWith("\n"))
+    throw new Error(`${option} の出力が改行で終わらない`);
+  const lines = stdout.slice(0, -1).split("\n");
+  if (lines.includes("")) throw new Error(`${option} の出力に空行がある`);
+  return lines;
+}
+
+/// --live の出力から、打鍵列ごとの表示を読む
 export function readLive(
   stdout: string,
   inputs: string[],
 ): { input: string; shown: string }[] {
   const lines = new Map<string, string>();
-  for (const line of stdout.split("\n")) {
-    if (!line) continue;
+  for (const line of outputLines(stdout, "--live")) {
     const tab = line.indexOf("\t");
     const input = line.slice(0, tab);
     if (tab <= 0 || !inputs.includes(input))
@@ -119,8 +128,11 @@ const segmentPattern = /([JEP])\[(.*?)→(.*?) (-?[\d.]+)\]/g;
 
 /// --explain の区間の並びを、打鍵列の位置と出力にする
 export function parseSegments(described: string): Segment[] {
+  const matches = [...described.matchAll(segmentPattern)];
+  if (matches.map((m) => m[0]).join(" ") !== described)
+    throw new Error(`区間の表記を読めない: ${described}`);
   let pos = 0;
-  return [...described.matchAll(segmentPattern)].map((m) => {
+  return matches.map((m) => {
     const [whole, letter, keys, output] = m;
     const kind = letter === undefined ? undefined : SEGMENT_KINDS.get(letter);
     assert(
@@ -138,20 +150,20 @@ export function parseSegments(described: string): Segment[] {
   });
 }
 
-/// 打鍵列ごとの、区切りの採点で採った区間の並び。--explain は 1 打鍵列に 1 行「採点の変換の結果<TAB>区間の並び」を出す
+/// 打鍵列ごとの、区切りの採点で採った区間の並び
 export async function readExplains(inputs: string[]): Promise<Segment[][]> {
-  const lines = (await run([cli, "--explain", ...inputs]))
-    .split("\n")
-    .filter((l) => l);
-  for (const l of lines)
-    if (!/\t[EJP]\[/.test(l)) throw new Error(`--explain の行を読めない: ${l}`);
+  const lines = outputLines(
+    await run([cli, "--explain", ...inputs]),
+    "--explain",
+  );
   if (lines.length !== inputs.length)
     throw new Error(
       `--explain の行数 ${lines.length} が ${inputs.length} と合わない`,
     );
   return lines.map((l) => {
-    const described = l.split("\t")[1];
-    assert(described !== undefined, `--explain の行に区間の並びが無い: ${l}`);
+    const [, described, ...rest] = l.split("\t");
+    if (described === undefined || rest.length > 0)
+      throw new Error(`--explain の行を読めない: ${l}`);
     return parseSegments(described);
   });
 }
@@ -163,29 +175,28 @@ export async function readLattices(
   const out = await run([cli, "--lattice", ...inputs]);
   const lattices = new Map<string, Span[]>();
   let current: Span[] | undefined;
-  for (const line of out.split("\n")) {
+  for (const line of outputLines(out, "--lattice")) {
     const input = line.match(/^== (\S+)\t/)?.[1];
     if (input !== undefined) {
       current = [];
       lattices.set(input, current);
       continue;
     }
-    if (!line) continue;
-    // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点
     const [s, e, after, letter, , output, score, ...rest] = line.split("\t");
     const kind = letter === undefined ? undefined : SPAN_KINDS.get(letter);
     if (
       s === undefined ||
+      !/^\d+$/.test(s) ||
       e === undefined ||
+      !/^\d+$/.test(e) ||
       after === undefined ||
       kind === undefined ||
       output === undefined ||
       score === undefined ||
+      !Number.isFinite(+score) ||
       rest.length > 0
     )
-      throw new Error(
-        `--lattice の候補の行が、種類が J か E の 7 列でない: ${line}`,
-      );
+      throw new Error(`--lattice の候補の行を読めない: ${line}`);
     if (!current) throw new Error(`== の行より前に候補がある: ${line}`);
     current.push({
       s: +s,

@@ -7,6 +7,7 @@ import {
   assertAlt,
   cli,
   inputField,
+  outputLines,
   prepare,
   readExplains,
   readLive,
@@ -29,13 +30,14 @@ const SHOWN = "zipを解凍した。";
 async function readReading(input: string): Promise<string> {
   let reading = "";
   let inside = false;
-  for (const line of (await run([cli, "--clauses", input])).split("\n")) {
+  for (const line of outputLines(
+    await run([cli, "--clauses", input]),
+    "--clauses",
+  )) {
     if (line === `== ${input}`) {
       inside = true;
       continue;
     }
-    if (!line) continue;
-    // 種類 読み<TAB>候補
     const clause = line.match(/^([JEP]) ([^\t]+)\t/);
     if (!clause) throw new Error(`--clauses の行を読めない: ${line}`);
     if (!inside) throw new Error(`== の行より前に文節がある: ${line}`);
