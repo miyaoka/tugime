@@ -59,6 +59,7 @@ bun scripts/make-hero.ts             # README の冒頭の紹介画像 docs/imag
 bun scripts/make-demo.ts             # README の冒頭のデモ docs/images/demo.svg と demo-compare.svg
 bun scripts/make-readme-figures.ts   # docs/images/intro.svg と context.svg と conversion.svg
 bun scripts/make-pipeline.ts         # README の変換の仕組みの図 docs/images/pipeline.svg
+bun scripts/make-safety.ts           # README の安全性の図 docs/images/safety.svg
 ```
 
 `make-demo.ts` は、他の入力方式の結果のうち、日本語モードのライブ変換の結果だけを人間が打って確かめた値として持つ。デモの打鍵列を変えたら、その値も打ち直して変える。
