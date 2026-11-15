@@ -21,7 +21,7 @@ const NAME = SYLLABLES.map(([roman]) => roman).join("");
 const KANJI = "継ぎ目";
 const LOGO = "つ";
 const COPY = "英語まじりの日本語を、継ぎ目なく。";
-const SUBCOPY = "日英を自動で区分けし、文脈を汲んで変換する日本語入力";
+const SUBCOPY = "ニューラルかな漢字変換のライブ変換IME";
 
 const WIDTH = 900;
 const HEIGHT = 300;
