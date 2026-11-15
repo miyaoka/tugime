@@ -280,6 +280,20 @@ export class Glyphs {
       throw new Error(`${text} が右端 ${right.toFixed(1)} を越える`);
   }
 
+  /// right を越えないことを確かめてから、text を x から並べる
+  drawWithin(
+    text: string,
+    font: FontName,
+    x: number,
+    baseline: number,
+    size: number,
+    paint: Paint,
+    right: number,
+  ): string {
+    this.assertFits(text, font, size, x, right);
+    return this.draw(text, font, x, baseline, size, paint);
+  }
+
   /// text の字形が描かれる範囲の、ベースラインから上の高さ top と下の深さ bottom（下に出ないなら負）
   ink(
     text: string,

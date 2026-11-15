@@ -74,38 +74,31 @@ const between = field.x + field.w + 2;
 parts.push(
   arrow(between, box.x - 4, 175),
   arrow(box.x - 4, between, 235),
-  g.draw("打った文字", "regular", 372, 164, 14, "sub"),
-  g.draw("変換した表示", "regular", 372, 258, 14, "sub"),
+  g.drawWithin("打った文字", "regular", 372, 164, 14, "sub", box.x - 4),
+  g.drawWithin("変換した表示", "regular", 372, 258, 14, "sub", box.x - 4),
   `<rect class="tbox" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="14"/>`,
   g.draw("tugime", "bold", box.x + 20, box.y + 38, 22, "ink"),
-  g.draw(
+  g.drawWithin(
     "macOS の Sandbox の中で動く",
     "regular",
     box.x + 20,
     box.y + 62,
     13,
     "blue",
+    box.x + box.w - 12,
   ),
-  g.draw("辞書と変換モデルは", "regular", box.x + 20, box.y + 104, 14, "sub"),
+  g.drawWithin(
+    "辞書と変換モデルは",
+    "regular",
+    box.x + 20,
+    box.y + 104,
+    14,
+    "sub",
+    box.x + box.w - 12,
+  ),
   g.draw("手元にある", "regular", box.x + 20, box.y + 128, 14, "sub"),
 );
-g.assertFits(
-  "macOS の Sandbox の中で動く",
-  "regular",
-  13,
-  box.x + 20,
-  box.x + box.w - 12,
-);
-g.assertFits(
-  "辞書と変換モデルは",
-  "regular",
-  14,
-  box.x + 20,
-  box.x + box.w - 12,
-);
 g.assertFits(TITLE, "bold", 22, LEFT, WIDTH - LEFT);
-g.assertFits("打った文字", "regular", 14, 372, box.x - 4);
-g.assertFits("変換した表示", "regular", 14, 372, box.x - 4);
 g.assertFits(SUBTITLE, "regular", 15, LEFT, WIDTH - LEFT);
 
 // 届かない先
