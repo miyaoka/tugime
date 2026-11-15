@@ -2,7 +2,7 @@
 // 使い方: bun scripts/check-doc-examples.ts
 import { join } from "node:path";
 import { root } from "./lib/root";
-import { cli, prepareCli, readLive, run, step } from "./lib/svg";
+import { cli, prepareCli, readPerInput, run, step } from "./lib/svg";
 
 const DOCS = ["README.md", "docs/how-it-works.md", "docs/limitations.md"];
 
@@ -116,8 +116,10 @@ await step(
   `入力メソッドと同じ方式の表示（${liveInputs.length} 件）`,
   async () => {
     for (const input of liveInputs) {
-      const [r] = readLive(await run([cli, "--live", input]), [input]);
-      if (r) put("live", input, r.shown);
+      const [r] = readPerInput("--live", await run([cli, "--live", input]), [
+        input,
+      ]);
+      if (r) put("live", input, r.result);
     }
   },
 );
@@ -126,20 +128,25 @@ if (latticeInputs.length > 0)
   for (const r of await step(
     `--method lattice の表示（${latticeInputs.length} 件）`,
     async () =>
-      readLive(
+      readPerInput(
+        "--live",
         await run([cli, "--method", "lattice", "--live", ...latticeInputs]),
         latticeInputs,
       ),
   ))
-    put("lattice", r.input, r.shown);
+    put("lattice", r.input, r.result);
 const readingInputs = inputsOf("reading");
 if (readingInputs.length > 0)
   for (const r of await step(
     `綴りの表による読み（${readingInputs.length} 件）`,
     async () =>
-      readLive(await run([cli, "--whole", ...readingInputs]), readingInputs),
+      readPerInput(
+        "--whole",
+        await run([cli, "--whole", ...readingInputs]),
+        readingInputs,
+      ),
   )) {
-    const hiragana = r.shown.split(" / ")[0];
+    const hiragana = r.result.split(" / ")[0];
     if (hiragana === undefined)
       throw new Error(`--whole の結果が無い: ${r.input}`);
     put("reading", r.input, hiragana);

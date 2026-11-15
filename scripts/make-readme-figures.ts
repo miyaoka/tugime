@@ -16,7 +16,7 @@ import {
   prepare,
   readExplains,
   readLattices,
-  readLive,
+  readPerInput,
   run,
   step,
   svgDocument,
@@ -129,12 +129,13 @@ const wordKinds: [number, Kind][] = [
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）
 async function readSteps(prefixes: string[], model: string) {
   const segments = await readExplains(prefixes);
-  const shown = readLive(
+  const shown = readPerInput(
+    "--live",
     await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]),
     prefixes,
   );
   // readExplains は渡した打鍵列と同じ順に、同じ数の区切りを返す
-  return shown.map(({ input: prefix, shown }, i) => {
+  return shown.map(({ input: prefix, result: shown }, i) => {
     const s = segments[i];
     assert(s !== undefined, `${prefix} の区切りが無い`);
     return { prefix, segments: s, shown };
@@ -182,17 +183,19 @@ function mergedBounds(spans: { kind: string; s: number; e: number }[]): string {
 const { model, fonts } = await prepare();
 
 const [intro] = await step("紹介の文の表示", async () =>
-  readLive(
+  readPerInput(
+    "--live",
     await run([cli, "--method", `direct:${model}`, "--live", introInput]),
     [introInput],
   ),
 );
-const introShown = intro?.shown;
+const introShown = intro?.result;
 if (introShown !== introExpected)
   throw new Error(`紹介の文の表示 ${introShown} が ${introExpected} と違う`);
 
 const contextRows = await step("自動変換の文の表示", async () => {
-  const shown = readLive(
+  const shown = readPerInput(
+    "--live",
     await run([cli, "--method", `direct:${model}`, "--live", ...contextInputs]),
     contextInputs,
   );
@@ -202,7 +205,7 @@ const contextRows = await step("自動変換の文の表示", async () => {
     const at = input.indexOf("wo");
     if (at <= 0) throw new Error(`${input} に前の語の打鍵が無い`);
     const typedWord = input.slice(0, at);
-    return { input, typedWord, ...splitContext(s.shown) };
+    return { input, typedWord, ...splitContext(s.result) };
   });
 });
 // 図の筋書き: 同じ ひいて が、前の語ごとに違う表記になる

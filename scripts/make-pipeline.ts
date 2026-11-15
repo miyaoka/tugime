@@ -7,9 +7,10 @@ import {
   assertAlt,
   cli,
   inputField,
+  outputLines,
   prepare,
   readExplains,
-  readLive,
+  readPerInput,
   run,
   step,
   svgDocument,
@@ -29,14 +30,16 @@ const SHOWN = "zipを解凍した。";
 async function readReading(input: string): Promise<string> {
   let reading = "";
   let inside = false;
-  for (const line of (await run([cli, "--clauses", input])).split("\n")) {
+  for (const line of outputLines(
+    await run([cli, "--clauses", input]),
+    "--clauses",
+  )) {
     if (line === `== ${input}`) {
       inside = true;
       continue;
     }
-    // 種類 読み<TAB>候補。変換エンジンのログも標準出力に混ざるので、種類と空白で始まりタブを含む行だけを文節として読む
     const clause = line.match(/^([JEP]) ([^\t]+)\t/);
-    if (!clause) continue;
+    if (!clause) throw new Error(`--clauses の行を読めない: ${line}`);
     if (!inside) throw new Error(`== の行より前に文節がある: ${line}`);
     if (clause[1] === "J") reading += clause[2];
   }
@@ -56,12 +59,13 @@ async function readValues(model: string) {
   const kinds = segments.map((s) => s.kind).join("");
   if (kinds !== "EJP")
     throw new Error(`区切りの種類 ${kinds} が 英語・日本語・句読点 の順でない`);
-  const [shown] = readLive(
+  const [shown] = readPerInput(
+    "--live",
     await run([cli, "--method", `direct:${model}`, "--live", INPUT]),
     [INPUT],
   );
-  if (shown?.shown !== SHOWN)
-    throw new Error(`表示 ${shown?.shown} が ${SHOWN} と違う`);
+  if (shown?.result !== SHOWN)
+    throw new Error(`表示 ${shown?.result} が ${SHOWN} と違う`);
   const [en, ja, punct] = SCORED;
   if (!SHOWN.startsWith(en) || !SHOWN.endsWith(punct))
     throw new Error(`表示 ${SHOWN} が ${en} で始まり ${punct} で終わらない`);
