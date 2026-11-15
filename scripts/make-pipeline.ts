@@ -189,13 +189,12 @@ async function main() {
     const chipTop = rowTop + 14;
     const cy = chipTop + CHIP_H / 2;
     const cx = PANEL_X + PANEL_PAD + 14;
+    const chipLeft = PANEL_X + PANEL_PAD + TITLE_W;
     body.push(
       `<circle class="${i === rows.length - 1 ? "num4" : "num"}" cx="${cx}" cy="${cy}" r="14"/>`,
       g.center(String(i + 1), "bold", cx, cy + 6, 16, "onnum"),
-      g.draw(r.title, "bold", cx + 22, cy + 7, 18, "ink"),
+      g.drawWithin(r.title, "bold", cx + 22, cy + 7, 18, "ink", chipLeft - 12),
     );
-    const chipLeft = PANEL_X + PANEL_PAD + TITLE_W;
-    g.assertFits(r.title, "bold", 18, cx + 22, chipLeft - 12);
     let chipX = chipLeft;
     for (const [t, kind] of r.chips) {
       const [tint, ink] = CHIP_CLASS[kind];
@@ -244,10 +243,17 @@ async function main() {
   const keysTop = 146;
   const keysH = 56;
   const keysW = g.width(INPUT, "bold", 24) + 28;
-  g.assertFits(INPUT, "bold", 24, LEFT + 14, PANEL_X - 24 - 14);
   parts.push(
     `<rect class="chip" x="${LEFT}" y="${keysTop}" width="${keysW.toFixed(1)}" height="${keysH}" rx="8"/>`,
-    g.draw(INPUT, "bold", LEFT + 14, keysTop + 37, 24, "ink"),
+    g.drawWithin(
+      INPUT,
+      "bold",
+      LEFT + 14,
+      keysTop + 37,
+      24,
+      "ink",
+      PANEL_X - 24 - 14,
+    ),
   );
   const arrowTop = keysTop + keysH + 6;
   const arrowEnd = panelBottom;

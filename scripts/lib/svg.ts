@@ -269,7 +269,7 @@ export class Glyphs {
   }
 
   /// text を x から並べたとき、right を越えるなら止める
-  assertFits(
+  private assertFits(
     text: string,
     font: FontName,
     size: number,
@@ -428,7 +428,6 @@ export function inputField(
   const textY = top + 48 + size;
   const lineY = textY + 12;
   const bottom = foot ? lineY + 30 : lineY + 22;
-  g.assertFits(text, "bold", size, x + 26, x + width - 14);
   const parts = [
     `<rect class="field" x="${x}" y="${top}" width="${width}" height="${bottom - top}" rx="12"/>`,
     `<path class="panel" d="M${x + 1} ${top + 30} V${top + 12} a11 11 0 0 1 11 -11 H${x + width - 12} a11 11 0 0 1 11 11 V${top + 30} Z"/>`,
@@ -437,7 +436,7 @@ export function inputField(
         `<circle class="sub" cx="${x + 18 + k * 18}" cy="${top + 16}" r="5"/>`,
     ),
     g.draw(caption, "regular", x + 74, top + 21, 13, "sub"),
-    g.draw(text, "bold", x + 26, textY, size, kindOf),
+    g.drawWithin(text, "bold", x + 26, textY, size, kindOf, x + width - 14),
     `<line class="dash" x1="${x + 14}" y1="${lineY}" x2="${x + width - 14}" y2="${lineY}"/>`,
   ];
   if (foot) parts.push(g.draw(foot, "regular", x + 14, lineY + 20, 12, "sub"));

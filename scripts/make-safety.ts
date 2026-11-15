@@ -44,8 +44,8 @@ await assertAlt("README.md", "safety.svg", [label]);
 
 const parts: string[] = [];
 parts.push(
-  g.draw(TITLE, "bold", LEFT, 56, 22, "ink"),
-  g.draw(SUBTITLE, "regular", LEFT, 86, 15, "sub"),
+  g.drawWithin(TITLE, "bold", LEFT, 56, 22, "ink", WIDTH - LEFT),
+  g.drawWithin(SUBTITLE, "regular", LEFT, 86, 15, "sub", WIDTH - LEFT),
 );
 
 /// 線の矢印。from から to へ、y の高さで引く
@@ -98,8 +98,6 @@ parts.push(
   ),
   g.draw("手元にある", "regular", box.x + 20, box.y + 128, 14, "sub"),
 );
-g.assertFits(TITLE, "bold", 22, LEFT, WIDTH - LEFT);
-g.assertFits(SUBTITLE, "regular", 15, LEFT, WIDTH - LEFT);
 
 // 届かない先
 const out = { x: 820, w: WIDTH - LEFT - 820, h: 96 };
@@ -110,14 +108,27 @@ BLOCKED.forEach(([name, why], i) => {
     `<line class="xline" x1="${box.x + box.w + 2}" y1="${lineY}" x2="${out.x - 4}" y2="${lineY}"/>`,
     `<rect class="outbox" x="${out.x}" y="${top}" width="${out.w}" height="${out.h}" rx="12"/>`,
     `<path class="xmark" d="M${out.x + 16} ${top + 18} l12 12 M${out.x + 28} ${top + 18} l-12 12"/>`,
-    g.draw(name, "bold", out.x + 36, top + 31, 17, "sub"),
+    g.drawWithin(
+      name,
+      "bold",
+      out.x + 36,
+      top + 31,
+      17,
+      "sub",
+      out.x + out.w - 12,
+    ),
     ...why.map((line, k) =>
-      g.draw(line, "regular", out.x + 16, top + 56 + k * 20, 13, "sub"),
+      g.drawWithin(
+        line,
+        "regular",
+        out.x + 16,
+        top + 56 + k * 20,
+        13,
+        "sub",
+        out.x + out.w - 12,
+      ),
     ),
   );
-  g.assertFits(name, "bold", 17, out.x + 36, out.x + out.w - 12);
-  for (const line of why)
-    g.assertFits(line, "regular", 13, out.x + 16, out.x + out.w - 12);
 });
 
 // パスワード欄
@@ -133,9 +144,16 @@ parts.push(
       `<circle class="ink" cx="${pwField.x + 20 + k * 12}" cy="${pwField.y + pwField.h / 2}" r="3"/>`,
   ),
   g.draw(PASSWORD, "bold", noteX, pw.y + 39, 15, "ink"),
-  g.draw(PASSWORD_NOTE, "regular", noteRest, pw.y + 39, 15, "ink"),
+  g.drawWithin(
+    PASSWORD_NOTE,
+    "regular",
+    noteRest,
+    pw.y + 39,
+    15,
+    "ink",
+    WIDTH - LEFT - 18,
+  ),
 );
-g.assertFits(PASSWORD_NOTE, "regular", 15, noteRest, WIDTH - LEFT - 18);
 
 await writeImage(
   "safety.svg",
