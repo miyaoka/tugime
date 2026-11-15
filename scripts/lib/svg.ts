@@ -268,6 +268,18 @@ export class Glyphs {
     );
   }
 
+  /// text を x から並べたとき、right を越えるなら止める
+  assertFits(
+    text: string,
+    font: FontName,
+    size: number,
+    x: number,
+    right: number,
+  ): void {
+    if (x + this.width(text, font, size) > right)
+      throw new Error(`${text} が右端 ${right.toFixed(1)} を越える`);
+  }
+
   /// text の字形が描かれる範囲の、ベースラインから上の高さ top と下の深さ bottom（下に出ないなら負）
   ink(
     text: string,
@@ -402,8 +414,7 @@ export function inputField(
   const textY = top + 48 + size;
   const lineY = textY + 12;
   const bottom = foot ? lineY + 30 : lineY + 22;
-  if (x + 26 + g.width(text, "bold", size) > x + width - 14)
-    throw new Error(`入力欄の文 ${text} がはみ出す`);
+  g.assertFits(text, "bold", size, x + 26, x + width - 14);
   const parts = [
     `<rect class="field" x="${x}" y="${top}" width="${width}" height="${bottom - top}" rx="12"/>`,
     `<path class="panel" d="M${x + 1} ${top + 30} V${top + 12} a11 11 0 0 1 11 -11 H${x + width - 12} a11 11 0 0 1 11 11 V${top + 30} Z"/>`,

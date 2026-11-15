@@ -195,8 +195,7 @@ async function main() {
       g.draw(r.title, "bold", cx + 22, cy + 7, 18, "ink"),
     );
     const chipLeft = PANEL_X + PANEL_PAD + TITLE_W;
-    if (cx + 22 + g.width(r.title, "bold", 18) > chipLeft - 12)
-      throw new Error(`工程名 ${r.title} が素材の帯に近すぎる`);
+    g.assertFits(r.title, "bold", 18, cx + 22, chipLeft - 12);
     let chipX = chipLeft;
     for (const [t, kind] of r.chips) {
       const [tint, ink] = CHIP_CLASS[kind];
@@ -245,7 +244,7 @@ async function main() {
   const keysTop = 146;
   const keysH = 56;
   const keysW = g.width(INPUT, "bold", 24) + 28;
-  if (LEFT + keysW > PANEL_X - 24) throw new Error("打鍵の箱が右の枠に重なる");
+  g.assertFits(INPUT, "bold", 24, LEFT + 14, PANEL_X - 24 - 14);
   parts.push(
     `<rect class="chip" x="${LEFT}" y="${keysTop}" width="${keysW.toFixed(1)}" height="${keysH}" rx="8"/>`,
     g.draw(INPUT, "bold", LEFT + 14, keysTop + 37, 24, "ink"),

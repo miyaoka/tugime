@@ -42,18 +42,6 @@ const g = new Glyphs(await loadFonts());
 const label = `${TITLE}。入力欄で打った文字は tugime が変換して入力欄に返す。tugime は macOS の Sandbox の中で動く。届かない先は ${BLOCKED.map(([name, why]) => `${name}（${why.join("")}）`).join("、")}。${PASSWORD}: ${PASSWORD_NOTE}`;
 await assertAlt("README.md", "safety.svg", [label]);
 
-/// text を x から並べたとき、right を越えるなら止める
-const fits = (
-  text: string,
-  font: "bold" | "regular",
-  size: number,
-  x: number,
-  right: number,
-) => {
-  if (x + g.width(text, font, size) > right)
-    throw new Error(`${text} がはみ出す`);
-};
-
 const parts: string[] = [];
 parts.push(
   g.draw(TITLE, "bold", LEFT, 56, 22, "ink"),
@@ -101,16 +89,24 @@ parts.push(
   g.draw("辞書と変換モデルは", "regular", box.x + 20, box.y + 104, 14, "sub"),
   g.draw("手元にある", "regular", box.x + 20, box.y + 128, 14, "sub"),
 );
-fits(
+g.assertFits(
   "macOS の Sandbox の中で動く",
   "regular",
   13,
   box.x + 20,
   box.x + box.w - 12,
 );
-fits("辞書と変換モデルは", "regular", 14, box.x + 20, box.x + box.w - 12);
-fits(TITLE, "bold", 22, LEFT, WIDTH - LEFT);
-fits(SUBTITLE, "regular", 15, LEFT, WIDTH - LEFT);
+g.assertFits(
+  "辞書と変換モデルは",
+  "regular",
+  14,
+  box.x + 20,
+  box.x + box.w - 12,
+);
+g.assertFits(TITLE, "bold", 22, LEFT, WIDTH - LEFT);
+g.assertFits("打った文字", "regular", 14, 372, box.x - 4);
+g.assertFits("変換した表示", "regular", 14, 372, box.x - 4);
+g.assertFits(SUBTITLE, "regular", 15, LEFT, WIDTH - LEFT);
 
 // 届かない先
 const out = { x: 820, w: WIDTH - LEFT - 820, h: 96 };
@@ -126,9 +122,9 @@ BLOCKED.forEach(([name, why], i) => {
       g.draw(line, "regular", out.x + 16, top + 56 + k * 20, 13, "sub"),
     ),
   );
-  fits(name, "bold", 17, out.x + 36, out.x + out.w - 12);
+  g.assertFits(name, "bold", 17, out.x + 36, out.x + out.w - 12);
   for (const line of why)
-    fits(line, "regular", 13, out.x + 16, out.x + out.w - 12);
+    g.assertFits(line, "regular", 13, out.x + 16, out.x + out.w - 12);
 });
 
 // パスワード欄
@@ -146,7 +142,7 @@ parts.push(
   g.draw(PASSWORD, "bold", noteX, pw.y + 39, 15, "ink"),
   g.draw(PASSWORD_NOTE, "regular", noteRest, pw.y + 39, 15, "ink"),
 );
-fits(PASSWORD_NOTE, "regular", 15, noteRest, WIDTH - LEFT - 18);
+g.assertFits(PASSWORD_NOTE, "regular", 15, noteRest, WIDTH - LEFT - 18);
 
 await writeImage(
   "safety.svg",
