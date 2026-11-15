@@ -3,6 +3,7 @@
 import assert from "node:assert";
 import { join } from "node:path";
 import opentype from "opentype.js";
+import { dictionary } from "../fetch-dictionary";
 import { fonts as fetchFonts } from "../fetch-fonts";
 import { genmai } from "../fetch-genmai";
 import { root } from "./root";
@@ -55,14 +56,20 @@ export async function loadFonts(): Promise<Fonts> {
   };
 }
 
-/// 表示の変換のモデルとフォントを用意し、tugime-cli を組み立てる
-export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
+/// 表示の変換のモデルとシステム辞書を用意し、tugime-cli を組み立てる。モデルのパスを返す
+export async function prepareCli(): Promise<string> {
   const model = await step("表示の変換のモデルの用意", genmai);
-  const fonts = await loadFonts();
+  await step("システム辞書の用意", dictionary);
   await step("tugime-cli の組み立て", () =>
     run(["swift", "build", "-c", "release", "--product", "tugime-cli"]),
   );
-  return { model, fonts };
+  return model;
+}
+
+/// tugime-cli とフォントを用意する
+export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
+  const model = await prepareCli();
+  return { model, fonts: await loadFonts() };
 }
 
 /// --live の出力から、打鍵列ごとの表示を読む。debug 版では変換エンジンのログも標準出力に混ざるので、渡した打鍵列で始まる行だけを読む

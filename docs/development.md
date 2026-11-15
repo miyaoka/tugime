@@ -63,3 +63,12 @@ bun scripts/make-safety.ts           # README の安全性の図 docs/images/saf
 ```
 
 `make-demo.ts` は、他の入力方式の結果のうち、日本語モードのライブ変換の結果だけを人間が打って確かめた値として持つ。デモの打鍵列を変えたら、その値も打ち直して変える。
+
+## 文書の表を確かめる
+
+文書の表に載せた変換の結果は手で書くので、変換を変えたら今の出力と突き合わせる。合わない行があれば、表を直すか、その例を消す。
+
+```bash
+bun install --cwd scripts
+bun scripts/check-doc-examples.ts
+```
