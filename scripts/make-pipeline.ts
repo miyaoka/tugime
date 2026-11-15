@@ -34,9 +34,10 @@ async function readReading(input: string): Promise<string> {
       inside = true;
       continue;
     }
-    // 種類 読み<TAB>候補。変換エンジンのログも標準出力に混ざるので、種類と空白で始まりタブを含む行だけを文節として読む
+    if (!line) continue;
+    // 種類 読み<TAB>候補
     const clause = line.match(/^([JEP]) ([^\t]+)\t/);
-    if (!clause) continue;
+    if (!clause) throw new Error(`--clauses の行を読めない: ${line}`);
     if (!inside) throw new Error(`== の行より前に文節がある: ${line}`);
     if (clause[1] === "J") reading += clause[2];
   }

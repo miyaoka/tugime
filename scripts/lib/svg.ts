@@ -72,15 +72,19 @@ export async function prepare(): Promise<{ model: string; fonts: Fonts }> {
   return { model, fonts: await loadFonts() };
 }
 
-/// --live の出力から、打鍵列ごとの表示を読む。debug 版では変換エンジンのログも標準出力に混ざるので、渡した打鍵列で始まる行だけを読む
+/// --live の出力から、打鍵列ごとの表示を読む。1 打鍵列に 1 行「打鍵列<TAB>表示」
 export function readLive(
   stdout: string,
   inputs: string[],
 ): { input: string; shown: string }[] {
   const lines = new Map<string, string>();
   for (const line of stdout.split("\n")) {
+    if (!line) continue;
     const tab = line.indexOf("\t");
-    if (tab > 0) lines.set(line.slice(0, tab), line.slice(tab + 1));
+    const input = line.slice(0, tab);
+    if (tab <= 0 || !inputs.includes(input))
+      throw new Error(`--live の行を読めない: ${line}`);
+    lines.set(input, line.slice(tab + 1));
   }
   return inputs.map((input) => {
     const shown = lines.get(input);
@@ -134,12 +138,13 @@ export function parseSegments(described: string): Segment[] {
   });
 }
 
-/// 打鍵列ごとの、区切りの採点で採った区間の並び。--explain は 1 打鍵列に 1 行「採点の変換の結果<TAB>区間の並び」を出し、
-/// 変換エンジンのログも標準出力に混ざるので、区間の表記を含む行だけを読む
+/// 打鍵列ごとの、区切りの採点で採った区間の並び。--explain は 1 打鍵列に 1 行「採点の変換の結果<TAB>区間の並び」を出す
 export async function readExplains(inputs: string[]): Promise<Segment[][]> {
   const lines = (await run([cli, "--explain", ...inputs]))
     .split("\n")
-    .filter((l) => /\t[EJP]\[/.test(l));
+    .filter((l) => l);
+  for (const l of lines)
+    if (!/\t[EJP]\[/.test(l)) throw new Error(`--explain の行を読めない: ${l}`);
   if (lines.length !== inputs.length)
     throw new Error(
       `--explain の行数 ${lines.length} が ${inputs.length} と合わない`,
@@ -165,8 +170,8 @@ export async function readLattices(
       lattices.set(input, current);
       continue;
     }
-    // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点。変換エンジンのログも標準出力に混ざるので、数字とタブで始まる行だけを候補として読む
-    if (!/^\d+\t/.test(line)) continue;
+    if (!line) continue;
+    // 始まり 終わり 直前の区間の種類 種類 打鍵 出力 点
     const [s, e, after, letter, , output, score, ...rest] = line.split("\t");
     const kind = letter === undefined ? undefined : SPAN_KINDS.get(letter);
     if (
