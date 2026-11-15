@@ -4,10 +4,12 @@
   .bg { fill: #ffffff; } .panel { fill: #f6f8fa; } .sub { fill: #6b7280; } .ink { fill: #111827; } .en { fill: #c2410c; } .key { fill: #4b5563; }
   .bad { fill: #dc2626; } .good { fill: #15803d; } .line { fill: #9ca3af; } .chip { fill: #e5e7eb; }
   .jtint { fill: #e7ecf4; } .etint { fill: #fbe7d8; }
+  .field { fill: #ffffff; stroke: #d0d7de; } .dash { stroke: #9ca3af; stroke-width: 2; stroke-dasharray: 6 5; }
   @media (prefers-color-scheme: dark) {
     .bg { fill: #0d1117; } .panel { fill: #161b22; } .sub { fill: #9ca3af; } .ink { fill: #f3f4f6; } .en { fill: #fb923c; } .key { fill: #d1d5db; }
     .bad { fill: #f87171; } .good { fill: #4ade80; } .line { fill: #6b7280; } .chip { fill: #30363d; }
     .jtint { fill: #1f2937; } .etint { fill: #3b2414; }
+    .field { fill: #0d1117; stroke: #30363d; } .dash { stroke: #6b7280; }
   }
   .tile { stroke: #d0d7de; stroke-width: 1.5; }
   @media (prefers-color-scheme: dark) { .tile { stroke: #30363d; } }

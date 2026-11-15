@@ -51,7 +51,7 @@ model=$(bun scripts/convert-hf-to-gguf.ts <リポジトリ> <コミット> q8_0 
 
 ## README と docs の図を作り直す
 
-図は `tugime-cli` の出力から SVG に描く。手で書き換えない。字形はフォントから図形にして埋め込み、配色はライトとダークで切り替える（`scripts/lib/svg.ts`）。
+図はスクリプトで SVG に描き、手で書き換えない。変換の結果を載せる図は `tugime-cli` の出力から描く。字形はフォントから図形にして埋め込み、配色はライトとダークで切り替える（`scripts/lib/svg.ts`）。
 
 ```bash
 bun install --cwd scripts
@@ -59,6 +59,7 @@ bun scripts/make-hero.ts             # README の冒頭の紹介画像 docs/imag
 bun scripts/make-demo.ts             # README の冒頭のデモ docs/images/demo.svg と demo-compare.svg
 bun scripts/make-readme-figures.ts   # docs/images/intro.svg と context.svg と conversion.svg
 bun scripts/make-pipeline.ts         # README の変換の仕組みの図 docs/images/pipeline.svg
+bun scripts/make-safety.ts           # README の安全性の図 docs/images/safety.svg
 ```
 
 `make-demo.ts` は、他の入力方式の結果のうち、日本語モードのライブ変換の結果だけを人間が打って確かめた値として持つ。デモの打鍵列を変えたら、その値も打ち直して変える。

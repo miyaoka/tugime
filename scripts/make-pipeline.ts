@@ -6,7 +6,7 @@ import {
   Glyphs,
   assertAlt,
   cli,
-  kindOf,
+  inputField,
   prepare,
   readExplains,
   readLive,
@@ -97,14 +97,13 @@ const TITLE_W = 186;
 const CHIP_H = 40;
 const CHIP_SIZE = 20;
 
-/// 素材の帯の地と字、工程の番号、入力欄の色。共有の配色に無いものだけを足す
+/// 素材の帯の地と字、工程の番号の色。共有の配色に無いものだけを足す
 const STYLE = `
   .ja { fill: #1d4ed8; } .ptint { fill: #dcfce7; } .num { fill: #2563eb; } .num4 { fill: #7c3aed; } .onnum { fill: #ffffff; }
-  .goodline { fill: none; stroke: #15803d; stroke-width: 2; } .field { fill: #ffffff; stroke: #d0d7de; }
-  .dash { stroke: #9ca3af; stroke-width: 2; stroke-dasharray: 6 5; }
+  .goodline { fill: none; stroke: #15803d; stroke-width: 2; }
   @media (prefers-color-scheme: dark) {
     .ja { fill: #93c5fd; } .ptint { fill: #14361f; } .num { fill: #3b82f6; } .num4 { fill: #8b5cf6; }
-    .goodline { stroke: #4ade80; } .field { fill: #0d1117; stroke: #30363d; } .dash { stroke: #6b7280; }
+    .goodline { stroke: #4ade80; }
   }`;
 
 const CHIP_CLASS: Record<ChipKind, [string, string]> = {
@@ -190,14 +189,12 @@ async function main() {
     const chipTop = rowTop + 14;
     const cy = chipTop + CHIP_H / 2;
     const cx = PANEL_X + PANEL_PAD + 14;
+    const chipLeft = PANEL_X + PANEL_PAD + TITLE_W;
     body.push(
       `<circle class="${i === rows.length - 1 ? "num4" : "num"}" cx="${cx}" cy="${cy}" r="14"/>`,
       g.center(String(i + 1), "bold", cx, cy + 6, 16, "onnum"),
-      g.draw(r.title, "bold", cx + 22, cy + 7, 18, "ink"),
+      g.drawWithin(r.title, "bold", cx + 22, cy + 7, 18, "ink", chipLeft - 12),
     );
-    const chipLeft = PANEL_X + PANEL_PAD + TITLE_W;
-    if (cx + 22 + g.width(r.title, "bold", 18) > chipLeft - 12)
-      throw new Error(`工程名 ${r.title} が素材の帯に近すぎる`);
     let chipX = chipLeft;
     for (const [t, kind] of r.chips) {
       const [tint, ink] = CHIP_CLASS[kind];
@@ -246,10 +243,17 @@ async function main() {
   const keysTop = 146;
   const keysH = 56;
   const keysW = g.width(INPUT, "bold", 24) + 28;
-  if (LEFT + keysW > PANEL_X - 24) throw new Error("打鍵の箱が右の枠に重なる");
   parts.push(
     `<rect class="chip" x="${LEFT}" y="${keysTop}" width="${keysW.toFixed(1)}" height="${keysH}" rx="8"/>`,
-    g.draw(INPUT, "bold", LEFT + 14, keysTop + 37, 24, "ink"),
+    g.drawWithin(
+      INPUT,
+      "bold",
+      LEFT + 14,
+      keysTop + 37,
+      24,
+      "ink",
+      PANEL_X - 24 - 14,
+    ),
   );
   const arrowTop = keysTop + keysH + 6;
   const arrowEnd = panelBottom;
@@ -267,26 +271,19 @@ async function main() {
 
   const labelY = arrowEnd + 30;
   parts.push(g.draw("入力欄に出る", "bold", LEFT, labelY, 15, "sub"));
-  const fieldTop = labelY + 12;
-  const fieldW = 330;
-  const textY = fieldTop + 30 + 48;
-  const fieldH = textY + 12 + 30 - fieldTop;
-  parts.push(
-    `<rect class="field" x="${LEFT}" y="${fieldTop}" width="${fieldW}" height="${fieldH}" rx="12"/>`,
-    `<path class="panel" d="M${LEFT + 1} ${fieldTop + 30} V${fieldTop + 12} a11 11 0 0 1 11 -11 H${LEFT + fieldW - 12} a11 11 0 0 1 11 11 V${fieldTop + 30} Z"/>`,
-    ...[0, 1, 2].map(
-      (k) =>
-        `<circle class="sub" cx="${LEFT + 18 + k * 18}" cy="${fieldTop + 16}" r="5"/>`,
-    ),
-    g.draw("アプリの入力欄", "regular", LEFT + 74, fieldTop + 21, 13, "sub"),
-    g.draw(SHOWN, "bold", LEFT + 26, textY, 30, kindOf),
-    `<line class="dash" x1="${LEFT + 14}" y1="${textY + 12}" x2="${LEFT + fieldW - 14}" y2="${textY + 12}"/>`,
-    g.draw("未確定。Enter で確定", "regular", LEFT + 14, textY + 32, 12, "sub"),
+  const field = inputField(
+    g,
+    LEFT,
+    labelY + 12,
+    330,
+    "アプリの入力欄",
+    SHOWN,
+    30,
+    "未確定。Enter で確定",
   );
-  if (LEFT + 26 + g.width(SHOWN, "bold", 30) > LEFT + fieldW - 14)
-    throw new Error("入力欄の文がはみ出す");
+  parts.push(...field.parts);
 
-  const height = fieldTop + fieldH + 36;
+  const height = field.bottom + 36;
   const label = `${INPUT} と打つと、入力欄に ${SHOWN} と出る。その間に tugime は 1 受け取る（InputMethodKit）、2 読み分ける（ローマ字の綴りの表。${v.en} は読めないので英語）、3 区切りを決める（システム辞書、wordfreq・Webster's。${v.en}｜${v.scored}｜${v.punct}）、4 変換を仕上げる（genmai-310M、llama.cpp。${SHOWN}）を自動で行う`;
   await assertAlt("README.md", "pipeline.svg", [
     INPUT,
