@@ -11,9 +11,7 @@ import {
 
 const SOURCE = "scripts/make-safety.ts";
 
-const TITLE = "打った文字は、入力欄にしか届かない";
-const SUBTITLE =
-  "tugime は打った文字を変換して返すだけで、外へ送らず、残さない";
+const TITLE = "打った文字は外へ送らず残さない";
 const SHOWN = "zipを解凍した。";
 /// 届かない先。名前と、届かない理由（2 行）
 const BLOCKED: [string, [string, string]][] = [
@@ -43,10 +41,7 @@ const label = `${TITLE}。入力欄で打った文字は tugime が変換して�
 await assertAlt("README.md", "safety.svg", [label]);
 
 const parts: string[] = [];
-parts.push(
-  g.drawWithin(TITLE, "bold", LEFT, 56, 22, "ink", WIDTH - LEFT),
-  g.drawWithin(SUBTITLE, "regular", LEFT, 86, 15, "sub", WIDTH - LEFT),
-);
+parts.push(g.drawWithin(TITLE, "bold", LEFT, 56, 22, "ink", WIDTH - LEFT));
 
 /// 線の矢印。from から to へ、y の高さで引く
 const arrow = (from: number, to: number, y: number) => {
