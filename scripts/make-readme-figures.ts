@@ -46,10 +46,10 @@ const pieces = {
 /// 1 行に並べるもの。文字列は文字のほかに押すキー
 type Lane = (Piece | string)[];
 
-/// ふつうの日本語入力: 英語を打つたびに英数に切り替え、日本語は Space で変換して Enter で確定する
+/// ふつうの日本語入力: 英語を打つたびに英数に切り替え、日本語は Space で変換して Enter で確定する。Mac のキーボードに変換キーは無い
 const plainLanes: Lane[] = [
-  ["英数", pieces.darkMode, "かな", pieces.haishoku, "変換", "Enter"],
-  ["英数", pieces.pullRequest, "かな", pieces.dashita, "変換", "Enter"],
+  ["英数", pieces.darkMode, "かな", pieces.haishoku, "Space", "Enter"],
+  ["英数", pieces.pullRequest, "かな", pieces.dashita, "Space", "Enter"],
 ];
 /// tugime: 打鍵列をそのまま打ち、最後に Enter で確定する
 const tugimeLanes: Lane[] = [
@@ -392,7 +392,7 @@ for (const [end, kind] of wordKinds) {
     introExpected,
     `${keyCount(plainLanes)} 回`,
   ]);
-  const label = `${introExpected} を打つとき、ふつうの日本語入力では文字のほかに英数・かな・変換・Enter を ${keyCount(plainLanes)} 回押す。tugime で文字のほかに押すのは最後の Enter だけ`;
+  const label = `${introExpected} を打つとき、ふつうの日本語入力では文字のほかに英数・かな・変換の Space・Enter を ${keyCount(plainLanes)} 回押す。tugime で文字のほかに押すのは最後の Enter だけ`;
   await writeImage(
     "intro.svg",
     svgDocument(SOURCE, WIDTH, height, label, g, parts.join(""), "auto", STYLE),
@@ -431,7 +431,11 @@ for (const [end, kind] of wordKinds) {
   const headY = 100;
   parts.push(g.draw("打鍵", "regular", INPUT_X, headY, 14, "sub"));
   for (const [x, name, caption] of [
-    [LATTICE_X, "辞書と統計の変換", "語ごとに、出やすい候補を選ぶ"],
+    [
+      LATTICE_X,
+      "英語を見分けて辞書と統計で変換",
+      "語の出やすさと、隣り合う品詞の組で選ぶ",
+    ],
     [TUGIME_X, "tugime", "変換モデルが前後の語を読んで変換する"],
   ] as const) {
     parts.push(g.draw(name, "bold", x, headY, 17, "ink"));
@@ -483,7 +487,7 @@ for (const [end, kind] of wordKinds) {
   const tugimeShown = contextRows.map(
     (r) => r.tugime.before + r.tugime.verb + r.tugime.after,
   );
-  const label = `同じ読み ひいている の前の語だけを変えて打つと、辞書と統計の変換はどれも ${latticeVerb} になり、tugime は ${tugimeShown.join(" ")} と前の語に合わせて変換する`;
+  const label = `同じ読み ひいている の前の語だけを変えて打つと、英語を見分けて辞書と統計で変換する方式はどれも ${latticeVerb} になり、tugime は ${tugimeShown.join(" ")} と前の語に合わせて変換する`;
   await assertAlt("README.md", "context.svg", [
     `どれも ${latticeVerb}`,
     ...tugimeShown,

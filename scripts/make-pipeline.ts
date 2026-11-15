@@ -81,6 +81,8 @@ type ChipKind = "key" | "en" | "ja" | "p" | "good";
 type Row = {
   title: string;
   chips: [string, ChipKind][];
+  /// 帯の下に添える、この工程の出力についての注記
+  note?: string;
   parts: [string, string][];
 };
 
@@ -130,7 +132,8 @@ async function main() {
       chips: [
         [v.en, "en"],
         [v.reading, "ja"],
-        [v.punct, "p"],
+        // 句読点の形は、直前の区間の言語が決まる工程 3 で決まる
+        [INPUT.slice(-1), "key"],
       ],
       parts: [["ローマ字の綴りの表", `${v.en} は読めないので英語にする`]],
     },
@@ -141,9 +144,10 @@ async function main() {
         [v.scored, "ja"],
         [v.punct, "p"],
       ],
+      note: "区切りが決まる。漢字はまだ仮",
       parts: [
         ["システム辞書", "Mozc の辞書と品詞の連接"],
-        ["wordfreq・Webster's", "英語の語の頻度"],
+        ["wordfreq・Webster's", "英語の語の頻度と語表"],
       ],
     },
     {
@@ -211,6 +215,10 @@ async function main() {
     if (chipX - 4 > PANEL_X + panelW - PANEL_PAD)
       throw new Error(`${r.title} の素材が枠からはみ出す`);
     let partY = chipTop + CHIP_H;
+    if (r.note) {
+      partY += 20;
+      body.push(g.draw(r.note, "regular", chipLeft, partY, 13, "sub"));
+    }
     for (const [name, role] of r.parts) {
       partY += 20;
       body.push(g.draw(name, "bold", chipLeft, partY, 14, "ink"));
