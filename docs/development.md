@@ -68,5 +68,6 @@ bun scripts/make-pipeline.ts         # README の変換の仕組みの図 docs/i
 文書の表に載せた変換の結果は手で書くので、変換を変えたら今の出力と突き合わせる。合わない行があれば、表を直すか、その例を消す。
 
 ```bash
+bun install --cwd scripts
 bun scripts/check-doc-examples.ts
 ```
