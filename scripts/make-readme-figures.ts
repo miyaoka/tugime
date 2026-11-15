@@ -1,6 +1,6 @@
 // README と docs の図を tugime-cli の出力から作る。
-//   docs/images/intro.svg      … 同じ文を打つとき、ふつうの日本語入力と tugime で文字のほかに押すキーを比べる
-//   docs/images/context.svg    … 同じ読みの前の語だけを変えたとき、辞書と統計の変換と tugime の表記を比べる
+//   docs/images/intro.svg      … 同じ文を打つとき、一般的な日本語入力と tugime で文字のほかに押すキーを比べる
+//   docs/images/context.svg    … 同じ読みの前の語だけを変えたとき、tugime の表記が前の語に合わせて変わる
 //   docs/images/conversion.svg … 打鍵列を区切って変換するまで（比べた読み方の候補、打鍵ごとの区切り、英語の語を英語として読む理由）
 // 使い方: bun install --cwd scripts && bun scripts/make-readme-figures.ts
 import assert from "node:assert";
@@ -46,7 +46,7 @@ const pieces = {
 /// 1 行に並べるもの。文字列は文字のほかに押すキー
 type Lane = (Piece | string)[];
 
-/// ふつうの日本語入力: 英語を打つたびに英数に切り替え、日本語は Space で変換して Enter で確定する。Mac のキーボードに変換キーは無い
+/// 一般的な日本語入力: 英語を打つたびに英数に切り替え、日本語は Space で変換して Enter で確定する。Mac のキーボードに変換キーは無い
 const plainLanes: Lane[] = [
   ["英数", pieces.darkMode, "かな", pieces.haishoku, "Space", "Enter"],
   ["英数", pieces.pullRequest, "かな", pieces.dashita, "Space", "Enter"],
@@ -64,7 +64,7 @@ const tugimeLanes: Lane[] = [
 
 // 図に並べた打鍵と表示が、紹介する打鍵列と表示と同じかを確かめる。違えば図が別の文を打つことになる
 for (const [name, lanes] of [
-  ["ふつうの日本語入力", plainLanes],
+  ["一般的な日本語入力", plainLanes],
   ["tugime", tugimeLanes],
 ] as const) {
   const ps = lanes.flat().filter((t): t is Piece => typeof t !== "string");
@@ -86,18 +86,20 @@ const contextInputs = [
   "tunawohiiteiru.",
   "kazewohiiteiru.",
 ];
-/// 表示を、前の語（を まで）、ひいて の表記、残り（いる。）に分ける
+/// 表示を、前の語、を、ひいて の表記、残り（いる。）に分ける
 function splitContext(shown: string): {
-  before: string;
+  word: string;
+  particle: string;
   verb: string;
   after: string;
 } {
   const i = shown.indexOf("を");
   const j = shown.lastIndexOf("いる。");
-  if (i < 0 || j <= i + 1)
+  if (i <= 0 || j <= i + 1)
     throw new Error(`表示 ${shown} を 〜を〜いる。 に分けられない`);
   return {
-    before: shown.slice(0, i + 1),
+    word: shown.slice(0, i),
+    particle: "を",
     verb: shown.slice(i + 1, j),
     after: shown.slice(j),
   };
@@ -190,35 +192,23 @@ if (introShown !== introExpected)
   throw new Error(`紹介の文の表示 ${introShown} が ${introExpected} と違う`);
 
 const contextRows = await step("自動変換の文の表示", async () => {
-  const lattice = readLive(
-    await run([cli, "--method", "lattice", "--live", ...contextInputs]),
-    contextInputs,
-  );
-  const tugime = readLive(
+  const shown = readLive(
     await run([cli, "--method", `direct:${model}`, "--live", ...contextInputs]),
     contextInputs,
   );
   return contextInputs.map((input, i) => {
-    const l = lattice[i];
-    const t = tugime[i];
-    assert(l !== undefined && t !== undefined, `${input} の表示が無い`);
-    return {
-      input,
-      lattice: splitContext(l.shown),
-      tugime: splitContext(t.shown),
-    };
+    const s = shown[i];
+    assert(s !== undefined, `${input} の表示が無い`);
+    const typedWord = input.slice(0, input.indexOf("wo"));
+    if (!typedWord) throw new Error(`${input} に前の語の打鍵が無い`);
+    return { input, typedWord, ...splitContext(s.shown) };
   });
 });
-// 図の筋書き: 辞書と統計の変換は ひいて をどの文でも同じ表記にし、tugime は前の語ごとに違う表記にする
-const latticeVerbs = new Set(contextRows.map((r) => r.lattice.verb));
-if (latticeVerbs.size !== 1)
+// 図の筋書き: 同じ ひいて が、前の語ごとに違う表記になる
+const contextVerbs = new Set(contextRows.map((r) => r.verb));
+if (contextVerbs.size !== contextRows.length)
   throw new Error(
-    `辞書と統計の変換の ひいて の表記が文ごとに違う: ${[...latticeVerbs].join(" / ")}`,
-  );
-const tugimeVerbs = new Set(contextRows.map((r) => r.tugime.verb));
-if (tugimeVerbs.size !== contextRows.length)
-  throw new Error(
-    `tugime の ひいて の表記に同じものがある: ${contextRows.map((r) => r.tugime.verb).join(" / ")}`,
+    `ひいて の表記に同じものがある: ${contextRows.map((r) => r.verb).join(" / ")}`,
   );
 
 const stepPrefixes = stepEnds.map((end) => input.slice(0, end));
@@ -336,7 +326,7 @@ for (const [end, kind] of wordKinds) {
   };
 
   const rows: [string, Lane[], string][] = [
-    ["ふつうの日本語入力", plainLanes, "bad"],
+    ["一般的な日本語入力", plainLanes, "bad"],
     ["tugime", tugimeLanes, "good"],
   ];
   const panelTop = (i: number) => 128 + i * (PANEL_H + PANEL_GAP);
@@ -392,7 +382,7 @@ for (const [end, kind] of wordKinds) {
     introExpected,
     `${keyCount(plainLanes)} 回`,
   ]);
-  const label = `${introExpected} を打つとき、ふつうの日本語入力では文字のほかに英数・かな・変換の Space・Enter を ${keyCount(plainLanes)} 回押す。tugime で文字のほかに押すのは最後の Enter だけ`;
+  const label = `${introExpected} を打つとき、一般的な日本語入力では文字のほかに英数・かな・変換の Space・Enter を ${keyCount(plainLanes)} 回押す。tugime で文字のほかに押すのは最後の Enter だけ`;
   await writeImage(
     "intro.svg",
     svgDocument(SOURCE, WIDTH, height, label, g, parts.join(""), "auto", STYLE),
@@ -404,68 +394,50 @@ for (const [end, kind] of wordKinds) {
 {
   const WIDTH = 1100;
   const LEFT = 48;
-  const PAD = 24;
-  const ROW = 64;
-  const TEXT_SIZE = 26;
-  /// 列の左端
+  const PAD = 28;
+  const ROW = 72;
+  const TEXT_SIZE = 32;
   const INPUT_X = LEFT + PAD;
-  const LATTICE_X = 330;
-  const TUGIME_X = 700;
-  /// tugime が前の語に合わせて変えた表記の地
+  const SHOWN_X = 336;
+  /// 前の語と、それに合わせて決まった ひいて の表記の地と字
   const STYLE = `
-  .goodtint { fill: #dcfce7; }
-  @media (prefers-color-scheme: dark) { .goodtint { fill: #14361f; } }`;
+  .ja { fill: #1d4ed8; } .goodtint { fill: #dcfce7; }
+  @media (prefers-color-scheme: dark) { .ja { fill: #93c5fd; } .goodtint { fill: #14361f; } }`;
 
   const g = new Glyphs(fonts);
   const parts: string[] = [];
   parts.push(
+    g.draw("同じ「ひいている」が、前の語で変わる", "bold", LEFT, 56, 22, "ink"),
     g.draw(
-      "同じ「ひいている」を、前の語だけ変えて打つ",
-      "bold",
+      "変換モデルが前の語を読んで、続きの漢字を決める",
+      "regular",
       LEFT,
-      52,
-      20,
-      "ink",
+      86,
+      15,
+      "sub",
     ),
   );
-  const headY = 100;
-  parts.push(g.draw("打鍵", "regular", INPUT_X, headY, 14, "sub"));
-  for (const [x, name, caption] of [
-    [
-      LATTICE_X,
-      "英語を見分けて辞書と統計で変換",
-      "語の出やすさと、隣り合う品詞の組で選ぶ",
-    ],
-    [TUGIME_X, "tugime", "変換モデルが前後の語を読んで変換する"],
-  ] as const) {
-    parts.push(g.draw(name, "bold", x, headY, 17, "ink"));
-    parts.push(g.draw(caption, "regular", x, headY + 22, 13, "sub"));
-  }
 
-  const panelTop = 140;
+  const panelTop = 116;
   const panelHeight = contextRows.length * ROW + 16;
   parts.push(
     `<rect class="panel" x="${LEFT}" y="${panelTop}" width="${WIDTH - LEFT * 2}" height="${panelHeight}" rx="14"/>`,
   );
-  /// 前の語・ひいて の表記・残りを x から並べる。ひいて の表記には地を敷く
-  const drawShown = (
-    s: { before: string; verb: string; after: string },
+  /// text を x から地を敷いて描き、幅を返す
+  const marked = (
+    text: string,
     x: number,
     top: number,
+    baseline: number,
     tint: string,
-    verbClass: string,
-  ) => {
-    const baseline = top + ROW / 2 + 9;
-    const vx = x + g.width(s.before, "bold", TEXT_SIZE);
-    const vw = g.width(s.verb, "bold", TEXT_SIZE);
+    ink: string,
+  ): number => {
+    const w = g.width(text, "bold", TEXT_SIZE);
     parts.push(
-      `<rect class="${tint}" x="${(vx - 4).toFixed(1)}" y="${top + 12}" width="${(vw + 8).toFixed(1)}" height="${ROW - 24}" rx="6"/>`,
-      g.draw(s.before, "bold", x, baseline, TEXT_SIZE, "ink"),
-      g.draw(s.verb, "bold", vx, baseline, TEXT_SIZE, verbClass),
-      g.draw(s.after, "bold", vx + vw, baseline, TEXT_SIZE, "ink"),
+      `<rect class="${tint}" x="${(x - 4).toFixed(1)}" y="${top + 14}" width="${(w + 8).toFixed(1)}" height="${ROW - 28}" rx="6"/>`,
+      g.draw(text, "bold", x, baseline, TEXT_SIZE, ink),
     );
-    const end = vx + vw + g.width(s.after, "bold", TEXT_SIZE);
-    return end;
+    return w;
   };
   contextRows.forEach((r, i) => {
     const top = panelTop + 8 + i * ROW;
@@ -473,25 +445,36 @@ for (const [end, kind] of wordKinds) {
       parts.push(
         `<rect class="chip" x="${LEFT + PAD}" y="${top}" width="${WIDTH - (LEFT + PAD) * 2}" height="1"/>`,
       );
+    const keyBaseline = top + ROW / 2 + 6;
+    const rest = r.input.slice(r.typedWord.length);
     parts.push(
-      g.draw(r.input, "regular", INPUT_X, top + ROW / 2 + 6, 17, "sub"),
+      g.draw(r.typedWord, "bold", INPUT_X, keyBaseline, 18, "ink"),
+      g.draw(
+        rest,
+        "regular",
+        INPUT_X + g.width(r.typedWord, "bold", 18),
+        keyBaseline,
+        18,
+        "sub",
+      ),
     );
-    const latticeEnd = drawShown(r.lattice, LATTICE_X, top, "chip", "ink");
-    const tugimeEnd = drawShown(r.tugime, TUGIME_X, top, "goodtint", "good");
-    if (latticeEnd > TUGIME_X - 16 || tugimeEnd > WIDTH - LEFT - PAD)
-      throw new Error(`${r.input} の表示が列からはみ出す`);
+    if (INPUT_X + g.width(r.input, "bold", 18) > SHOWN_X - 24)
+      throw new Error(`${r.input} の打鍵が表示の列に近すぎる`);
+    const baseline = top + ROW / 2 + 11;
+    let x = SHOWN_X;
+    x += marked(r.word, x, top, baseline, "jtint", "ja") + 6;
+    parts.push(g.draw(r.particle, "bold", x, baseline, TEXT_SIZE, "ink"));
+    x += g.width(r.particle, "bold", TEXT_SIZE) + 6;
+    x += marked(r.verb, x, top, baseline, "goodtint", "good") + 4;
+    parts.push(g.draw(r.after, "bold", x, baseline, TEXT_SIZE, "ink"));
+    if (x + g.width(r.after, "bold", TEXT_SIZE) > WIDTH - LEFT - PAD)
+      throw new Error(`${r.input} の表示が枠からはみ出す`);
   });
 
   const height = panelTop + panelHeight + 36;
-  const latticeVerb = contextRows[0]?.lattice.verb;
-  const tugimeShown = contextRows.map(
-    (r) => r.tugime.before + r.tugime.verb + r.tugime.after,
-  );
-  const label = `同じ読み ひいている の前の語だけを変えて打つと、英語を見分けて辞書と統計で変換する方式はどれも ${latticeVerb} になり、tugime は ${tugimeShown.join(" ")} と前の語に合わせて変換する`;
-  await assertAlt("README.md", "context.svg", [
-    `どれも ${latticeVerb}`,
-    ...tugimeShown,
-  ]);
+  const shown = contextRows.map((r) => r.word + r.particle + r.verb + r.after);
+  const label = `同じ読み ひいている の前の語だけを変えて打つと、tugime は ${shown.join(" ")} と前の語に合わせて変換する`;
+  await assertAlt("README.md", "context.svg", shown);
   await writeImage(
     "context.svg",
     svgDocument(SOURCE, WIDTH, height, label, g, parts.join(""), "auto", STYLE),
