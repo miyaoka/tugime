@@ -82,22 +82,24 @@ export function outputLines(stdout: string, option: string): string[] {
   return lines;
 }
 
-/// --live の出力から、打鍵列ごとの表示を読む
-export function readLive(
+/// 打鍵列ごとに 1 行の結果を出すオプション（--live・--whole）の出力から、打鍵列ごとの結果を読む
+export function readPerInput(
+  option: "--live" | "--whole",
   stdout: string,
   inputs: string[],
 ): { input: string; shown: string }[] {
   const lines = new Map<string, string>();
-  for (const line of outputLines(stdout, "--live")) {
+  for (const line of outputLines(stdout, option)) {
     const tab = line.indexOf("\t");
     const input = line.slice(0, tab);
     if (tab <= 0 || !inputs.includes(input))
-      throw new Error(`--live の行を読めない: ${line}`);
+      throw new Error(`${option} の行を読めない: ${line}`);
     lines.set(input, line.slice(tab + 1));
   }
   return inputs.map((input) => {
     const shown = lines.get(input);
-    if (shown === undefined) throw new Error(`--live の結果が無い: ${input}`);
+    if (shown === undefined)
+      throw new Error(`${option} の結果が無い: ${input}`);
     return { input, shown };
   });
 }

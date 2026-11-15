@@ -8,7 +8,7 @@ import {
   cli,
   kindOf,
   prepare,
-  readLive,
+  readPerInput,
   run,
   step,
   svgDocument,
@@ -88,7 +88,8 @@ function visible(
 const { model, fonts } = await prepare();
 const prefixes = [...input].map((_, i) => input.slice(0, i + 1));
 const frames = await step("1 打鍵ごとの表示", async () =>
-  readLive(
+  readPerInput(
+    "--live",
     await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]),
     prefixes,
   ),
@@ -99,7 +100,11 @@ if (final !== expected)
     `最後まで打ったときの表示 ${final} が期待する文 ${expected} と違う`,
   );
 const [dictionary] = await step("英語を見分けて辞書と統計で変換", async () =>
-  readLive(await run([cli, "--method", "lattice", "--live", input]), [input]),
+  readPerInput(
+    "--live",
+    await run([cli, "--method", "lattice", "--live", input]),
+    [input],
+  ),
 );
 assert(dictionary !== undefined, `${input} の辞書と統計の変換の結果が無い`);
 const dictionaryResult = dictionary.shown;

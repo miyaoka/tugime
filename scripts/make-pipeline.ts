@@ -10,7 +10,7 @@ import {
   outputLines,
   prepare,
   readExplains,
-  readLive,
+  readPerInput,
   run,
   step,
   svgDocument,
@@ -59,7 +59,8 @@ async function readValues(model: string) {
   const kinds = segments.map((s) => s.kind).join("");
   if (kinds !== "EJP")
     throw new Error(`区切りの種類 ${kinds} が 英語・日本語・句読点 の順でない`);
-  const [shown] = readLive(
+  const [shown] = readPerInput(
+    "--live",
     await run([cli, "--method", `direct:${model}`, "--live", INPUT]),
     [INPUT],
   );

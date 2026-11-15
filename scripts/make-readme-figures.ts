@@ -16,7 +16,7 @@ import {
   prepare,
   readExplains,
   readLattices,
-  readLive,
+  readPerInput,
   run,
   step,
   svgDocument,
@@ -129,7 +129,8 @@ const wordKinds: [number, Kind][] = [
 /// 打鍵列の途中までごとの、区切り（--explain）と表示（--live）
 async function readSteps(prefixes: string[], model: string) {
   const segments = await readExplains(prefixes);
-  const shown = readLive(
+  const shown = readPerInput(
+    "--live",
     await run([cli, "--method", `direct:${model}`, "--live", ...prefixes]),
     prefixes,
   );
@@ -182,7 +183,8 @@ function mergedBounds(spans: { kind: string; s: number; e: number }[]): string {
 const { model, fonts } = await prepare();
 
 const [intro] = await step("紹介の文の表示", async () =>
-  readLive(
+  readPerInput(
+    "--live",
     await run([cli, "--method", `direct:${model}`, "--live", introInput]),
     [introInput],
   ),
@@ -192,7 +194,8 @@ if (introShown !== introExpected)
   throw new Error(`紹介の文の表示 ${introShown} が ${introExpected} と違う`);
 
 const contextRows = await step("自動変換の文の表示", async () => {
-  const shown = readLive(
+  const shown = readPerInput(
+    "--live",
     await run([cli, "--method", `direct:${model}`, "--live", ...contextInputs]),
     contextInputs,
   );
