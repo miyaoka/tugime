@@ -408,17 +408,47 @@ public final class Segmenter {
     /// この長さ以下の読める綴りは、英語の語であっても日本語として読む
     static let maxJapaneseFirstLength = 2
 
-    /// 英語区間を、空白で区切った語ごとにかなにしたもの（RomajiTable.typedKana）。打ったまま残る文字がある語は打ったまま、空白はそのまま残す。
+    /// 英語区間を、空白で区切った語ごとにかなにしたもの（typedKana）。打ったまま残る文字がある語は打ったまま、空白はそのまま残す。
     /// 1 語も読めなければ nil
     func englishReading(of source: String) -> String? {
         var readAny = false
         let words = source.split(separator: " ", omittingEmptySubsequences: false).map { word in
-            let typed = table.typedKana(of: word)
+            let typed = typedKana(of: word)
             guard !word.isEmpty, typed.complete else { return String(word) }
             readAny = true
             return typed.kana
         }
         return readAny ? words.joined(separator: " ") : nil
+    }
+
+    /// 打鍵を前から順にかなにしたもの（RomajiTable.typedKana。読めない文字は打ったまま）。数（numberLength。0120-345-678 の - を含む）は、
+    /// 日本語区間の読みと同じく打ったまま残し、読み切れたものとして扱う。complete は打ったまま残した文字が数のほかに無いか
+    func typedKana(of keys: some StringProtocol) -> (kana: String, complete: Bool) {
+        var kana = ""
+        var complete = true
+        for piece in Self.numberPieces(keys) {
+            guard !piece.isNumber else {
+                kana += piece.text
+                continue
+            }
+            let typed = table.typedKana(of: piece.text)
+            kana += typed.kana
+            complete = complete && typed.complete
+        }
+        return (kana, complete)
+    }
+
+    /// items を、句読点・記号（isMark）は 1 つずつ、そのあいだに続く要素はまとめて、並びに分けたもの
+    static func runs<Item>(_ items: [Item], isMark: (Item) -> Bool) -> [[Item]] {
+        var runs: [[Item]] = []
+        for item in items {
+            if !isMark(item), let last = runs.last?.last, !isMark(last) {
+                runs[runs.count - 1].append(item)
+            } else {
+                runs.append([item])
+            }
+        }
+        return runs
     }
 
     /// 句読点。直前の区間が日本語なら日本語の文で使う形にし、英語なら打ったままにする記号と、その形
@@ -717,21 +747,24 @@ public final class Segmenter {
     /// 英語区間の綴りの点。数（numberLength）は英単語の綴りではないので、日本語区間と同じく採点の変換で数として読んだ点にし、
     /// 数字で切った残りの綴りをそれぞれ英語の綴りとして測る。区間の頭の数は区間の文脈で、英字の後の数は語の後として読む
     private func spellingScore(_ source: String, context: JapaneseContext) -> Double {
-        var score = 0.0
-        var rest = Substring(source)
-        while !rest.isEmpty {
-            let number = rest.prefix(Self.numberLength(rest))
-            if !number.isEmpty {
-                let at: JapaneseContext = rest.startIndex == source.startIndex ? context : .afterWord
-                score += japaneseConverter.convert(kana: String(number), context: at).value
-                rest = rest.dropFirst(number.count)
-                continue
-            }
-            let spelling = rest.prefix { !Self.isDigit($0) }
-            score += Self.englishWeight * english.logProbability(spelling)
-            rest = rest.dropFirst(spelling.count)
+        Self.numberPieces(source).enumerated().reduce(0.0) { score, item in
+            let (index, piece) = item
+            guard piece.isNumber else { return score + Self.englishWeight * english.logProbability(piece.text) }
+            return score + japaneseConverter.convert(kana: String(piece.text), context: index == 0 ? context : .afterWord).value
         }
-        return score
+    }
+
+    /// text を前から、数（numberLength）と、そのあいだの数字を含まない綴りに分けたもの
+    static func numberPieces(_ text: some StringProtocol) -> [(isNumber: Bool, text: Substring)] {
+        var pieces: [(isNumber: Bool, text: Substring)] = []
+        var rest = Substring(text)
+        while !rest.isEmpty {
+            let number = rest.prefix(numberLength(rest))
+            let piece = number.isEmpty ? (false, rest.prefix { !isDigit($0) }) : (true, number)
+            pieces.append(piece)
+            rest = rest.dropFirst(piece.1.count)
+        }
+        return pieces
     }
 
     /// chars の start から、位置 i をまたぐ長さの利用者の辞書の打鍵（英語の語と、かなに読めない日本語の語）がそのまま打たれているか
