@@ -136,7 +136,7 @@ import Testing
 
     init() throws {
         segmenter = try Shared.make(LatticeConverter(dictionary: TestDictionary.shared))
-        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten\njpy.dev\tCurrency API\ten\nvue\tVue\ten\n404\tNot Found\ten\n110\t警察\ten\npwd.x\tPWDX\tja\nnendo\t2026\tja"))
+        segmenter.replaceUserDictionary(UserDictionary(contents: "mannzu\t萬子\ngithub\tGitHub\nnode\tNode.js\ntugime\ttugime\n2fa\t2FA\nkanon\tKanon\nsake\t鮭\tja\ncafe\tCafé\ncwd\tすご\tja\npwd\tPWD\tja\nresume\trésumé\ten\nqqx\t第2\tja\nyahoo\tYahoo!\ten\njpy\t円\ten\njpy.dev\tCurrency API\ten\nvue\tVue\ten\n404\tNot Found\ten\n110\t警察\ten\npwd.x\tPWDX\tja\nnendo\t2026\tja\nos\tOS\ten"))
     }
 
     /// 登録した語の後ろの句読点は、表記の字によらず登録した言語で決める。en の語の後は打ったまま、ja の語の後は日本語の記号。
@@ -174,6 +174,19 @@ import Testing
     @Test func readsADashAfterAResizedEnglishUserWordAsTyped() {
         let shown = segmenter.resize(segmenter.clauses("jpy-desu"), at: 0, by: -1).map(\.output).joined()
         #expect(shown.contains("-") && !shown.contains("ー"))
+    }
+
+    /// F6〜F8 は打鍵を前から順にかなにするので、英語の区間と日本語の区間の境目が 1 つの綴りを割っていても（en の os と ya の、sya の しゃ）、
+    /// 境目で読み分けずに打鍵どおりに読む。読めない字（github の b）は打ったまま、数（0120-345-678）は数として打ったまま、
+    /// 句読点は区間の読みのまま（日本語の ya の後の 、）
+    @Test(arguments: [
+        ("osya", "おしゃ", "オシャ"), ("osya,", "おしゃ、", "オシャ、"), ("osyagithub", "おしゃぎてゅb", "オシャギテュb"),
+        ("osya 0120-345-678", "おしゃ 0120-345-678", "オシャ 0120-345-678"),
+    ])
+    func turnsTheWholeIntoKanaAcrossTheBoundaryOfSpans(input: String, hiragana: String, katakana: String) {
+        #expect(Array(segmenter.segment(input).map(\.source).prefix(2)) == ["os", "ya"])
+        #expect(segmenter.convertWhole(input, to: .hiragana) == hiragana)
+        #expect(segmenter.convertWhole(input, to: .katakana) == katakana)
     }
 
     /// 候補で表記を選んだ文節の後ろは、選んだ表記の字で句読点を決める。今日 を kyou にしてから後ろの Not Found を縮めて数だけの文節にすると、句読点は打ったまま

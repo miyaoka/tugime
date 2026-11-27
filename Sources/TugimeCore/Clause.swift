@@ -622,24 +622,16 @@ extension Segmenter {
     }
 
     /// 部分を 1 つにした区間。句読点か記号 1 つだけなら、見えていた形の句読点の区間にする。それ以外は、かなをつないだ読みの日本語の区間にする。
-    /// 句読点と記号は見えていた形にする。そのあいだに並ぶ日本語と英語の部分は、英語を含めば、打鍵の全体をかなに読み切れるとき（RomajiTable.typedKana）
+    /// 句読点と記号は見えていた形にする。そのあいだに並ぶ日本語と英語の部分は、英語を含めば、打鍵の全体をかなに読み切れるとき（typedKana）
     /// そのかなにする。読み切れなければ、部分ごとに日本語はかな、英語は `englishReading` で読めたもの、読めなければ打ったままにする
     private func joined(_ parts: [ClausePart], context: JapaneseContext) -> Segment {
         let source = parts.map(\.source).joined()
         if parts.count == 1, parts[0].kind == .mark {
             return Segment(kind: .punctuation, source: source, reading: parts[0].reading, output: parts[0].reading, score: 0, context: context)
         }
-        var runs: [[ClausePart]] = []
-        for part in parts {
-            if part.kind != .mark, let last = runs.last?.last, last.kind != .mark {
-                runs[runs.count - 1].append(part)
-            } else {
-                runs.append([part])
-            }
-        }
-        let kana = runs.map { run in
+        let kana = Self.runs(parts, isMark: { $0.kind == .mark }).map { run in
             if run.contains(where: { $0.kind == .english }) {
-                let typed = table.typedKana(of: run.map(\.source).joined())
+                let typed = typedKana(of: run.map(\.source).joined())
                 if typed.complete { return typed.kana }
             }
             return run.map { $0.kind == .english ? englishReading(of: $0.source) ?? $0.source : $0.reading }.joined()

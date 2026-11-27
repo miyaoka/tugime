@@ -13,13 +13,13 @@ public enum CharacterForm: Sendable, CaseIterable {
 }
 
 extension Segmenter {
-    /// 日本語区間はかな、英語区間は打鍵をかなにしたもの（RomajiTable.typedKana。読めない文字は打ったまま）、を並べたもの
+    /// 句読点と記号は区間の読み、そのあいだに並ぶ区間は、英語の区間か利用者の辞書の読めない打鍵の語を含めば、打鍵の全体を前から順にかなにしたもの
+    /// （typedKana）。区切りの境目が 1 つの綴りを割っていても（os と ya の しゃ）、打鍵どおりに読む。どちらも含まない並びは日本語区間のかなを並べる
     public func wholeReading(_ input: String, leading: Leading = .start) -> String {
-        segment(input, leading: leading).map { segment in
-            switch segment.kind {
-            case .japanese, .punctuation: segment.reading
-            case .english, .word: table.typedKana(of: segment.source).kana
-            }
+        Self.runs(segment(input, leading: leading), isMark: { $0.kind == .punctuation }).map { run in
+            run.contains(where: { $0.kind == .english || $0.kind == .word })
+                ? typedKana(of: run.map(\.source).joined()).kana
+                : run.map(\.reading).joined()
         }.joined()
     }
 
@@ -44,7 +44,7 @@ extension Segmenter {
         }
         let clause = clauses[index]
         guard form.usesKeystrokes else {
-            let kana = clause.kind == .english || clause.kind == .word ? table.typedKana(of: clause.span.source).kana : clause.reading
+            let kana = clause.kind == .english || clause.kind == .word ? typedKana(of: clause.span.source).kana : clause.reading
             return Self.text(kana, form)
         }
         return typedSource(of: clauses, at: index).map { Self.text($0, form) }

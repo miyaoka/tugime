@@ -700,9 +700,11 @@ private final class DisplayRecorder: JapaneseConverting {
 
     // MARK: 英語の区間の文字種
 
-    /// 英語の区間のかなは、打鍵を前から順にかなにし、読めない文字は打ったまま残す。c の綴りも読み、後ろに綴りが続かない単独の n は ん と読む
+    /// 英語の区間のかなは、打鍵を前から順にかなにし、読めない文字は打ったまま残す。c の綴りも読み、後ろに綴りが続かない単独の n は ん と読む。
+    /// 数（3-5）は日本語区間と同じく打ったまま残す
     @Test(arguments: [
         ("cafe", "かふぇ", "カフェ"), ("github", "ぎてゅb", "ギテュb"), ("conb", "こんb", "コンb"), ("kotlin.", "こtぃん.", "コtィン."),
+        ("github3-5", "ぎてゅb3-5", "ギテュb3-5"),
     ])
     func turnsAnEnglishSpanIntoKanaAsTyped(input: String, hiragana: String, katakana: String) {
         #expect(segmenter.segment(input).map(\.kind) == [.english])
